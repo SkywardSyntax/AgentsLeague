@@ -1,0 +1,127 @@
+/*
+ * Design System — CSS Custom Properties
+ * Theme-aware color tokens that toggle via data-theme="dark" on <html>.
+ * All values are HSL channels (without the hsl() wrapper) for alpha compositing.
+ */
+
+/* ── Light Mode (default) ───────────────────────────────────── */
+:root {
+  /* Neutral surfaces */
+  --color-canvas: 40 6% 98%;
+  --color-surface: 0 0% 100%;
+  --color-surface-raised: 40 5% 96%;
+  --color-surface-sunken: 40 5% 94%;
+
+  /* Borders */
+  --color-border-subtle: 24 6% 90%;
+  --color-border: 24 6% 83%;
+  --color-border-strong: 24 6% 64%;
+
+  /* Text */
+  --color-text-primary: 24 10% 10%;
+  --color-text-secondary: 24 6% 33%;
+  --color-text-tertiary: 24 6% 64%;
+  --color-text-inverse: 40 6% 98%;
+
+  /* Accent */
+  --color-accent: 217 91% 54%;
+  --color-accent-hover: 224 76% 48%;
+  --color-accent-subtle: 214 100% 97%;
+
+  /* Semantic */
+  --color-success: 142 71% 37%;
+  --color-warning: 32 95% 44%;
+  --color-error: 0 84% 51%;
+
+  /* AI */
+  --color-ai: 263 70% 58%;
+  --color-ai-subtle: 270 100% 98%;
+
+  /* Toolbar namespace */
+  --toolbar-bg: 0 0% 100%;
+  --toolbar-border: 24 6% 90%;
+  --toolbar-active: 217 91% 54%;
+
+  /* Canvas namespace */
+  --canvas-bg: 40 6% 98%;
+  --canvas-grid: 240 5% 91%;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+/* ── Dark Mode ──────────────────────────────────────────────── */
+[data-theme="dark"] {
+  /* Neutral surfaces */
+  --color-canvas: 24 10% 4%;
+  --color-surface: 24 10% 10%;
+  --color-surface-raised: 24 6% 15%;
+  --color-surface-sunken: 24 10% 4%;
+
+  /* Borders */
+  --color-border-subtle: 24 6% 15%;
+  --color-border: 24 6% 25%;
+  --color-border-strong: 24 5% 45%;
+
+  /* Text */
+  --color-text-primary: 40 6% 98%;
+  --color-text-secondary: 24 6% 83%;
+  --color-text-tertiary: 24 5% 45%;
+  --color-text-inverse: 24 10% 10%;
+
+  /* Accent */
+  --color-accent: 213 94% 68%;
+  --color-accent-hover: 213 96% 79%;
+  --color-accent-subtle: 213 50% 24%;
+
+  /* Semantic */
+  --color-success: 142 69% 58%;
+  --color-warning: 45 93% 56%;
+  --color-error: 0 91% 71%;
+
+  /* AI */
+  --color-ai: 258 90% 76%;
+  --color-ai-subtle: 271 91% 20%;
+
+  /* Toolbar namespace */
+  --toolbar-bg: 24 10% 10%;
+  --toolbar-border: 24 6% 15%;
+  --toolbar-active: 213 94% 68%;
+
+  /* Canvas namespace */
+  --canvas-bg: 24 10% 4%;
+  --canvas-grid: 24 6% 15%;
+}
+
+/* System preference fallback when no data-theme is set */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-canvas: 24 10% 4%;
+    --color-surface: 24 10% 10%;
+    --color-surface-raised: 24 6% 15%;
+    --color-surface-sunken: 24 10% 4%;
+    --color-border-subtle: 24 6% 15%;
+    --color-border: 24 6% 25%;
+    --color-border-strong: 24 5% 45%;
+    --color-text-primary: 40 6% 98%;
+    --color-text-secondary: 24 6% 83%;
+    --color-text-tertiary: 24 5% 45%;
+    --color-text-inverse: 24 10% 10%;
+    --color-accent: 213 94% 68%;
+    --color-accent-hover: 213 96% 79%;
+    --color-accent-subtle: 213 50% 24%;
+    --color-success: 142 69% 58%;
+    --color-warning: 45 93% 56%;
+    --color-error: 0 91% 71%;
+    --color-ai: 258 90% 76%;
+    --color-ai-subtle: 271 91% 20%;
+    --toolbar-bg: 24 10% 10%;
+    --toolbar-border: 24 6% 15%;
+    --toolbar-active: 213 94% 68%;
+    --canvas-bg: 24 10% 4%;
+    --canvas-grid: 24 6% 15%;
+  }
+}
