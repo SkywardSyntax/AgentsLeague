@@ -19,7 +19,7 @@ const CHAT_SYSTEM_PROMPT = `You are a helpful assistant that can discuss the use
 
 export async function POST(request: Request): Promise<Response> {
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const rl = await rateLimit(ip, { windowMs: 60_000, max: 30 });
+  const rl = rateLimit(ip, { windowMs: 60_000, max: 30 });
   if (!rl.ok) {
     return errorResponse('RATE_LIMITED', 'Too many requests', 429, {
       retryAfter: rl.retryAfter,

@@ -125,6 +125,7 @@ export function createMockOpenAIClient(events?: MockOpenAIStreamEvent[]) {
     return {
       [Symbol.asyncIterator]() {
         return {
+          // eslint-disable-next-line @typescript-eslint/require-await
           async next() {
             if (idx < defaultEvents.length) {
               return { value: defaultEvents[idx++], done: false };
@@ -225,7 +226,7 @@ export function installMockSpeechRecognition(): {
  * Create SSE response body from draw tool arguments.
  * Compatible with the /api/draw endpoint format.
  */
-export function createSSEBody(ops: Array<{ op: string; [key: string]: unknown }>): string {
+export function createSSEBody(ops: { op: string; [key: string]: unknown }[]): string {
   return ops.map((op) => `data: ${JSON.stringify(op)}\n\n`).join('') + 'data: [DONE]\n\n';
 }
 

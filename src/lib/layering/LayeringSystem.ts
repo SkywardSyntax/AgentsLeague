@@ -112,11 +112,9 @@ export class LayeringSystem {
 
   /** Get layers sorted by z-index (cached). */
   getSortedLayers(): Layer[] {
-    if (!this.sortedCache) {
-      this.sortedCache = Array.from(this.layers.values()).sort((a, b) =>
-        a.zIndex < b.zIndex ? -1 : a.zIndex > b.zIndex ? 1 : 0,
-      );
-    }
+    this.sortedCache ??= Array.from(this.layers.values()).sort((a, b) =>
+      a.zIndex < b.zIndex ? -1 : a.zIndex > b.zIndex ? 1 : 0,
+    );
     return this.sortedCache;
   }
 

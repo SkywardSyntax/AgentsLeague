@@ -11,7 +11,7 @@
 
 import type { DrawElement, DrawOp, BoundingBox } from '@/types';
 import { buildToolResult, type ToolResult } from './ToolResultBuilder';
-import { ContextManager, type ConversationTurn } from './ContextManager';
+import { ContextManager } from './ContextManager';
 
 // ── Constants ───────────────────────────────────────────────────────
 

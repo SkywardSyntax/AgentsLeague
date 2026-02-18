@@ -12,6 +12,7 @@ import { _resetRateLimitStore } from '@/lib/rate-limit';
 function createMockStream(chunks: { type: string; delta?: string; message?: string }[]) {
   return {
     controller: { abort: vi.fn() },
+    // eslint-disable-next-line @typescript-eslint/require-await
     async *[Symbol.asyncIterator]() {
       for (const chunk of chunks) {
         yield chunk;
@@ -167,6 +168,7 @@ describe('POST /api/draw', () => {
     expect(res.status).toBe(200);
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         input: expect.arrayContaining([
           { role: 'user', content: 'Draw a circle' },
           { role: 'assistant', content: 'Done' },

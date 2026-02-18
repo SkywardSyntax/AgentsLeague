@@ -132,7 +132,7 @@ export const DrawOpSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('update'),
     id: z.string(),
-    patch: z.record(z.unknown()),
+    patch: z.record(z.string(), z.unknown()),
   }),
   z.object({ op: z.literal('delete'), id: z.string() }),
   z.object({ op: z.literal('clear') }),

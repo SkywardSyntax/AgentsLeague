@@ -92,15 +92,18 @@ function ModeToggle({ mode, onSwitch }: { mode: InteractionMode; onSwitch: (m: I
   );
 }
 
+// Pre-computed heights for waveform bars
+const WAVEFORM_HEIGHTS = [28, 14, 22, 30, 18, 24, 12, 26, 20, 16, 29, 11, 23, 27, 15, 25, 13, 21, 31, 17];
+
 function WaveformVisualizer() {
   return (
     <div className="flex items-center justify-center gap-0.5 h-8 px-4">
-      {Array.from({ length: 20 }, (_, i) => (
+      {WAVEFORM_HEIGHTS.map((h, i) => (
         <div
           key={i}
           className="w-1 bg-red-500 rounded-full animate-pulse"
           style={{
-            height: `${Math.random() * 24 + 8}px`,
+            height: `${h}px`,
             animationDelay: `${i * 0.05}s`,
           }}
         />
@@ -125,7 +128,7 @@ export function ChatPanel() {
     (e: FormEvent) => {
       e.preventDefault();
       if (!inputValue.trim() || isProcessing) return;
-      handleSubmitText(inputValue);
+      void handleSubmitText(inputValue);
       setInputValue('');
     },
     [inputValue, isProcessing, handleSubmitText],
@@ -136,7 +139,7 @@ export function ChatPanel() {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (!inputValue.trim() || isProcessing) return;
-        handleSubmitText(inputValue);
+        void handleSubmitText(inputValue);
         setInputValue('');
       }
     },

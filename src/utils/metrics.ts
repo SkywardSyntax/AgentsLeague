@@ -229,6 +229,7 @@ export function createPerformanceObserver(
   options: PerfObserverOptions,
 ): () => void {
   if (typeof PerformanceObserver === 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
     return () => {};
   }
 

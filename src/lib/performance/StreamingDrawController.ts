@@ -9,7 +9,7 @@
  *  - Sustained: ≥60 fps (8 ms frame budget at 120 fps)
  */
 
-import type { DrawElement, DrawOp, BoundingBox } from '@/types';
+import type { DrawElement, DrawOp } from '@/types';
 
 // ── Easing functions ────────────────────────────────────────────────
 

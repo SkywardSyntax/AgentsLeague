@@ -9,11 +9,14 @@ export function renderArrow(
   const { points, stroke } = el;
   if (points.length < 2) return;
 
+  const p0 = points[0]!;
+
   // Draw shaft
   ctx.beginPath();
-  ctx.moveTo(el.x + points[0].x, el.y + points[0].y);
+  ctx.moveTo(el.x + p0.x, el.y + p0.y);
   for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(el.x + points[i].x, el.y + points[i].y);
+    const p = points[i]!;
+    ctx.lineTo(el.x + p.x, el.y + p.y);
   }
   ctx.strokeStyle = stroke.color;
   ctx.lineWidth = stroke.width;
@@ -23,8 +26,8 @@ export function renderArrow(
 
   // End arrowhead
   if (el.endArrowhead !== 'none' && points.length >= 2) {
-    const from = points[points.length - 2];
-    const to = points[points.length - 1];
+    const from = points[points.length - 2]!;
+    const to = points[points.length - 1]!;
     drawArrowhead(
       ctx,
       el.x + from.x,
@@ -39,12 +42,13 @@ export function renderArrow(
 
   // Start arrowhead
   if (el.startArrowhead !== 'none' && points.length >= 2) {
+    const p1 = points[1]!;
     drawArrowhead(
       ctx,
-      el.x + points[1].x,
-      el.y + points[1].y,
-      el.x + points[0].x,
-      el.y + points[0].y,
+      el.x + p1.x,
+      el.y + p1.y,
+      el.x + p0.x,
+      el.y + p0.y,
       el.startArrowhead,
       stroke.color,
       stroke.width,

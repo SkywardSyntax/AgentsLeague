@@ -5,15 +5,12 @@
  * with tool call parsing, validation, and context management.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   DrawToolLoop,
   DrawToolLoopError,
   MAX_ITERATIONS,
-  StateManager,
-  validateOps,
 } from '@/lib/tool-workflow/DrawToolLoop';
-import { ContextManager } from '@/lib/tool-workflow/ContextManager';
 import { parseDrawToolCall, handleToolResult, tryParsePartialElements } from '@/lib/openai/streaming';
 import { createMockOpenAIClient, createMockWhiteboardStore } from '@/lib/test-utils';
 import type { DrawElement, DrawOp } from '@/types';
@@ -44,13 +41,14 @@ function makeRect(id: string, x = 10, y = 20): DrawElement {
 describe('OpenAI mock client integration', () => {
   it('creates a streaming async iterator', async () => {
     const client = createMockOpenAIClient();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const stream = await client.responses.create({
       model: 'gpt-4o',
       input: 'Draw a rectangle',
       tools: [],
     });
 
-    const events: Array<{ type: string }> = [];
+    const events: { type: string }[] = [];
     for await (const event of stream) {
       events.push(event as { type: string });
     }
@@ -61,6 +59,7 @@ describe('OpenAI mock client integration', () => {
 
   it('receives function call arguments via delta events', async () => {
     const client = createMockOpenAIClient();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const stream = await client.responses.create({
       model: 'gpt-4o',
       input: 'Draw a rectangle',
@@ -77,13 +76,17 @@ describe('OpenAI mock client integration', () => {
 
     expect(argBuffer.length).toBeGreaterThan(0);
     // The full args buffer should be parseable
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const parsed = JSON.parse(argBuffer);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(parsed.canvas).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(parsed.elements).toBeInstanceOf(Array);
   });
 
   it('parseDrawToolCall validates arguments from mock stream', async () => {
     const client = createMockOpenAIClient();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const stream = await client.responses.create({
       model: 'gpt-4o',
       input: 'Draw a rectangle',

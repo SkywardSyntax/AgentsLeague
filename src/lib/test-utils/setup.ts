@@ -25,7 +25,7 @@ if (typeof globalThis.crypto === 'undefined') {
     },
   };
 } else if (typeof globalThis.crypto.randomUUID !== 'function') {
-  (globalThis.crypto as Record<string, unknown>).randomUUID = () =>
+  (globalThis.crypto as unknown as Record<string, unknown>).randomUUID = () =>
     'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
       return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
@@ -36,6 +36,7 @@ if (typeof globalThis.crypto === 'undefined') {
 
 if (typeof globalThis.structuredClone !== 'function') {
   (globalThis as Record<string, unknown>).structuredClone = <T>(obj: T): T =>
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     JSON.parse(JSON.stringify(obj));
 }
 
@@ -61,6 +62,7 @@ if (typeof globalThis.requestAnimationFrame !== 'function') {
 }
 
 if (typeof globalThis.cancelAnimationFrame !== 'function') {
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   (globalThis as Record<string, unknown>).cancelAnimationFrame = () => {};
 }
 

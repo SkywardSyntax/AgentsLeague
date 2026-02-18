@@ -37,7 +37,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       source: options.source ?? get().mode,
       drawing: options.drawing ?? null,
       reasoning: options.reasoning ?? null,
-      meta: options.meta,
+      ...(options.meta !== undefined ? { meta: options.meta } : {}),
     };
     set((state) => ({ messages: [...state.messages, message] }));
     return message;

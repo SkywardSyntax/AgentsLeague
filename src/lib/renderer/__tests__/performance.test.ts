@@ -11,7 +11,6 @@ import {
   canvas50,
   canvas1000,
   rectElement,
-  defaultCamera,
 } from '@/lib/test-utils';
 import type { DrawElement, Camera } from '@/types/drawing';
 
@@ -41,7 +40,7 @@ function createRenderer(width = 1920, height = 1080): WhiteboardRenderer {
 describe('Canvas rAF batching', () => {
   it('batches multiple upsertElements into a single rAF frame', () => {
     const renderer = createRenderer();
-    const clearBefore = ctx.__calls.filter((c) => c.includes('clearRect')).length;
+    const _clearBefore = ctx.__calls.filter((c) => c.includes('clearRect')).length;
 
     // Multiple upserts should coalesce into one frame
     renderer.upsertElements([rectElement]);

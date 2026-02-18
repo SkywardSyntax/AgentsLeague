@@ -25,8 +25,8 @@ export interface UseSelectionReturn {
   getHighlights: () => SelectionHighlight[];
   /** Update the spatial index with current elements. */
   updateIndex: (elements: DrawElement[]) => void;
-  /** The underlying SelectionManager instance. */
-  manager: SelectionManager;
+  /** Get the underlying SelectionManager instance. */
+  getManager: () => SelectionManager;
 }
 
 export function useSelection(): UseSelectionReturn {
@@ -92,7 +92,7 @@ export function useSelection(): UseSelectionReturn {
       lassoSelect,
       getHighlights,
       updateIndex,
-      manager: managerRef.current,
+      getManager: () => managerRef.current,
     }),
     [selectedIds, selectElement, deselectAll, toggleSelect, hitTest, marqueeSelect, lassoSelect, getHighlights, updateIndex],
   );

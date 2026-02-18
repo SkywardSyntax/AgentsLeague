@@ -192,7 +192,9 @@ export class SkeletonRenderer {
   ): SkeletonHandle {
     this.ctx = ctx;
     this.config = config;
-    this.onDismiss = onDismiss;
+    if (onDismiss !== undefined) {
+      this.onDismiss = onDismiss;
+    }
     this.placeholders = generatePlaceholders(
       config.estimatedBounds,
       config.estimatedShapeCount,

@@ -251,7 +251,7 @@ describe('getCharacterPositions', () => {
     const ctx = createMockCtx();
     const positions = getCharacterPositions(ctx, 'Hello');
     for (let i = 1; i < positions.length; i++) {
-      expect(positions[i]).toBeGreaterThanOrEqual(positions[i - 1]);
+      expect(positions[i]).toBeGreaterThanOrEqual(positions[i - 1]!);
     }
   });
 });
@@ -352,8 +352,8 @@ describe('renderAccessibleOverlay', () => {
     expect(overlay.className).toBe('sr-only');
     expect(overlay.getAttribute('role')).toBe('region');
     expect(overlay.children.length).toBe(2);
-    expect(overlay.children[0].textContent).toBe('Hello');
-    expect(overlay.children[1].textContent).toBe('World');
+    expect(overlay.children[0]!.textContent).toBe('Hello');
+    expect(overlay.children[1]!.textContent).toBe('World');
     // Should be appended to canvas parent
     expect(container.contains(overlay)).toBe(true);
   });

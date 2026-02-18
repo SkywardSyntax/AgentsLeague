@@ -219,6 +219,7 @@ export function useVoiceMode(options: UseVoiceModeOptions = {}) {
  * Stub for Whisper API fallback.
  * TODO: Implement actual Whisper transcription via /api/transcribe
  */
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function whisperTranscribe(
   _audioBlob: Blob,
 ): Promise<{ text: string; confidence: number }> {

@@ -466,7 +466,7 @@ describe('StreamingDrawController', () => {
 
 describe('easing functions', () => {
   test('all return 0 at t=0 and 1 at t=1', () => {
-    for (const [name, fn] of Object.entries(easing)) {
+    for (const [_name, fn] of Object.entries(easing)) {
       expect(fn(0)).toBeCloseTo(0, 5);
       expect(fn(1)).toBeCloseTo(1, 5);
     }

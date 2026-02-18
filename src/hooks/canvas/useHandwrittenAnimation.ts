@@ -61,11 +61,8 @@ function buildCharTimings(text: string, baseMs: number, seed: number): number[] 
   const timings: number[] = [0];
   let cumulative = 0;
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (char !== undefined) {
-      cumulative += getNaturalCharDelay(char, baseMs, rng);
-    }
+  for (const char of text) {
+    cumulative += getNaturalCharDelay(char, baseMs, rng);
     timings.push(cumulative);
   }
   return timings;

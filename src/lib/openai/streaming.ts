@@ -176,8 +176,8 @@ export function tryParsePartialElements(buffer: string): DrawToolElement[] | nul
         depth--;
         if (depth === 0 && objStart !== null) {
           try {
-            const el = JSON.parse(buffer.slice(objStart, i + 1));
-            if (el.id && el.type) {
+            const el = JSON.parse(buffer.slice(objStart, i + 1)) as Record<string, unknown>;
+            if (typeof el.id === 'string' && typeof el.type === 'string') {
               elements.push(el as DrawToolElement);
             }
           } catch {
@@ -274,12 +274,15 @@ export interface ErrorResponse {
 
 export function mapErrorToResponse(err: unknown, attempt = 0): ErrorResponse {
   if (err instanceof DrawingError) {
-    return {
+    const base: ErrorResponse = {
       code: err.code,
       message: err.message,
       retryable: err.retryable,
-      retryAfterMs: err.retryable ? 1000 * 2 ** attempt : undefined,
     };
+    if (err.retryable) {
+      base.retryAfterMs = 1000 * 2 ** attempt;
+    }
+    return base;
   }
 
   const message = err instanceof Error ? err.message : String(err);

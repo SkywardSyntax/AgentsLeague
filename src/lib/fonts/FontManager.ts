@@ -32,12 +32,11 @@ export class FontManager {
   private measureCanvas: OffscreenCanvas | null = null;
   private measureCtx: OffscreenCanvasRenderingContext2D | null = null;
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   private constructor() {}
 
   static getInstance(): FontManager {
-    if (!FontManager.instance) {
-      FontManager.instance = new FontManager();
-    }
+    FontManager.instance ??= new FontManager();
     return FontManager.instance;
   }
 

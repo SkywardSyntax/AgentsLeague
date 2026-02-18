@@ -7,11 +7,13 @@ export function renderLine(
   const { points, stroke } = el;
   if (points.length < 2) return;
 
+  const p0 = points[0]!;
   ctx.beginPath();
-  ctx.moveTo(el.x + points[0].x, el.y + points[0].y);
+  ctx.moveTo(el.x + p0.x, el.y + p0.y);
 
   for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(el.x + points[i].x, el.y + points[i].y);
+    const p = points[i]!;
+    ctx.lineTo(el.x + p.x, el.y + p.y);
   }
 
   ctx.strokeStyle = stroke.color;

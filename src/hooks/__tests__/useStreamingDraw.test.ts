@@ -3,7 +3,7 @@
  * abort handling, and error recovery.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { DrawOp } from '@/types';
 
 // We test the SSE parsing logic extracted from the hook, since
@@ -126,7 +126,7 @@ describe('Progressive rendering flow', () => {
   });
 
   it('handles empty chunks', () => {
-    let buffer = '';
+    const buffer = '';
     const { ops, remaining } = parseSSELines(buffer);
     expect(ops).toHaveLength(0);
     expect(remaining).toBe('');
@@ -149,6 +149,7 @@ describe('Stream abort handling', () => {
     });
 
     // Start the "stream" and immediately abort
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     const promise = mockFetch('/api/draw', { signal: controller.signal }).catch((err: Error) => {
       if (err instanceof DOMException && err.name === 'AbortError') {
         // Expected — should not call onError

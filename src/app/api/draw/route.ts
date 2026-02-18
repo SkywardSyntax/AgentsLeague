@@ -28,7 +28,7 @@ Output ONLY valid JSON. Do not include markdown fences or commentary.`;
 export async function POST(request: Request): Promise<Response> {
   // Rate limit by IP
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const rl = await rateLimit(ip, { windowMs: 60_000, max: 20 });
+  const rl = rateLimit(ip, { windowMs: 60_000, max: 20 });
   if (!rl.ok) {
     return errorResponse('RATE_LIMITED', 'Too many requests', 429, {
       retryAfter: rl.retryAfter,

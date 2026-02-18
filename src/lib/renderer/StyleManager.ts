@@ -11,7 +11,7 @@ export function parseColor(
   if (color.startsWith('#')) {
     let hex = color.slice(1);
     if (hex.length === 3) {
-      hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+      hex = (hex[0] ?? '') + (hex[0] ?? '') + (hex[1] ?? '') + (hex[1] ?? '') + (hex[2] ?? '') + (hex[2] ?? '');
     }
     if (hex.length === 8) {
       return {
@@ -33,9 +33,9 @@ export function parseColor(
   const match = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/.exec(color);
   if (match) {
     return {
-      r: parseInt(match[1], 10),
-      g: parseInt(match[2], 10),
-      b: parseInt(match[3], 10),
+      r: parseInt(match[1] ?? '0', 10),
+      g: parseInt(match[2] ?? '0', 10),
+      b: parseInt(match[3] ?? '0', 10),
       a: match[4] !== undefined ? parseFloat(match[4]) : 1,
     };
   }
@@ -87,7 +87,7 @@ export function applyVendorPrefixes(
   if (options.imageSmoothingEnabled !== undefined) {
     ctx.imageSmoothingEnabled = options.imageSmoothingEnabled;
     // Legacy webkit prefix
-    const ctxAny = ctx as Record<string, unknown>;
+    const ctxAny = ctx as unknown as Record<string, unknown>;
     if ('webkitImageSmoothingEnabled' in ctx) {
       ctxAny.webkitImageSmoothingEnabled = options.imageSmoothingEnabled;
     }

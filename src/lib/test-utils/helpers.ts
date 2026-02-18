@@ -37,7 +37,7 @@ export async function renderWithProviders(ui: React.ReactElement) {
  * Create a ReadableStream that emits SSE events, simulating the /api/draw endpoint.
  */
 export function createMockStream(
-  events: Array<{ data: string; delayMs?: number }>,
+  events: { data: string; delayMs?: number }[],
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
@@ -65,7 +65,7 @@ export function createMockDrawOpStream(
   return createMockStream(
     ops.map((op) => ({
       data: JSON.stringify(op),
-      delayMs: options.delayMs,
+      ...(options.delayMs !== undefined ? { delayMs: options.delayMs } : {}),
     })),
   );
 }

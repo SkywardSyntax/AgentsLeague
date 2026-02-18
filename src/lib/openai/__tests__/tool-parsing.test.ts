@@ -272,7 +272,7 @@ describe('tryParsePartialElements', () => {
 
     expect(result).not.toBeNull();
     expect(result).toHaveLength(1);
-    expect(result![0].id).toBe('r1');
+    expect(result![0]!.id).toBe('r1');
   });
 
   test('returns null for empty buffer', () => {
@@ -288,8 +288,8 @@ describe('tryParsePartialElements', () => {
     const result = tryParsePartialElements(buffer);
 
     expect(result).toHaveLength(2);
-    expect(result![0].id).toBe('r1');
-    expect(result![1].id).toBe('t1');
+    expect(result![0]!.id).toBe('r1');
+    expect(result![1]!.id).toBe('t1');
   });
 });
 

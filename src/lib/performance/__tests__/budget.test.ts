@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { StreamingDrawController, type VisibleElement } from '@/lib/performance/StreamingDrawController';
+import { StreamingDrawController } from '@/lib/performance/StreamingDrawController';
 import { createRAFController, canvas50, assertNoJank, assertMinFPS, type FrameTiming } from '@/lib/test-utils';
 import type { DrawElement, DrawOp } from '@/types';
 
@@ -129,6 +129,7 @@ describe('Performance budget: TTFT', () => {
 
     const reader = stream.getReader();
     const start = performance.now();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { value, done } = await reader.read();
     const ttft = performance.now() - start;
 

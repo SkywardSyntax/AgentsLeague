@@ -287,7 +287,7 @@ function generateRect(index: number): RectElement {
     cornerRadius: index % 3 === 0 ? 8 : 0,
     fill: {
       type: 'solid',
-      color: `#${((index * 7919) % 0xFFFFFF).toString(16).padStart(6, '0')}` as `#${string}`,
+      color: `#${((index * 7919) % 0xFFFFFF).toString(16).padStart(6, '0')}`,
       opacity: 0.5 + (index % 5) * 0.1,
     },
     stroke: defaultStroke,

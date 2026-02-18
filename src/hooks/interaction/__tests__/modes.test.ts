@@ -1,8 +1,5 @@
 /**
  * Tests for interaction mode switching and voice state machine.
- *
- * Run via: npx tsx --test src/hooks/interaction/__tests__/modes.test.ts
- * or with any test runner that supports TypeScript.
  */
 
 import { test, expect } from 'vitest';
@@ -27,52 +24,25 @@ function makeSession(overrides: Partial<VoiceSession> = {}): VoiceSession {
   };
 }
 
-function assert(condition: boolean, message: string): void {
-  if (!condition) throw new Error(`Assertion failed: ${message}`);
-}
-
-function assertEqual<T>(actual: T, expected: T, label: string): void {
-  if (actual !== expected) {
-    throw new Error(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-  }
-}
-
 // ── Tests ───────────────────────────────────────────────────────
-
-let passed = 0;
-let failed = 0;
-
-function test(name: string, fn: () => void): void {
-  try {
-    fn();
-    passed++;
-    console.log(`  ✓ ${name}`);
-  } catch (err) {
-    failed++;
-    console.error(`  ✗ ${name}`);
-    console.error(`    ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-console.log('\n── Voice State Machine Tests ──\n');
 
 // Mode enum tests
 test('InteractionMode has TEXT and VOICE', () => {
-  assertEqual(InteractionMode.TEXT, 'text', 'TEXT');
-  assertEqual(InteractionMode.VOICE, 'voice', 'VOICE');
+  expect(InteractionMode.TEXT).toBe('text');
+  expect(InteractionMode.VOICE).toBe('voice');
 });
 
 test('MessageRole has all four roles', () => {
-  assertEqual(MessageRole.USER, 'user', 'USER');
-  assertEqual(MessageRole.ASSISTANT, 'assistant', 'ASSISTANT');
-  assertEqual(MessageRole.SYSTEM, 'system', 'SYSTEM');
-  assertEqual(MessageRole.REASONING, 'reasoning', 'REASONING');
+  expect(MessageRole.USER).toBe('user');
+  expect(MessageRole.ASSISTANT).toBe('assistant');
+  expect(MessageRole.SYSTEM).toBe('system');
+  expect(MessageRole.REASONING).toBe('reasoning');
 });
 
 // Voice state transitions
 test('IDLE → LISTENING on START_LISTENING', () => {
   const s = voiceTransition(makeSession(), { type: 'START_LISTENING' });
-  assertEqual(s.state, VoiceState.LISTENING, 'state');
+  expect(s.state).toBe(VoiceState.LISTENING);
 });
 
 test('LISTENING → interim updates transcript without state change', () => {
@@ -80,8 +50,8 @@ test('LISTENING → interim updates transcript without state change', () => {
     makeSession({ state: VoiceState.LISTENING }),
     { type: 'INTERIM_RESULT', transcript: 'hello wor' },
   );
-  assertEqual(s.state, VoiceState.LISTENING, 'state');
-  assertEqual(s.interimTranscript, 'hello wor', 'interimTranscript');
+  expect(s.state).toBe(VoiceState.LISTENING);
+  expect(s.interimTranscript).toBe('hello wor');
 });
 
 test('LISTENING → TRANSCRIBING on FINAL_RESULT', () => {
@@ -89,10 +59,10 @@ test('LISTENING → TRANSCRIBING on FINAL_RESULT', () => {
     makeSession({ state: VoiceState.LISTENING }),
     { type: 'FINAL_RESULT', transcript: 'hello world', confidence: 0.95 },
   );
-  assertEqual(s.state, VoiceState.TRANSCRIBING, 'state');
-  assertEqual(s.finalTranscript, 'hello world', 'finalTranscript');
-  assertEqual(s.confidence, 0.95, 'confidence');
-  assertEqual(s.interimTranscript, '', 'interimTranscript cleared');
+  expect(s.state).toBe(VoiceState.TRANSCRIBING);
+  expect(s.finalTranscript).toBe('hello world');
+  expect(s.confidence).toBe(0.95);
+  expect(s.interimTranscript).toBe('');
 });
 
 test('TRANSCRIBING → SENDING on SEND', () => {
@@ -100,7 +70,7 @@ test('TRANSCRIBING → SENDING on SEND', () => {
     makeSession({ state: VoiceState.TRANSCRIBING, finalTranscript: 'hello' }),
     { type: 'SEND' },
   );
-  assertEqual(s.state, VoiceState.SENDING, 'state');
+  expect(s.state).toBe(VoiceState.SENDING);
 });
 
 test('SENDING → STREAMING on STREAM_START', () => {
@@ -108,7 +78,7 @@ test('SENDING → STREAMING on STREAM_START', () => {
     makeSession({ state: VoiceState.SENDING }),
     { type: 'STREAM_START' },
   );
-  assertEqual(s.state, VoiceState.STREAMING, 'state');
+  expect(s.state).toBe(VoiceState.STREAMING);
 });
 
 test('STREAMING → DRAWING on DRAW_START', () => {
@@ -116,7 +86,7 @@ test('STREAMING → DRAWING on DRAW_START', () => {
     makeSession({ state: VoiceState.STREAMING }),
     { type: 'DRAW_START' },
   );
-  assertEqual(s.state, VoiceState.DRAWING, 'state');
+  expect(s.state).toBe(VoiceState.DRAWING);
 });
 
 test('STREAMING → COMPLETE on STREAM_COMPLETE', () => {
@@ -124,7 +94,7 @@ test('STREAMING → COMPLETE on STREAM_COMPLETE', () => {
     makeSession({ state: VoiceState.STREAMING }),
     { type: 'STREAM_COMPLETE' },
   );
-  assertEqual(s.state, VoiceState.COMPLETE, 'state');
+  expect(s.state).toBe(VoiceState.COMPLETE);
 });
 
 test('DRAWING → SPEAKING on SPEAK_START', () => {
@@ -132,7 +102,7 @@ test('DRAWING → SPEAKING on SPEAK_START', () => {
     makeSession({ state: VoiceState.DRAWING }),
     { type: 'SPEAK_START' },
   );
-  assertEqual(s.state, VoiceState.SPEAKING, 'state');
+  expect(s.state).toBe(VoiceState.SPEAKING);
 });
 
 test('DRAWING → COMPLETE on DRAW_COMPLETE', () => {
@@ -140,7 +110,7 @@ test('DRAWING → COMPLETE on DRAW_COMPLETE', () => {
     makeSession({ state: VoiceState.DRAWING }),
     { type: 'DRAW_COMPLETE' },
   );
-  assertEqual(s.state, VoiceState.COMPLETE, 'state');
+  expect(s.state).toBe(VoiceState.COMPLETE);
 });
 
 test('SPEAKING → COMPLETE on SPEAK_COMPLETE', () => {
@@ -148,7 +118,7 @@ test('SPEAKING → COMPLETE on SPEAK_COMPLETE', () => {
     makeSession({ state: VoiceState.SPEAKING }),
     { type: 'SPEAK_COMPLETE' },
   );
-  assertEqual(s.state, VoiceState.COMPLETE, 'state');
+  expect(s.state).toBe(VoiceState.COMPLETE);
 });
 
 test('COMPLETE → LISTENING on START_LISTENING (re-entry)', () => {
@@ -156,7 +126,7 @@ test('COMPLETE → LISTENING on START_LISTENING (re-entry)', () => {
     makeSession({ state: VoiceState.COMPLETE }),
     { type: 'START_LISTENING' },
   );
-  assertEqual(s.state, VoiceState.LISTENING, 'state');
+  expect(s.state).toBe(VoiceState.LISTENING);
 });
 
 // Cancel from any state
@@ -177,7 +147,7 @@ for (const state of allStates) {
       makeSession({ state }),
       { type: 'CANCEL' },
     );
-    assertEqual(s.state, VoiceState.IDLE, 'state');
+    expect(s.state).toBe(VoiceState.IDLE);
   });
 }
 
@@ -188,15 +158,15 @@ for (const state of allStates) {
       makeSession({ state }),
       { type: 'ERROR', message: 'mic failed' },
     );
-    assertEqual(s.state, VoiceState.IDLE, 'state');
-    assertEqual(s.error, 'mic failed', 'error message');
+    expect(s.state).toBe(VoiceState.IDLE);
+    expect(s.error).toBe('mic failed');
   });
 }
 
 // Invalid transitions are no-ops
 test('Invalid: IDLE + SEND → stays IDLE', () => {
   const s = voiceTransition(makeSession(), { type: 'SEND' });
-  assertEqual(s.state, VoiceState.IDLE, 'state');
+  expect(s.state).toBe(VoiceState.IDLE);
 });
 
 test('Invalid: LISTENING + STREAM_START → stays LISTENING', () => {
@@ -204,7 +174,7 @@ test('Invalid: LISTENING + STREAM_START → stays LISTENING', () => {
     makeSession({ state: VoiceState.LISTENING }),
     { type: 'STREAM_START' },
   );
-  assertEqual(s.state, VoiceState.LISTENING, 'state');
+  expect(s.state).toBe(VoiceState.LISTENING);
 });
 
 test('Invalid: SENDING + DRAW_START → stays SENDING', () => {
@@ -212,7 +182,7 @@ test('Invalid: SENDING + DRAW_START → stays SENDING', () => {
     makeSession({ state: VoiceState.SENDING }),
     { type: 'DRAW_START' },
   );
-  assertEqual(s.state, VoiceState.SENDING, 'state');
+  expect(s.state).toBe(VoiceState.SENDING);
 });
 
 // Full pipeline sequence
@@ -220,29 +190,29 @@ test('Full pipeline: IDLE → LISTENING → TRANSCRIBING → SENDING → STREAMI
   let s = makeSession();
 
   s = voiceTransition(s, { type: 'START_LISTENING' });
-  assertEqual(s.state, VoiceState.LISTENING, 'step 1');
+  expect(s.state).toBe(VoiceState.LISTENING);
 
   s = voiceTransition(s, { type: 'INTERIM_RESULT', transcript: 'draw' });
-  assertEqual(s.state, VoiceState.LISTENING, 'interim still listening');
-  assertEqual(s.interimTranscript, 'draw', 'interim text');
+  expect(s.state).toBe(VoiceState.LISTENING);
+  expect(s.interimTranscript).toBe('draw');
 
   s = voiceTransition(s, { type: 'FINAL_RESULT', transcript: 'draw a box', confidence: 0.92 });
-  assertEqual(s.state, VoiceState.TRANSCRIBING, 'step 2');
+  expect(s.state).toBe(VoiceState.TRANSCRIBING);
 
   s = voiceTransition(s, { type: 'SEND' });
-  assertEqual(s.state, VoiceState.SENDING, 'step 3');
+  expect(s.state).toBe(VoiceState.SENDING);
 
   s = voiceTransition(s, { type: 'STREAM_START' });
-  assertEqual(s.state, VoiceState.STREAMING, 'step 4');
+  expect(s.state).toBe(VoiceState.STREAMING);
 
   s = voiceTransition(s, { type: 'DRAW_START' });
-  assertEqual(s.state, VoiceState.DRAWING, 'step 5');
+  expect(s.state).toBe(VoiceState.DRAWING);
 
   s = voiceTransition(s, { type: 'SPEAK_START' });
-  assertEqual(s.state, VoiceState.SPEAKING, 'step 6');
+  expect(s.state).toBe(VoiceState.SPEAKING);
 
   s = voiceTransition(s, { type: 'SPEAK_COMPLETE' });
-  assertEqual(s.state, VoiceState.COMPLETE, 'step 7');
+  expect(s.state).toBe(VoiceState.COMPLETE);
 });
 
 // Message ordering test
@@ -255,26 +225,19 @@ test('Messages maintain ordering (USER before ASSISTANT)', () => {
     { id: '5', role: MessageRole.ASSISTANT, timestamp: 2001 },
   ];
 
-  // Verify timestamps are monotonically increasing
   for (let i = 1; i < messages.length; i++) {
-    assert(
-      messages[i]!.timestamp >= messages[i - 1]!.timestamp,
-      `Message ${messages[i]!.id} should be after ${messages[i - 1]!.id}`,
-    );
+    expect(messages[i]!.timestamp).toBeGreaterThanOrEqual(messages[i - 1]!.timestamp);
   }
 
-  // Verify USER always precedes its ASSISTANT response
-  assertEqual(messages[0]!.role, MessageRole.USER, 'first is USER');
-  assertEqual(messages[1]!.role, MessageRole.ASSISTANT, 'second is ASSISTANT');
+  expect(messages[0]!.role).toBe(MessageRole.USER);
+  expect(messages[1]!.role).toBe(MessageRole.ASSISTANT);
 });
 
 // Mode switching tests
 test('Mode switching clears to different mode', () => {
-  // This tests the logic - in the real hook, setProcessing(false) is called
   let currentMode = InteractionMode.TEXT;
   let processing = true;
 
-  // Simulate switchMode
   const switchMode = (newMode: InteractionMode) => {
     if (newMode === currentMode) return;
     processing = false;
@@ -282,8 +245,8 @@ test('Mode switching clears to different mode', () => {
   };
 
   switchMode(InteractionMode.VOICE);
-  assertEqual(currentMode, InteractionMode.VOICE, 'mode switched');
-  assertEqual(processing, false, 'processing cleared');
+  expect(currentMode).toBe(InteractionMode.VOICE);
+  expect(processing).toBe(false);
 });
 
 test('Mode switching is a no-op for same mode', () => {
@@ -297,10 +260,5 @@ test('Mode switching is a no-op for same mode', () => {
   };
 
   switchMode(InteractionMode.TEXT);
-  assertEqual(switchCalled, false, 'no switch for same mode');
+  expect(switchCalled).toBe(false);
 });
-
-// ── Summary ─────────────────────────────────────────────────────
-
-console.log(`\n── Results: ${passed} passed, ${failed} failed ──\n`);
-if (failed > 0) process.exit(1);

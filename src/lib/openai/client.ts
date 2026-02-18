@@ -33,9 +33,7 @@ function createClient(): OpenAI {
 let _client: OpenAI | null = null;
 
 export function getOpenAIClient(): OpenAI {
-  if (!_client) {
-    _client = createClient();
-  }
+  _client ??= createClient();
   return _client;
 }
 

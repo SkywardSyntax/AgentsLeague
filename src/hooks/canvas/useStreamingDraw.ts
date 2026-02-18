@@ -82,26 +82,24 @@ export function useStreamingDraw(
 
   // Lazily create controller
   const getController = useCallback((): StreamingDrawController => {
-    if (!controllerRef.current) {
-      controllerRef.current = new StreamingDrawController(
-        {
-          onFrame: (elements, progress) => {
-            setState((prev) => ({
-              ...prev,
-              visibleElements: elements,
-              progress,
-            }));
-          },
-          onFirstElement: (el) => onFirstElementRef.current?.(el),
-          onComplete: () => {
-            setState((prev) => ({ ...prev, isComplete: true, isStreaming: false }));
-            onCompleteRef.current?.();
-          },
-          onError: (err) => onErrorRef.current?.(err),
+    controllerRef.current ??= new StreamingDrawController(
+      {
+        onFrame: (elements, progress) => {
+          setState((prev) => ({
+            ...prev,
+            visibleElements: elements,
+            progress,
+          }));
         },
-        staggerMs !== undefined ? { staggerMs } : {},
-      );
-    }
+        onFirstElement: (el) => onFirstElementRef.current?.(el),
+        onComplete: () => {
+          setState((prev) => ({ ...prev, isComplete: true, isStreaming: false }));
+          onCompleteRef.current?.();
+        },
+        onError: (err) => onErrorRef.current?.(err),
+      },
+      staggerMs !== undefined ? { staggerMs } : {},
+    );
     return controllerRef.current;
   }, [staggerMs]);
 

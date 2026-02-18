@@ -31,10 +31,10 @@ export interface RateLimitResult {
   retryAfter?: number;
 }
 
-export async function rateLimit(
+export function rateLimit(
   key: string,
   opts: RateLimitOptions,
-): Promise<RateLimitResult> {
+): RateLimitResult {
   const now = Date.now();
   let entry = store.get(key);
 
