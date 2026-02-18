@@ -15,8 +15,12 @@ function getSystemPreference(): Theme {
 
 function getStoredPreference(): Theme | null {
   if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored === 'light' || stored === 'dark' ? stored : null;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === 'light' || stored === 'dark' ? stored : null;
+  } catch {
+    return null;
+  }
 }
 
 function resolveTheme(): Theme {
@@ -40,13 +44,20 @@ function getSnapshot(): Theme {
   return currentTheme;
 }
 
+// Cache server snapshot to prevent infinite loop with useSyncExternalStore
+const cachedServerSnapshot: Theme = 'light';
+
 function getServerSnapshot(): Theme {
-  return 'light';
+  return cachedServerSnapshot;
 }
 
 function setTheme(theme: Theme): void {
   currentTheme = theme;
-  localStorage.setItem(STORAGE_KEY, theme);
+  try {
+    localStorage.setItem(STORAGE_KEY, theme);
+  } catch {
+    // Storage unavailable (private browsing, quota exceeded, etc.)
+  }
   applyTheme(theme);
   listeners.forEach((l) => l());
 }

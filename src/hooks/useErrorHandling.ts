@@ -62,8 +62,11 @@ function getSnapshot(): readonly Toast[] {
   return toasts;
 }
 
+// Cache server snapshot to prevent infinite loop with useSyncExternalStore
+const cachedServerSnapshot: readonly Toast[] = [] as const;
+
 function getServerSnapshot(): readonly Toast[] {
-  return [] as const;
+  return cachedServerSnapshot;
 }
 
 function addToast(toast: Toast): void {
