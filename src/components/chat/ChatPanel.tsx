@@ -98,12 +98,12 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
 
 function TypingIndicator() {
   return (
-    <div className="flex justify-start mb-3 mx-3 sm:mx-4 animate-fade-in">
+    <div className="flex justify-start mb-3 mx-3 sm:mx-4 animate-fade-in" role="status" aria-label="AI is typing">
       <div className="bg-surface-raised rounded-2xl rounded-bl-md px-4 py-3 shadow-xs">
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-content-tertiary animate-ai-thinking" />
-          <span className="w-1.5 h-1.5 rounded-full bg-content-tertiary animate-ai-thinking" style={{ animationDelay: '0.2s' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-content-tertiary animate-ai-thinking" style={{ animationDelay: '0.4s' }} />
+          <span className="w-1.5 h-1.5 rounded-full bg-content-tertiary animate-ai-thinking" aria-hidden="true" />
+          <span className="w-1.5 h-1.5 rounded-full bg-content-tertiary animate-ai-thinking" aria-hidden="true" style={{ animationDelay: '0.2s' }} />
+          <span className="w-1.5 h-1.5 rounded-full bg-content-tertiary animate-ai-thinking" aria-hidden="true" style={{ animationDelay: '0.4s' }} />
         </div>
       </div>
     </div>
@@ -127,7 +127,7 @@ function DrawingProgress() {
   };
 
   return (
-    <div className="mx-3 sm:mx-4 mb-3 animate-slide-up">
+    <div className="mx-3 sm:mx-4 mb-3 animate-slide-up" role="status" aria-label={statusLabel[drawingState.status] ?? drawingState.status}>
       <div className="rounded-lg border border-ai/20 bg-ai-subtle px-3 py-2.5">
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-ai text-sm">✦</span>
@@ -239,14 +239,15 @@ function MessageBubble({
   // ── REASONING: collapsible section
   if (isReasoning) {
     return (
-      <div className="mx-3 sm:mx-4 mb-2 animate-fade-in">
+      <div className="mx-3 sm:mx-4 mb-2 animate-fade-in" role="group" aria-label="AI reasoning">
         <button
           onClick={() => setReasoningOpen(!reasoningOpen)}
           className="flex items-center gap-1.5 text-sm text-content-tertiary hover:text-content-secondary transition-colors duration-fast group/reason"
           type="button"
           aria-expanded={reasoningOpen}
+          aria-controls={`reasoning-${message.id}`}
         >
-          <span className="text-warning">💡</span>
+          <span className="text-warning" aria-hidden="true">💡</span>
           <span className="font-medium">Reasoning</span>
           {message.reasoning?.confidence != null && (
             <span className="text-xs text-content-tertiary">
@@ -264,7 +265,12 @@ function MessageBubble({
           </svg>
         </button>
         {reasoningOpen && (
-          <div className="mt-1.5 ml-6 p-3 bg-warning/5 rounded-lg text-sm text-content-secondary border border-warning/20 animate-scale-in">
+          <div
+            id={`reasoning-${message.id}`}
+            className="mt-1.5 ml-6 p-3 bg-warning/5 rounded-lg text-sm text-content-secondary border border-warning/20 animate-scale-in"
+            role="region"
+            aria-label="Reasoning steps"
+          >
             {message.content.split('\n').map((step, i) => (
               <p key={i} className={i < message.content.split('\n').length - 1 ? 'mb-1.5' : ''}>
                 <span className="text-content-tertiary mr-1.5 text-xs">{i + 1}.</span>
@@ -295,6 +301,8 @@ function MessageBubble({
     <div
       className={`group flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 mx-3 sm:mx-4 animate-slide-up`}
       style={{ animationDuration: '300ms' }}
+      role="article"
+      aria-label={`${isUser ? 'You' : isAssistant ? 'Assistant' : 'System'}: ${message.content || 'Loading...'}`}
     >
       <div className={`max-w-[85%] sm:max-w-[80%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
         {/* Bubble */}
@@ -307,7 +315,7 @@ function MessageBubble({
         >
           {/* Voice badge */}
           {message.source === InteractionMode.VOICE && (
-            <span className="inline-block mr-1 text-xs opacity-60" title="Voice input">🎤</span>
+            <span className="inline-block mr-1 text-xs opacity-60" title="Voice input" aria-label="From voice input">🎤</span>
           )}
 
           {/* Content */}
@@ -365,10 +373,10 @@ function MessageText({ text }: { text: string }) {
 
 function TypingDots() {
   return (
-    <span className="inline-flex items-center gap-1">
-      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40 animate-ai-thinking" />
-      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40 animate-ai-thinking" style={{ animationDelay: '0.2s' }} />
-      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40 animate-ai-thinking" style={{ animationDelay: '0.4s' }} />
+    <span className="inline-flex items-center gap-1" role="status" aria-label="Loading response">
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40 animate-ai-thinking" aria-hidden="true" />
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40 animate-ai-thinking" aria-hidden="true" style={{ animationDelay: '0.2s' }} />
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40 animate-ai-thinking" aria-hidden="true" style={{ animationDelay: '0.4s' }} />
     </span>
   );
 }
@@ -377,7 +385,7 @@ function TypingDots() {
 
 function ModeToggle({ mode, onSwitch }: { mode: InteractionMode; onSwitch: (m: InteractionMode) => void }) {
   return (
-    <div className="flex rounded-lg border border-border overflow-hidden text-sm">
+    <div className="flex rounded-lg border border-border overflow-hidden text-sm" role="radiogroup" aria-label="Input mode">
       <button
         onClick={() => onSwitch(InteractionMode.TEXT)}
         className={`px-3 py-1.5 transition-colors duration-fast font-medium ${
@@ -386,7 +394,9 @@ function ModeToggle({ mode, onSwitch }: { mode: InteractionMode; onSwitch: (m: I
             : 'bg-surface text-content-secondary hover:bg-surface-raised'
         }`}
         type="button"
-        aria-pressed={mode === InteractionMode.TEXT}
+        role="radio"
+        aria-checked={mode === InteractionMode.TEXT}
+        aria-label="Text input mode"
       >
         Text
       </button>
@@ -398,9 +408,11 @@ function ModeToggle({ mode, onSwitch }: { mode: InteractionMode; onSwitch: (m: I
             : 'bg-surface text-content-secondary hover:bg-surface-raised'
         }`}
         type="button"
-        aria-pressed={mode === InteractionMode.VOICE}
+        role="radio"
+        aria-checked={mode === InteractionMode.VOICE}
+        aria-label="Voice input mode"
       >
-        🎤 Voice
+        <span aria-hidden="true">🎤</span> Voice
       </button>
     </div>
   );
@@ -412,12 +424,17 @@ const WAVEFORM_HEIGHTS = [28, 14, 22, 30, 18, 24, 12, 26, 20, 16, 29, 11, 23, 27
 
 function WaveformVisualizer() {
   return (
-    <div className="flex items-center justify-center gap-0.5 h-8 px-4">
+    <div
+      className="flex items-center justify-center gap-0.5 h-8 px-4"
+      role="status"
+      aria-label="Listening for voice input"
+    >
       {WAVEFORM_HEIGHTS.map((h, i) => (
         <div
           key={i}
           className="w-1 bg-error rounded-full animate-pulse"
           style={{ height: `${h}px`, animationDelay: `${i * 0.05}s` }}
+          aria-hidden="true"
         />
       ))}
     </div>
@@ -570,8 +587,10 @@ export function ChatPanel() {
       {/* ── Input area ─────────────────────────────────────── */}
       <div className="border-t border-border-subtle p-2 sm:p-3 bg-surface">
         {mode === InteractionMode.TEXT ? (
-          <form onSubmit={onSubmit} className="flex gap-2 items-end">
+          <form onSubmit={onSubmit} className="flex gap-2 items-end" aria-label="Chat message form">
+            <label htmlFor="chat-input" className="sr-only">Message</label>
             <textarea
+              id="chat-input"
               ref={textareaRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
