@@ -156,7 +156,7 @@ function HomeContent() {
       >
         <ErrorBoundary
           fallback={
-            <div className="flex h-full w-full items-center justify-center bg-[var(--color-canvas-bg)] text-[var(--color-text-secondary)]">
+            <div className="flex h-full w-full items-center justify-center bg-canvas text-content-secondary">
               <p>Canvas failed to load. Please refresh.</p>
             </div>
           }

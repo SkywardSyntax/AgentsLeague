@@ -30,15 +30,15 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         this.props.fallback ?? (
-          <div className="flex h-screen w-screen items-center justify-center bg-[var(--color-background)] text-[var(--color-text-primary)]" role="alert">
+          <div className="flex h-screen w-screen items-center justify-center bg-canvas text-content-primary" role="alert">
             <div className="text-center space-y-4">
               <h1 className="text-2xl font-semibold">Something went wrong</h1>
-              <p className="text-[var(--color-text-secondary)]">
+              <p className="text-content-secondary">
                 {this.state.error?.message ?? 'An unexpected error occurred.'}
               </p>
               <button
                 onClick={() => this.setState({ hasError: false, error: null })}
-                className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white cursor-pointer hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2"
+                className="px-4 py-2 rounded-lg bg-accent text-content-inverse cursor-pointer hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
                 aria-label="Try again — reload the application"
               >
                 Try again

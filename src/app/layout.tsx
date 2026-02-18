@@ -39,7 +39,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${caveat.variable}`}>
-      <body className="h-screen w-screen overflow-hidden m-0 p-0 bg-[var(--color-background)] text-[var(--color-text-primary)] font-[var(--font-inter)]">
+      <body className="h-screen w-screen overflow-hidden m-0 p-0 bg-canvas text-content-primary font-[var(--font-inter)]">
         <a href="#main-content" className="skip-link">
           Skip to main content
         </a>

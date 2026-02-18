@@ -480,7 +480,7 @@ export default function WhiteboardCanvas({
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-hidden bg-[var(--color-canvas-bg)]"
+      className="relative h-full w-full overflow-hidden bg-canvas"
       style={containerStyle}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
