@@ -9,3 +9,12 @@ export {
   renderText,
   renderImage,
 } from './shape-renderers';
+export {
+  renderHandwrittenText,
+  createSeededRandom,
+  hashText,
+  getCharacterPositions,
+  renderAccessibleOverlay,
+  wrapText,
+} from './shape-renderers/text';
+export type { HandwrittenTextStyle } from './shape-renderers/text';
