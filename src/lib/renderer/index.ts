@@ -1,4 +1,6 @@
 export { WhiteboardRenderer } from './WhiteboardRenderer';
+export { CanvasPerformanceMonitor } from './CanvasPerformanceMonitor';
+export type { PerformanceReport, WebVitals, RenderStats } from './CanvasPerformanceMonitor';
 export { parseColor, applyBaseStyle, resetStyle, applyVendorPrefixes } from './StyleManager';
 export {
   renderRect,

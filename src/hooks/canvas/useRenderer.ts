@@ -8,7 +8,7 @@ import { WhiteboardRenderer } from '@/lib/renderer/WhiteboardRenderer';
  *
  * - Tracks canvas ref and creates renderer on mount
  * - Resizes on window resize and DPR changes
- * - Exposes render() and clear() methods
+ * - Exposes render(), clear(), and logPerformance() methods
  */
 export function useRenderer(
   canvasRef: RefObject<HTMLCanvasElement | null>,
@@ -60,5 +60,9 @@ export function useRenderer(
     rendererRef.current?.clear();
   }, []);
 
-  return { rendererRef, render, clear } as const;
+  const logPerformance = useCallback(() => {
+    rendererRef.current?.perfMonitor.logReport();
+  }, []);
+
+  return { rendererRef, render, clear, logPerformance } as const;
 }

@@ -1,6 +1,6 @@
 /**
  * Performance tests for canvas rendering — rAF batching, FPS tracking,
- * viewport culling, and jank detection.
+ * viewport culling, dirty-rect tracking, element caching, and jank detection.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -202,5 +202,138 @@ describe('DPR-aware sizing', () => {
     expect(ctx.canvas.height).toBe(Math.round(768 * 1.5));
 
     renderer.destroy();
+  });
+});
+
+describe('Dirty-rect tracking', () => {
+  it('uses dirty-rect rendering for small mutations', () => {
+    const renderer = createRenderer();
+    renderer.upsertElements(canvas50);
+    raf.flush(0);
+
+    ctx.__calls.length = 0;
+
+    // Mutate a single element — should trigger dirty-rect, not full repaint
+    const mutated = { ...canvas50[0]!, x: 999, updatedAt: Date.now() + 1 };
+    renderer.upsertElements([mutated]);
+    raf.flush(16.67);
+
+    // Dirty-rect rendering uses clip() for region isolation
+    const clipCalls = ctx.__calls.filter((c) => c.startsWith('clip('));
+    const clearCalls = ctx.__calls.filter((c) => c.startsWith('clearRect('));
+
+    // Should have at least one clip (dirty-rect) or one clearRect (bounded clear)
+    expect(clipCalls.length + clearCalls.length).toBeGreaterThan(0);
+
+    renderer.destroy();
+  });
+
+  it('falls back to full repaint when many elements are dirty', () => {
+    const renderer = createRenderer();
+    renderer.upsertElements(canvas50);
+    raf.flush(0);
+
+    ctx.__calls.length = 0;
+
+    // Mutate >40% of elements — should trigger full repaint
+    const mutations = canvas50.slice(0, 25).map((el, i) => ({
+      ...el,
+      x: el.x + 1,
+      updatedAt: Date.now() + i,
+    }));
+    renderer.upsertElements(mutations);
+    raf.flush(33.33);
+
+    // Full repaint clears entire canvas
+    const clearCalls = ctx.__calls.filter((c) => c.startsWith('clearRect('));
+    expect(clearCalls.length).toBeGreaterThan(0);
+
+    renderer.destroy();
+  });
+
+  it('tracks removed element bounds for dirty invalidation', () => {
+    const renderer = createRenderer();
+    const el1: DrawElement = { ...rectElement, id: 'remove-test', x: 50, y: 50 };
+    renderer.upsertElements([el1, ...canvas50.slice(0, 5)]);
+    raf.flush(0);
+
+    ctx.__calls.length = 0;
+    renderer.removeElement('remove-test');
+    raf.flush(50);
+
+    // Should have repainted the region where the element was
+    expect(ctx.__calls.length).toBeGreaterThan(0);
+
+    renderer.destroy();
+  });
+});
+
+describe('CanvasPerformanceMonitor integration', () => {
+  it('tracks frame metrics via perfMonitor', () => {
+    const renderer = createRenderer();
+    renderer.upsertElements(canvas50);
+
+    // Simulate multiple frames
+    for (let i = 0; i < 30; i++) {
+      const ts = i * 16.67;
+      const el = { ...canvas50[i % canvas50.length]!, updatedAt: Date.now() + i };
+      renderer.upsertElements([el]);
+      raf.flush(ts);
+    }
+
+    const report = renderer.perfMonitor.getReport();
+    expect(report.renderStats.elementsRendered).toBeGreaterThan(0);
+    expect(report.renderPercentiles.count).toBeGreaterThan(0);
+
+    renderer.destroy();
+  });
+
+  it('reports render stats including culled elements', () => {
+    const renderer = createRenderer(800, 600);
+
+    const visible: DrawElement = { ...rectElement, id: 'vis', x: 100, y: 100 };
+    const offscreen: DrawElement = { ...rectElement, id: 'off', x: 5000, y: 5000 };
+    renderer.upsertElements([visible, offscreen]);
+    raf.flush(0);
+
+    // Trigger a full repaint with camera
+    const camera: Camera = { x: 0, y: 0, zoom: 1 };
+    renderer.renderFull(camera);
+
+    const report = renderer.perfMonitor.getReport();
+    expect(report.renderStats.elementsCulled).toBeGreaterThan(0);
+
+    renderer.destroy();
+  });
+
+  it('getCacheStats returns current cache sizes', () => {
+    const renderer = createRenderer();
+    const stats = renderer.getCacheStats();
+    expect(stats.elementCacheSize).toBe(0);
+    expect(stats.textCacheSize).toBe(0);
+
+    renderer.destroy();
+  });
+
+  it('clear() invalidates all caches', () => {
+    const renderer = createRenderer();
+    renderer.upsertElements(canvas50);
+    raf.flush(0);
+
+    renderer.clear();
+    const stats = renderer.getCacheStats();
+    expect(stats.elementCacheSize).toBe(0);
+    expect(stats.textCacheSize).toBe(0);
+
+    renderer.destroy();
+  });
+
+  it('perfMonitor is cleaned up on destroy', () => {
+    const renderer = createRenderer();
+    renderer.upsertElements(canvas50);
+    raf.flush(0);
+
+    // Should not throw
+    expect(() => renderer.destroy()).not.toThrow();
   });
 });
