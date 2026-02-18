@@ -7,10 +7,10 @@ const config: Config = {
     extend: {
       // ── Typography ──────────────────────────────────────────
       fontFamily: {
-        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
-        display: ["Inter Display", "Inter", "system-ui", "sans-serif"],
+        sans: ["var(--font-inter)", "system-ui", "-apple-system", "sans-serif"],
+        display: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
-        hand: ["Caveat", "cursive"],
+        hand: ["var(--font-caveat)", "cursive"],
       },
       fontSize: {
         xs: ["0.6875rem", { lineHeight: "1rem" }],       // 11px
