@@ -104,7 +104,7 @@ export default function TextInput({ onSubmit, disabled = false }: TextInputProps
             type="button"
             onClick={handleClear}
             aria-label="Clear input"
-            className="absolute right-2 top-2.5 flex h-5 w-5 items-center justify-center rounded text-[hsl(var(--color-text-tertiary))] transition-colors duration-[120ms] hover:text-[hsl(var(--color-text-primary))]"
+            className="absolute right-1 top-1.5 flex h-7 w-7 items-center justify-center rounded text-[hsl(var(--color-text-tertiary))] transition-colors duration-[120ms] hover:text-[hsl(var(--color-text-primary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))]"
           >
             <svg
               width="14"

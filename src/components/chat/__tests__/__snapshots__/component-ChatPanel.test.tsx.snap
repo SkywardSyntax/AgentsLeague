@@ -5,7 +5,7 @@ exports[`ChatPanel > rendering > snapshot matches empty state 1`] = `
   class="flex flex-col h-full w-full bg-surface border-r border-border-subtle"
 >
   <div
-    class="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle backdrop-blur-toolbar sm:px-4 sm:py-3"
+    class="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle bg-surface/80 backdrop-blur-toolbar sm:px-4 sm:py-3"
   >
     <h2
       class="text-sm font-semibold text-content-primary tracking-snug sm:text-base"
@@ -45,14 +45,14 @@ exports[`ChatPanel > rendering > snapshot matches empty state 1`] = `
   <div
     aria-label="Chat messages"
     aria-live="polite"
-    class="flex-1 overflow-y-auto overscroll-contain py-4 scroll-smooth"
+    class="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-3 pb-4"
     role="log"
   >
     <div
-      class="flex flex-col items-center justify-center h-full text-center px-6 animate-fade-in"
+      class="flex flex-col items-center justify-center h-full text-center px-4 animate-fade-in"
     >
       <div
-        class="w-12 h-12 rounded-2xl bg-ai-subtle flex items-center justify-center mb-3"
+        class="w-12 h-12 rounded-2xl bg-ai-subtle flex items-center justify-center mb-4"
       >
         <span
           class="text-ai text-xl"
@@ -73,7 +73,7 @@ exports[`ChatPanel > rendering > snapshot matches empty state 1`] = `
     </div>
   </div>
   <div
-    class="border-t border-border-subtle p-2 sm:p-3 bg-surface"
+    class="border-t border-border-subtle px-3 py-2 sm:px-4 sm:py-3 bg-surface"
   >
     <form
       aria-label="Chat message form"
@@ -94,7 +94,8 @@ exports[`ChatPanel > rendering > snapshot matches empty state 1`] = `
         style="height: 0px;"
       />
       <button
-        class="min-h-[44px] min-w-[44px] rounded-lg bg-accent px-3 py-2 text-sm font-medium text-content-inverse hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-fast"
+        aria-label="Send message"
+        class="min-h-[44px] min-w-[44px] rounded-lg bg-accent px-3 py-2 text-sm font-medium text-content-inverse hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
         disabled=""
         type="submit"
       >

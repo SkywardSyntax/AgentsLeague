@@ -18,7 +18,7 @@ export default function ChatPanel() {
         <h2 className="text-sm font-semibold sm:text-base">Chat</h2>
         <button
           onClick={() => setIsOpen(false)}
-          className="min-h-[44px] min-w-[44px] rounded-lg p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          className="min-h-[44px] min-w-[44px] rounded-lg p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1"
           aria-label="Close chat panel"
         >
           <span aria-hidden="true">✕</span>

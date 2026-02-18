@@ -469,6 +469,7 @@ export default function WhiteboardCanvas({
       onWheel={handleWheel}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
+      tabIndex={0}
       role="application"
       aria-label="Interactive whiteboard canvas. Use toolbar to select drawing tools."
       aria-roledescription="whiteboard"

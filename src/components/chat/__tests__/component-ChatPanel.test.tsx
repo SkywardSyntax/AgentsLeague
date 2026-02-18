@@ -284,7 +284,7 @@ describe('ChatPanel', () => {
 
     it('disables send button when input is empty', () => {
       renderChatPanel();
-      const sendBtn = screen.getByRole('button', { name: 'Send' });
+      const sendBtn = screen.getByRole('button', { name: 'Send message' });
       expect(sendBtn.hasAttribute('disabled')).toBe(true);
     });
 
@@ -292,7 +292,7 @@ describe('ChatPanel', () => {
       renderChatPanel();
       const textarea = screen.getByLabelText('Message input');
       fireEvent.change(textarea, { target: { value: 'Hello' } });
-      const sendBtn = screen.getByRole('button', { name: 'Send' });
+      const sendBtn = screen.getByRole('button', { name: 'Send message' });
       expect(sendBtn.hasAttribute('disabled')).toBe(false);
     });
 

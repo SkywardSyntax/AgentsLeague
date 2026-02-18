@@ -174,11 +174,11 @@ function MessageActions({
   onCopy: () => void;
 }) {
   return (
-    <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-fast">
+    <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-fast">
       <button
         type="button"
         onClick={onCopy}
-        className="px-1.5 py-0.5 rounded-sm text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-raised transition-colors duration-fast"
+        className="px-1.5 py-0.5 rounded-sm text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-raised transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         aria-label="Copy message"
         title="Copy"
       >
@@ -188,7 +188,7 @@ function MessageActions({
         <button
           type="button"
           onClick={onRegenerate}
-          className="px-1.5 py-0.5 rounded-sm text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-raised transition-colors duration-fast"
+          className="px-1.5 py-0.5 rounded-sm text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-raised transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-label="Regenerate response"
           title="Regenerate"
         >
@@ -198,7 +198,7 @@ function MessageActions({
       <button
         type="button"
         onClick={onDelete}
-        className="px-1.5 py-0.5 rounded-sm text-xs text-content-tertiary hover:text-error hover:bg-surface-raised transition-colors duration-fast"
+        className="px-1.5 py-0.5 rounded-sm text-xs text-content-tertiary hover:text-error hover:bg-surface-raised transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         aria-label="Delete message"
         title="Delete"
       >
@@ -528,7 +528,7 @@ export function ChatPanel() {
   return (
     <div className="flex flex-col h-full w-full bg-surface border-r border-border-subtle">
       {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle backdrop-blur-toolbar sm:px-4 sm:py-3">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle bg-surface/80 backdrop-blur-toolbar sm:px-4 sm:py-3">
         <h2 className="text-sm font-semibold text-content-primary tracking-snug sm:text-base">Chat</h2>
         <ModeToggle mode={mode} onSwitch={switchMode} />
       </div>
@@ -536,15 +536,15 @@ export function ChatPanel() {
       {/* ── Message list ───────────────────────────────────── */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto overscroll-contain py-4 scroll-smooth"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-3 pb-4"
         role="log"
         aria-label="Chat messages"
         aria-live="polite"
       >
         {/* Empty state */}
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6 animate-fade-in">
-            <div className="w-12 h-12 rounded-2xl bg-ai-subtle flex items-center justify-center mb-3">
+          <div className="flex flex-col items-center justify-center h-full text-center px-4 animate-fade-in">
+            <div className="w-12 h-12 rounded-2xl bg-ai-subtle flex items-center justify-center mb-4">
               <span className="text-ai text-xl">✦</span>
             </div>
             <p className="text-sm text-content-secondary font-medium mb-1">
@@ -586,7 +586,7 @@ export function ChatPanel() {
       )}
 
       {/* ── Input area ─────────────────────────────────────── */}
-      <div className="border-t border-border-subtle p-2 sm:p-3 bg-surface">
+      <div className="border-t border-border-subtle px-3 py-2 sm:px-4 sm:py-3 bg-surface">
         {mode === InteractionMode.TEXT ? (
           <form onSubmit={onSubmit} className="flex gap-2 items-end" aria-label="Chat message form">
             <label htmlFor="chat-input" className="sr-only">Message</label>
@@ -606,7 +606,8 @@ export function ChatPanel() {
               <button
                 type="button"
                 onClick={stopStream}
-                className="min-h-[44px] min-w-[44px] rounded-lg bg-error px-3 py-2 text-sm font-medium text-content-inverse hover:opacity-90 transition-opacity duration-fast"
+                className="min-h-[44px] min-w-[44px] rounded-lg bg-error px-3 py-2 text-sm font-medium text-content-inverse hover:opacity-90 transition-opacity duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error focus-visible:ring-offset-1"
+                aria-label="Stop generating response"
               >
                 Stop
               </button>
@@ -614,7 +615,8 @@ export function ChatPanel() {
               <button
                 type="submit"
                 disabled={!inputValue.trim() || isProcessing}
-                className="min-h-[44px] min-w-[44px] rounded-lg bg-accent px-3 py-2 text-sm font-medium text-content-inverse hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-fast"
+                className="min-h-[44px] min-w-[44px] rounded-lg bg-accent px-3 py-2 text-sm font-medium text-content-inverse hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
+                aria-label="Send message"
               >
                 Send
               </button>
@@ -626,7 +628,7 @@ export function ChatPanel() {
               type="button"
               onClick={isListening ? stopListening : startListening}
               disabled={!isSupported || (isProcessing && !isListening)}
-              className={`w-12 h-12 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-xl transition-all duration-normal ${
+              className={`w-12 h-12 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-xl transition-all duration-normal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ${
                 isListening
                   ? 'bg-error text-content-inverse animate-pulse shadow-lg'
                   : 'bg-surface-raised text-content-secondary hover:bg-surface-sunken'
@@ -640,7 +642,8 @@ export function ChatPanel() {
               <button
                 type="button"
                 onClick={cancel}
-                className="min-h-[44px] rounded-lg px-3 py-1.5 text-sm text-content-tertiary hover:text-content-primary hover:bg-surface-raised transition-colors duration-fast"
+                className="min-h-[44px] rounded-lg px-3 py-1.5 text-sm text-content-tertiary hover:text-content-primary hover:bg-surface-raised transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
+                aria-label="Cancel voice input"
               >
                 Cancel
               </button>

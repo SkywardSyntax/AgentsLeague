@@ -154,6 +154,7 @@ export default function TextOverlay() {
             tabIndex={isEditing ? 0 : -1}
             aria-label={el.content || 'Empty text'}
             aria-readonly={!isEditing}
+            aria-multiline="true"
             contentEditable={isEditing}
             suppressContentEditableWarning
             onDoubleClick={() => handleDoubleClick(el.id)}
