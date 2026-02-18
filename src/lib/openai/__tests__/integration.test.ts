@@ -43,7 +43,7 @@ describe('OpenAI mock client integration', () => {
     const client = createMockOpenAIClient();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const stream = await client.responses.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       input: 'Draw a rectangle',
       tools: [],
     });
@@ -61,7 +61,7 @@ describe('OpenAI mock client integration', () => {
     const client = createMockOpenAIClient();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const stream = await client.responses.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       input: 'Draw a rectangle',
       tools: [],
     });
@@ -88,7 +88,7 @@ describe('OpenAI mock client integration', () => {
     const client = createMockOpenAIClient();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const stream = await client.responses.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       input: 'Draw a rectangle',
       tools: [],
     });

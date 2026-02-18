@@ -278,7 +278,7 @@ describe('Integration: Error Handling & Retry', () => {
       ];
 
       const client = createMockOpenAIClient(events);
-      const stream = client.responses.create({ model: 'gpt-4o', input: 'test' }) as unknown as AsyncIterable<MockOpenAIStreamEvent>;
+      const stream = client.responses.create({ model: 'gpt-5.2', input: 'test' }) as unknown as AsyncIterable<MockOpenAIStreamEvent>;
 
       const collected: MockOpenAIStreamEvent[] = [];
       for await (const event of stream) {
@@ -296,7 +296,7 @@ describe('Integration: Error Handling & Retry', () => {
         { type: 'response.completed' },
       ]);
 
-      const stream = client.responses.create({ model: 'gpt-4o', input: 'test' }) as unknown as AsyncIterable<MockOpenAIStreamEvent>;
+      const stream = client.responses.create({ model: 'gpt-5.2', input: 'test' }) as unknown as AsyncIterable<MockOpenAIStreamEvent>;
       const collected: MockOpenAIStreamEvent[] = [];
       for await (const event of stream) {
         collected.push(event);

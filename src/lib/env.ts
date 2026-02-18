@@ -8,9 +8,9 @@ const envSchema = z.object({
     .refine((k) => k !== "sk-proj-your-key-here", "Replace placeholder API key"),
 
   // ── Model ──
-  OPENAI_MODEL: z.string().default("gpt-4o"),
-  OPENAI_FALLBACK_MODEL: z.string().default("gpt-4o-mini"),
-  OPENAI_REASONING_MODEL: z.string().default("o4-mini"),
+  OPENAI_MODEL: z.string().default("gpt-5.2"),
+  OPENAI_FALLBACK_MODEL: z.string().default("gpt-5.2"),
+  OPENAI_REASONING_MODEL: z.string().default("gpt-5.2"),
 
   // ── Generation ──
   OPENAI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.3),

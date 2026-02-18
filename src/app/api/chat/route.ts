@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY!, timeout: 60_000 });
     const stream = await client.responses.create(
       {
-        model: process.env.OPENAI_MODEL ?? 'claude-opus-4.6-fast',
+        model: process.env.OPENAI_MODEL ?? 'gpt-5.2',
         instructions: CHAT_SYSTEM_PROMPT,
         input,
         stream: true,

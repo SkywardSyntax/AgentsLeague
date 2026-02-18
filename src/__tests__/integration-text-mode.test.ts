@@ -293,7 +293,7 @@ describe('Integration: Text Mode Full Flow', () => {
 
   it('processes mock OpenAI streaming events end-to-end', async () => {
     const client = createMockOpenAIClient();
-    const stream = client.responses.create({ model: 'gpt-4o', input: 'test' }) as unknown as AsyncIterable<Record<string, unknown>>;
+    const stream = client.responses.create({ model: 'gpt-5.2', input: 'test' }) as unknown as AsyncIterable<Record<string, unknown>>;
 
     const events: Record<string, unknown>[] = [];
     for await (const event of stream) {

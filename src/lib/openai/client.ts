@@ -11,10 +11,7 @@ import { env } from '@/lib/env';
 // ── Valid models for whiteboard drawing ─────────────────────────────
 
 const SUPPORTED_MODELS = [
-  'gpt-4o',
-  'gpt-4o-mini',
-  'gpt-4.1',
-  'o4-mini',
+  'gpt-5.2',
 ] as const;
 
 export type SupportedModel = (typeof SUPPORTED_MODELS)[number];
@@ -54,14 +51,14 @@ export function validateModel(model: string): SupportedModel {
 
 /** Select model based on prompt complexity heuristic. */
 export function selectModel(prompt: string, hasImage: boolean): SupportedModel {
-  if (hasImage) return 'gpt-4o';
+  if (hasImage) return 'gpt-5.2';
 
   const complexKeywords = ['flowchart', 'diagram', 'layout', 'architecture', 'complex', 'organize'];
   const isComplex = complexKeywords.some((k) => prompt.toLowerCase().includes(k));
   if (isComplex) return env.OPENAI_REASONING_MODEL as SupportedModel;
 
   const len = prompt.length;
-  if (len < 80) return 'gpt-4o-mini';
+  if (len < 80) return 'gpt-5.2';
 
   return env.OPENAI_MODEL as SupportedModel;
 }
