@@ -1,0 +1,181 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ModeToggle > rendering > snapshot matches text mode 1`] = `
+<div
+  aria-label="Interaction mode"
+  class="relative flex h-8 w-[152px] rounded-full bg-[var(--color-surface-raised)] p-0.5 text-xs font-medium shadow-inner transition-colors duration-150"
+  role="radiogroup"
+>
+  <span
+    aria-hidden="true"
+    class="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-[var(--color-accent)] shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+    style="transform: translateX(0);"
+  />
+  <button
+    aria-checked="true"
+    aria-label="Text mode"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-white"
+    role="radio"
+    tabindex="0"
+    type="button"
+  >
+    <svg
+      aria-hidden="true"
+      class="shrink-0"
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <rect
+        height="16"
+        rx="2"
+        width="20"
+        x="2"
+        y="4"
+      />
+      <path
+        d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"
+      />
+    </svg>
+    <span>
+      Text
+    </span>
+  </button>
+  <button
+    aria-checked="false"
+    aria-label="Voice mode"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+    role="radio"
+    tabindex="-1"
+    type="button"
+  >
+    <svg
+      aria-hidden="true"
+      class="shrink-0"
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <rect
+        height="12"
+        rx="3"
+        width="6"
+        x="9"
+        y="2"
+      />
+      <path
+        d="M5 10a7 7 0 0 0 14 0"
+      />
+      <line
+        x1="12"
+        x2="12"
+        y1="19"
+        y2="22"
+      />
+    </svg>
+    <span>
+      Voice
+    </span>
+  </button>
+</div>
+`;
+
+exports[`ModeToggle > rendering > snapshot matches voice mode 1`] = `
+<div
+  aria-label="Interaction mode"
+  class="relative flex h-8 w-[152px] rounded-full bg-[var(--color-surface-raised)] p-0.5 text-xs font-medium shadow-inner transition-colors duration-150"
+  role="radiogroup"
+>
+  <span
+    aria-hidden="true"
+    class="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-[var(--color-accent)] shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+    style="transform: translateX(calc(100% - 2px));"
+  />
+  <button
+    aria-checked="false"
+    aria-label="Text mode"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+    role="radio"
+    tabindex="-1"
+    type="button"
+  >
+    <svg
+      aria-hidden="true"
+      class="shrink-0"
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <rect
+        height="16"
+        rx="2"
+        width="20"
+        x="2"
+        y="4"
+      />
+      <path
+        d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"
+      />
+    </svg>
+    <span>
+      Text
+    </span>
+  </button>
+  <button
+    aria-checked="true"
+    aria-label="Voice mode"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-white"
+    role="radio"
+    tabindex="0"
+    type="button"
+  >
+    <svg
+      aria-hidden="true"
+      class="shrink-0"
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <rect
+        height="12"
+        rx="3"
+        width="6"
+        x="9"
+        y="2"
+      />
+      <path
+        d="M5 10a7 7 0 0 0 14 0"
+      />
+      <line
+        x1="12"
+        x2="12"
+        y1="19"
+        y2="22"
+      />
+    </svg>
+    <span>
+      Voice
+    </span>
+  </button>
+</div>
+`;
