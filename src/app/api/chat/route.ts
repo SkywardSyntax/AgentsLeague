@@ -7,6 +7,7 @@
  *   - { type: "error", code, message }
  */
 
+import { randomUUID } from 'crypto';
 import OpenAI from 'openai';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
 import {
@@ -42,7 +43,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   input.push({ role: 'user', content: userMessage });
 
-  const requestId = crypto.randomUUID();
+  const requestId = randomUUID();
   logRequest(requestId, request, '/api/chat');
   const signal = createAbortSignal(30_000);
 
@@ -50,11 +51,10 @@ export async function POST(request: Request): Promise<Response> {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY!, timeout: 60_000 });
     const stream = await client.responses.create(
       {
-        model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+        model: process.env.OPENAI_MODEL ?? 'claude-opus-4.6-fast',
         instructions: CHAT_SYSTEM_PROMPT,
         input,
         stream: true,
-        store: true,
         temperature: 0.7,
         max_output_tokens: 4_096,
       },

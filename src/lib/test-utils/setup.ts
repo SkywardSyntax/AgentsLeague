@@ -69,7 +69,7 @@ if (typeof globalThis.cancelAnimationFrame !== 'function') {
 // ── Mock environment variables for tests ────────────────────────────
 
 process.env.OPENAI_API_KEY = 'sk-test-fake-key-for-testing-only';
-process.env.OPENAI_MODEL = 'gpt-4o';
+process.env.OPENAI_MODEL = 'claude-opus-4.6-fast';
 process.env.OPENAI_FALLBACK_MODEL = 'gpt-4o-mini';
 process.env.OPENAI_REASONING_MODEL = 'o4-mini';
 
