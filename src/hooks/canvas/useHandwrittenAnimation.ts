@@ -62,7 +62,10 @@ function buildCharTimings(text: string, baseMs: number, seed: number): number[] 
   let cumulative = 0;
 
   for (let i = 0; i < text.length; i++) {
-    cumulative += getNaturalCharDelay(text[i], baseMs, rng);
+    const char = text[i];
+    if (char !== undefined) {
+      cumulative += getNaturalCharDelay(char, baseMs, rng);
+    }
     timings.push(cumulative);
   }
   return timings;
@@ -169,7 +172,8 @@ function renderFrame(
   // Determine how many characters to show based on natural timing
   let charsToShow = 0;
   for (let i = 1; i < charTimings.length; i++) {
-    if (elapsed >= charTimings[i]) {
+    const timing = charTimings[i];
+    if (timing !== undefined && elapsed >= timing) {
       charsToShow = i;
     } else {
       break;
@@ -180,7 +184,8 @@ function renderFrame(
 
   const revealWidth =
     charPositions[charsToShow] ??
-    charPositions[charPositions.length - 1];
+    charPositions[charPositions.length - 1] ??
+    0;
 
   ctx.save();
   ctx.font = `${config.fontSize}px ${FONT_FALLBACK_CHAIN}`;

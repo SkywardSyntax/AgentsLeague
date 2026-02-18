@@ -91,7 +91,7 @@ export class FrameTimeTracker {
   private lastTimestamp = 0;
   private readonly maxSamples: number;
 
-  constructor(maxSamples: number = 120) {
+  constructor(maxSamples = 120) {
     this.maxSamples = maxSamples;
   }
 
@@ -155,7 +155,7 @@ export class RenderPercentileTracker {
   private durations: number[] = [];
   private readonly maxSamples: number;
 
-  constructor(maxSamples: number = 500) {
+  constructor(maxSamples = 500) {
     this.maxSamples = maxSamples;
   }
 

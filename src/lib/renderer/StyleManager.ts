@@ -30,9 +30,7 @@ export function parseColor(
   }
 
   // rgba(r, g, b, a) or rgb(r, g, b)
-  const match = color.match(
-    /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/,
-  );
+  const match = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/.exec(color);
   if (match) {
     return {
       r: parseInt(match[1], 10),
@@ -91,10 +89,10 @@ export function applyVendorPrefixes(
     // Legacy webkit prefix
     const ctxAny = ctx as Record<string, unknown>;
     if ('webkitImageSmoothingEnabled' in ctx) {
-      ctxAny['webkitImageSmoothingEnabled'] = options.imageSmoothingEnabled;
+      ctxAny.webkitImageSmoothingEnabled = options.imageSmoothingEnabled;
     }
     if ('mozImageSmoothingEnabled' in ctx) {
-      ctxAny['mozImageSmoothingEnabled'] = options.imageSmoothingEnabled;
+      ctxAny.mozImageSmoothingEnabled = options.imageSmoothingEnabled;
     }
   }
 }

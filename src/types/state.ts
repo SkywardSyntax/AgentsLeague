@@ -51,13 +51,13 @@ export type WhiteboardStatus = WhiteboardState['status'];
 
 // ── Legal transitions ───────────────────────────────────────────────
 
-export type TransitionMap = {
+export interface TransitionMap {
   idle: 'processing';
   processing: 'drawing' | 'error';
   drawing: 'complete' | 'error';
   error: 'idle';
   complete: 'idle';
-};
+}
 
 // ── Events ──────────────────────────────────────────────────────────
 

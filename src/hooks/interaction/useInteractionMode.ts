@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { InteractionMode } from '@/types/interaction';
+import { type InteractionMode } from '@/types/interaction';
 import { useConversationStore } from '@/stores/conversation-store';
 
 /**

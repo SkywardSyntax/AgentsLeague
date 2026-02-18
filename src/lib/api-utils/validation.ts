@@ -26,8 +26,8 @@ export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
 // ── Validation Helper ──────────────────────────────────────
 
-export type ValidationSuccess<T> = { data: T };
-export type ValidationError = { error: NextResponse };
+export interface ValidationSuccess<T> { data: T }
+export interface ValidationError { error: NextResponse }
 export type ValidationResult<T> = ValidationSuccess<T> | ValidationError;
 
 export async function validateBody<T>(

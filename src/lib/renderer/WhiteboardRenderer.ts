@@ -22,9 +22,9 @@ export class WhiteboardRenderer {
   private logicalHeight: number;
   private dpr: number;
 
-  private elements: Map<string, DrawElement> = new Map();
+  private elements = new Map<string, DrawElement>();
   private sortedIds: string[] = [];
-  private dirtyIds: Set<string> = new Set();
+  private dirtyIds = new Set<string>();
   private pendingFrame: number | null = null;
 
   constructor(

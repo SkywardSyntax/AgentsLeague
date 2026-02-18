@@ -47,7 +47,7 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
 
 function getSpeechRecognition(): SpeechRecognitionConstructor | null {
   if (typeof window === 'undefined') return null;
-  const w = window as Record<string, unknown>;
+  const w = window as unknown as Record<string, unknown>;
   return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as SpeechRecognitionConstructor | null;
 }
 
@@ -129,7 +129,7 @@ export function useVoiceMode(options: UseVoiceModeOptions = {}) {
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        if (!result || !result[0]) continue;
+        if (!result?.[0]) continue;
 
         if (result.isFinal) {
           final += result[0].transcript;

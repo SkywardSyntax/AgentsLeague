@@ -103,7 +103,7 @@ export function renderHandwrittenText(
   maxWidth: number,
   style: HandwrittenTextStyle = DEFAULT_HANDWRITTEN_STYLE,
   seed?: number,
-  zoom: number = 1,
+  zoom = 1,
 ): void {
   const effectiveSize = style.fontSize * zoom;
 
@@ -252,7 +252,7 @@ export function wrapText(
 /** Create a hidden DOM overlay for screen readers alongside canvas text. */
 export function renderAccessibleOverlay(
   canvas: HTMLCanvasElement,
-  textElements: Array<{ text: string; x: number; y: number }>,
+  textElements: { text: string; x: number; y: number }[],
 ): HTMLDivElement {
   const overlay = document.createElement('div');
   overlay.className = 'sr-only';

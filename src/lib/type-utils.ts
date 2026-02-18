@@ -35,7 +35,7 @@ const SHAPE_KIND_SET = new Set<string>(SHAPE_KINDS);
 export function isDrawingShape(value: unknown): value is DrawingShape {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  return typeof v['kind'] === 'string' && SHAPE_KIND_SET.has(v['kind']);
+  return typeof v.kind === 'string' && SHAPE_KIND_SET.has(v.kind);
 }
 
 // ── Shape-specific type guards ──────────────────────────────────────

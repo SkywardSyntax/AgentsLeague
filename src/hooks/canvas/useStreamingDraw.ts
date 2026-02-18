@@ -99,7 +99,7 @@ export function useStreamingDraw(
           },
           onError: (err) => onErrorRef.current?.(err),
         },
-        { staggerMs },
+        staggerMs !== undefined ? { staggerMs } : {},
       );
     }
     return controllerRef.current;

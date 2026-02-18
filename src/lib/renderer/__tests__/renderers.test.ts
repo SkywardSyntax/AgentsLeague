@@ -3,6 +3,7 @@
  * Uses a mock CanvasRenderingContext2D to assert correct method calls.
  */
 
+import { describe, it, expect } from 'vitest';
 import { renderRect } from '../shape-renderers/rect';
 import { renderEllipse } from '../shape-renderers/ellipse';
 import { renderLine } from '../shape-renderers/line';

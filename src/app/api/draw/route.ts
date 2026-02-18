@@ -41,7 +41,7 @@ export async function POST(request: Request): Promise<Response> {
   const { userMessage, conversationHistory } = result.data;
 
   // Build input messages for OpenAI Responses API
-  const input: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [];
+  const input: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
   for (const msg of conversationHistory) {
     input.push({ role: msg.role, content: msg.content });
   }
@@ -112,12 +112,12 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 /** Try to parse accumulated text as a JSON array of draw operations. */
-function tryParseDrawOps(text: string): Array<Record<string, unknown>> | null {
+function tryParseDrawOps(text: string): Record<string, unknown>[] | null {
   const trimmed = text.trim();
   if (!trimmed.startsWith('[')) return null;
   try {
     const parsed: unknown = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) return parsed as Array<Record<string, unknown>>;
+    if (Array.isArray(parsed)) return parsed as Record<string, unknown>[];
     return null;
   } catch {
     return null;

@@ -9,7 +9,7 @@ import { _resetRateLimitStore } from '@/lib/rate-limit';
 
 // ── Mock OpenAI ────────────────────────────────────────────
 
-function createMockStream(chunks: Array<{ type: string; delta?: string; message?: string }>) {
+function createMockStream(chunks: { type: string; delta?: string; message?: string }[]) {
   return {
     controller: { abort: vi.fn() },
     async *[Symbol.asyncIterator]() {
@@ -42,9 +42,9 @@ function makeRequest(body: unknown): Request {
   });
 }
 
-async function collectSSE(response: Response): Promise<Array<Record<string, unknown>>> {
+async function collectSSE(response: Response): Promise<Record<string, unknown>[]> {
   const text = await response.text();
-  const events: Array<Record<string, unknown>> = [];
+  const events: Record<string, unknown>[] = [];
   for (const line of text.split('\n')) {
     if (line.startsWith('data: ')) {
       events.push(JSON.parse(line.slice(6)) as Record<string, unknown>);

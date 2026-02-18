@@ -106,7 +106,7 @@ const SKELETON_STROKE = 'rgba(0, 0, 0, 0.06)';
 export function drawSkeletonPlaceholders(
   ctx: CanvasRenderingContext2D,
   placeholders: readonly PlaceholderRect[],
-  opacity: number = 1,
+  opacity = 1,
 ): void {
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -160,7 +160,7 @@ export function drawShimmerOverlay(
  * @param timestamp current rAF timestamp
  * @param periodMs full pulse cycle duration (default 1200 ms)
  */
-export function pulseOpacity(timestamp: number, periodMs: number = 1200): number {
+export function pulseOpacity(timestamp: number, periodMs = 1200): number {
   const t = (timestamp % periodMs) / periodMs;
   // Smooth sine wave: 0.3→1.0→0.3
   return 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * Math.PI * 2 - Math.PI / 2));

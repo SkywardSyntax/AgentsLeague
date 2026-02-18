@@ -83,7 +83,7 @@ export enum VoiceState {
 }
 
 /** Legal voice state transitions. */
-export type VoiceTransitionMap = {
+export interface VoiceTransitionMap {
   idle: 'listening';
   listening: 'transcribing' | 'idle';
   transcribing: 'sending' | 'idle';
@@ -92,7 +92,7 @@ export type VoiceTransitionMap = {
   drawing: 'speaking' | 'complete' | 'idle';
   speaking: 'complete' | 'idle';
   complete: 'idle';
-};
+}
 
 // ── Drawing Command ─────────────────────────────────────────────
 

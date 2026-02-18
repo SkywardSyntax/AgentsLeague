@@ -5,13 +5,13 @@
  * or with any test runner that supports TypeScript.
  */
 
+import { test, expect } from 'vitest';
 import {
   InteractionMode,
   MessageRole,
   VoiceState,
   voiceTransition,
   type VoiceSession,
-  type VoiceEvent,
 } from '../../../types/interaction';
 
 // ── Helpers ─────────────────────────────────────────────────────

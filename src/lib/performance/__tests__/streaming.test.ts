@@ -3,6 +3,7 @@
  * animation pipeline for SSE-driven element rendering.
  */
 
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { DrawElement, DrawOp } from '@/types';
 import {
   StreamingDrawController,
@@ -12,7 +13,7 @@ import {
 
 // ── Mock rAF ────────────────────────────────────────────────────────
 
-let rafCallbacks: Array<{ id: number; cb: FrameRequestCallback }> = [];
+let rafCallbacks: { id: number; cb: FrameRequestCallback }[] = [];
 let nextRafId = 1;
 
 function mockRequestAnimationFrame(cb: FrameRequestCallback): number {

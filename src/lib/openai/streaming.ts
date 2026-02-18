@@ -15,8 +15,8 @@ import { DrawToolArgsSchema, type DrawToolArgs, type DrawToolElement } from './t
 export class DrawingError extends Error {
   constructor(
     message: string,
-    public readonly retryable: boolean = false,
-    public readonly code: string = 'UNKNOWN',
+    public readonly retryable = false,
+    public readonly code = 'UNKNOWN',
   ) {
     super(message);
     this.name = 'DrawingError';

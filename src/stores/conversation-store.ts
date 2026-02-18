@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import {
   InteractionMode,
-  MessageRole,
+  type MessageRole,
   type Message,
 } from '@/types/interaction';
 

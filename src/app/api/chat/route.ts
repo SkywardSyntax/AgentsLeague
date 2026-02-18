@@ -30,7 +30,7 @@ export async function POST(request: Request): Promise<Response> {
   if ('error' in result) return result.error;
   const { userMessage, conversationHistory } = result.data;
 
-  const input: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [];
+  const input: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
   for (const msg of conversationHistory) {
     input.push({ role: msg.role, content: msg.content });
   }
