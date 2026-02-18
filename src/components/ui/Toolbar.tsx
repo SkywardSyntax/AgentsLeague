@@ -113,7 +113,7 @@ function TooltipButton({
   children,
 }: TooltipButtonProps) {
   const base =
-    'relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1';
+    'relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-[color,background-color,transform,box-shadow] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1';
 
   let stateClass: string;
   if (disabled) {
@@ -287,7 +287,7 @@ export default function Toolbar({ onSettingsOpen }: ToolbarProps) {
         <button
           onClick={handleClearCanvas}
           aria-label="Confirm clear canvas"
-          className="flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] px-3 text-xs font-semibold bg-[hsl(var(--color-error))] text-white transition-all duration-200 hover:opacity-90 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-error))]"
+          className="flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] px-3 text-xs font-semibold bg-[hsl(var(--color-error))] text-white transition-[opacity,transform] duration-200 hover:opacity-90 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-error))]"
         >
           Confirm?
         </button>

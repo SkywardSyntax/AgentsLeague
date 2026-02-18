@@ -158,7 +158,7 @@ function MicButton({ state, isSupported, onStart, onStop }: MicButtonProps) {
       type="button"
       onClick={handleClick}
       disabled={!isSupported || isProcessing}
-      className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-all duration-normal ${
+      className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-[color,background-color,box-shadow] duration-normal ${
         isListening
           ? 'bg-error text-content-inverse shadow-md'
           : isProcessing

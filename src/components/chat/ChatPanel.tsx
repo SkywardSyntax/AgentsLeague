@@ -141,7 +141,7 @@ function DrawingProgress() {
         {(drawingState.status === 'processing' || drawingState.status === 'drawing') && (
           <div className="h-1 rounded-full bg-surface-raised overflow-hidden">
             <div
-              className="h-full rounded-full bg-ai transition-all duration-slow animate-shimmer"
+              className="h-full rounded-full bg-ai transition-[width] duration-slow animate-shimmer"
               style={{
                 width: drawingState.status === 'processing' ? '40%' : `${Math.min(95, 30 + iteration * 15)}%`,
                 backgroundSize: '200% 100%',
@@ -629,7 +629,7 @@ export function ChatPanel() {
               type="button"
               onClick={isListening ? stopListening : startListening}
               disabled={!isSupported || (isProcessing && !isListening)}
-              className={`w-12 h-12 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-xl transition-all duration-normal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ${
+              className={`w-12 h-12 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-xl transition-[color,background-color,box-shadow] duration-normal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ${
                 isListening
                   ? 'bg-error text-content-inverse animate-pulse shadow-lg'
                   : 'bg-surface-raised text-content-secondary hover:bg-surface-sunken'
