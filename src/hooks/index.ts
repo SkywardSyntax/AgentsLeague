@@ -12,4 +12,6 @@ export { useInteractionMode, useTextMode, useVoiceMode } from './interaction';
 export { useTheme } from './useTheme';
 export { useKeyboardShortcuts } from './useKeyboardShortcuts';
 export type { KeyboardShortcutActions } from './useKeyboardShortcuts';
+export { useErrorHandling, classifyError, dismissToast } from './useErrorHandling';
+export type { Toast, ToastType, ClassifiedError, ErrorCategory, RecoveryAction } from './useErrorHandling';
 export { useSessionSync } from './useSessionSync';
