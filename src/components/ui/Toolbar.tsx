@@ -76,7 +76,7 @@ function SettingsIcon() {
 
 function MenuIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <line x1="4" y1="6" x2="20" y2="6" />
       <line x1="4" y1="12" x2="20" y2="12" />
       <line x1="4" y1="18" x2="20" y2="18" />
@@ -86,7 +86,7 @@ function MenuIcon() {
 
 function CloseIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
@@ -113,20 +113,20 @@ function TooltipButton({
   children,
 }: TooltipButtonProps) {
   const base =
-    'relative flex items-center justify-center rounded-lg p-2 transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1';
+    'relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1';
 
   let stateClass: string;
   if (disabled) {
-    stateClass = 'cursor-not-allowed opacity-40';
+    stateClass = 'cursor-not-allowed opacity-50';
   } else if (active) {
     stateClass =
-      'bg-[hsl(var(--color-accent))] text-[hsl(var(--color-text-inverse))] hover:scale-110 active:scale-95';
+      'bg-[hsl(var(--color-accent))] text-[hsl(var(--color-text-inverse))] hover:scale-105 active:scale-95';
   } else if (variant === 'danger') {
     stateClass =
-      'text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-error)/0.12)] hover:text-[hsl(var(--color-error))] hover:scale-110 active:scale-95';
+      'text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-error)/0.12)] hover:text-[hsl(var(--color-error))] hover:scale-105 active:scale-95';
   } else {
     stateClass =
-      'text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-surface-raised))] hover:text-[hsl(var(--color-text-primary))] hover:scale-110 active:scale-95';
+      'text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-surface-raised))] hover:text-[hsl(var(--color-text-primary))] hover:scale-105 active:scale-95';
   }
 
   return (
@@ -153,7 +153,7 @@ function TooltipButton({
 
 function Separator({ vertical = true }: { vertical?: boolean }) {
   return vertical ? (
-    <div className="mx-1 h-6 w-px bg-[hsl(var(--color-border-subtle))]" role="separator" aria-hidden="true" />
+    <div className="mx-1.5 h-6 w-px bg-[hsl(var(--color-border-subtle))]" role="separator" aria-hidden="true" />
   ) : (
     <div className="my-1 h-px w-full bg-[hsl(var(--color-border-subtle))]" role="separator" aria-hidden="true" />
   );
@@ -287,7 +287,7 @@ export default function Toolbar({ onSettingsOpen }: ToolbarProps) {
         <button
           onClick={handleClearCanvas}
           aria-label="Confirm clear canvas"
-          className="rounded-lg px-3 py-1.5 text-xs font-semibold bg-[hsl(var(--color-error))] text-white transition-all duration-150 hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-error))]"
+          className="flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] px-3 text-xs font-semibold bg-[hsl(var(--color-error))] text-white transition-all duration-200 hover:opacity-90 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-error))]"
         >
           Confirm?
         </button>
@@ -315,7 +315,7 @@ export default function Toolbar({ onSettingsOpen }: ToolbarProps) {
         aria-label="Canvas controls"
         aria-orientation="horizontal"
         onKeyDown={handleToolbarKeyDown}
-        className="fixed right-4 top-4 z-50 hidden items-center gap-0.5 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.85)] px-2 py-1.5 shadow-lg backdrop-blur-xl md:flex"
+        className="fixed right-4 top-4 z-50 hidden items-center gap-1 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.85)] px-2 py-1.5 shadow-lg backdrop-blur-xl md:flex"
       >
         {renderButtons(false)}
       </div>
@@ -337,7 +337,7 @@ export default function Toolbar({ onSettingsOpen }: ToolbarProps) {
             aria-label="Canvas controls"
             aria-orientation="vertical"
             onKeyDown={handleToolbarKeyDown}
-            className="absolute right-0 top-full mt-2 flex flex-col items-stretch gap-0.5 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.95)] p-2 shadow-xl backdrop-blur-xl"
+            className="absolute right-0 top-full mt-2 flex flex-col items-stretch gap-1 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.95)] p-2 shadow-xl backdrop-blur-xl"
             style={{ animation: 'toolbar-fade-in 150ms ease-out' }}
           >
             {renderButtons(true)}

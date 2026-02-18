@@ -5,7 +5,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
   <div
     aria-label="Canvas controls"
     aria-orientation="horizontal"
-    class="fixed right-4 top-4 z-50 hidden items-center gap-0.5 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.85)] px-2 py-1.5 shadow-lg backdrop-blur-xl md:flex"
+    class="fixed right-4 top-4 z-50 hidden items-center gap-1 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.85)] px-2 py-1.5 shadow-lg backdrop-blur-xl md:flex"
     role="toolbar"
   >
     <div
@@ -13,7 +13,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     >
       <button
         aria-label="Switch to Voice"
-        class="relative flex items-center justify-center rounded-lg p-2 transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-surface-raised))] hover:text-[hsl(var(--color-text-primary))] hover:scale-110 active:scale-95"
+        class="relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-surface-raised))] hover:text-[hsl(var(--color-text-primary))] hover:scale-105 active:scale-95"
       >
         <svg
           aria-hidden="true"
@@ -54,7 +54,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     </div>
     <div
       aria-hidden="true"
-      class="mx-1 h-6 w-px bg-[hsl(var(--color-border-subtle))]"
+      class="mx-1.5 h-6 w-px bg-[hsl(var(--color-border-subtle))]"
       role="separator"
     />
     <div
@@ -62,7 +62,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     >
       <button
         aria-label="Undo"
-        class="relative flex items-center justify-center rounded-lg p-2 transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 cursor-not-allowed opacity-40"
+        class="relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 cursor-not-allowed opacity-50"
         disabled=""
       >
         <svg
@@ -97,7 +97,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     >
       <button
         aria-label="Redo"
-        class="relative flex items-center justify-center rounded-lg p-2 transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 cursor-not-allowed opacity-40"
+        class="relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 cursor-not-allowed opacity-50"
         disabled=""
       >
         <svg
@@ -129,7 +129,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     </div>
     <div
       aria-hidden="true"
-      class="mx-1 h-6 w-px bg-[hsl(var(--color-border-subtle))]"
+      class="mx-1.5 h-6 w-px bg-[hsl(var(--color-border-subtle))]"
       role="separator"
     />
     <div
@@ -137,7 +137,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     >
       <button
         aria-label="Clear Canvas"
-        class="relative flex items-center justify-center rounded-lg p-2 transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-error)/0.12)] hover:text-[hsl(var(--color-error))] hover:scale-110 active:scale-95"
+        class="relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-error)/0.12)] hover:text-[hsl(var(--color-error))] hover:scale-105 active:scale-95"
       >
         <svg
           aria-hidden="true"
@@ -177,7 +177,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     </div>
     <div
       aria-hidden="true"
-      class="mx-1 h-6 w-px bg-[hsl(var(--color-border-subtle))]"
+      class="mx-1.5 h-6 w-px bg-[hsl(var(--color-border-subtle))]"
       role="separator"
     />
     <div
@@ -185,7 +185,7 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
     >
       <button
         aria-label="Settings"
-        class="relative flex items-center justify-center rounded-lg p-2 transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-surface-raised))] hover:text-[hsl(var(--color-text-primary))] hover:scale-110 active:scale-95"
+        class="relative flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] p-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-accent))] focus-visible:ring-offset-1 text-[hsl(var(--color-text-secondary))] hover:bg-[hsl(var(--color-surface-raised))] hover:text-[hsl(var(--color-text-primary))] hover:scale-105 active:scale-95"
       >
         <svg
           aria-hidden="true"
@@ -228,13 +228,13 @@ exports[`Toolbar > rendering > snapshot matches default render 1`] = `
       <svg
         aria-hidden="true"
         fill="none"
-        height="20"
+        height="18"
         stroke="currentColor"
         stroke-linecap="round"
         stroke-linejoin="round"
         stroke-width="2"
         viewBox="0 0 24 24"
-        width="20"
+        width="18"
         xmlns="http://www.w3.org/2000/svg"
       >
         <line
