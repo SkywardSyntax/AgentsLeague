@@ -4,8 +4,8 @@
  * text/voice mode, input submission, mode toggle, regenerate, delete.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 import { ChatPanel } from '../ChatPanel';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -327,13 +327,13 @@ describe('ChatPanel', () => {
 
     it('clears input after submission', () => {
       renderChatPanel();
-      const textarea = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+      const textarea = screen.getByLabelText('Message input');
       fireEvent.change(textarea, { target: { value: 'Test' } });
 
       const form = screen.getByRole('form', { name: 'Chat message form' });
       fireEvent.submit(form);
 
-      expect(textarea.value).toBe('');
+      expect((textarea as HTMLTextAreaElement).value).toBe('');
     });
 
     it('does not submit empty or whitespace-only input', () => {

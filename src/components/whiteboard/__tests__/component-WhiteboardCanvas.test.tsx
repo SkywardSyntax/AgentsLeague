@@ -14,7 +14,7 @@ Object.defineProperty(globalThis, 'requestAnimationFrame', {
   configurable: true,
 });
 Object.defineProperty(globalThis, 'cancelAnimationFrame', {
-  value: (_id: number) => {},
+  value: (_id: number) => { /* noop */ },
   writable: true,
   configurable: true,
 });
@@ -116,16 +116,16 @@ vi.mock('@/hooks/useTheme', () => ({
 vi.mock('@/lib/gestures/GestureHandler', () => ({
   GestureHandler: class {
     on() { return this; }
-    attach() {}
-    detach() {}
-    destroy() {}
+    attach() { /* noop */ }
+    detach() { /* noop */ }
+    destroy() { /* noop */ }
   },
 }));
 
 vi.mock('@/lib/performance/SkeletonRenderer', () => ({
   SkeletonRenderer: class {
-    show() {}
-    destroy() {}
+    show() { /* noop */ }
+    destroy() { /* noop */ }
   },
 }));
 

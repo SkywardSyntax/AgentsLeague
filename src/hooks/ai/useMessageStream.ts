@@ -34,8 +34,8 @@ export interface UseMessageStreamOptions {
 
 // ── Reasoning extraction ────────────────────────────────────────
 
-const REASONING_START = '[REASONING_START]';
-const REASONING_END = '[REASONING_END]';
+const _REASONING_START = '[REASONING_START]';
+const _REASONING_END = '[REASONING_END]';
 
 function extractReasoning(text: string): { cleaned: string; reasoning: ReasoningData | null } {
   const steps: string[] = [];
@@ -67,7 +67,7 @@ function parseCodeBlocks(text: string): CodeBlock[] {
   let match: RegExpExecArray | null;
 
   while ((match = re.exec(text)) !== null) {
-    const language = match[1] || 'text';
+    const language = match[1] ?? 'text';
     const code = match[2]?.trim() ?? '';
     if (code) blocks.push({ language, code });
   }
@@ -244,7 +244,7 @@ export function useMessageStream(options: UseMessageStreamOptions = {}) {
     ): Promise<ParsedContent | null> => {
       const gen = streamTextMessage(userMessage, conversationHistory);
       // Consume the generator to drive the stream
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       for await (const _chunk of gen) {
         // chunks are accumulated internally and emitted via onToken
       }

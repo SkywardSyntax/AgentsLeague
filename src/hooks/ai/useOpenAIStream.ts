@@ -12,7 +12,7 @@
 import { useCallback, useRef, useState, useMemo } from 'react';
 import type { Message } from '@/types/interaction';
 import type { DrawToolArgs, DrawToolElement } from '@/lib/openai/tools';
-import { deduplicatedFetch, debounce, monitoredFetch } from '@/utils/api-client';
+import { deduplicatedFetch, debounce } from '@/utils/api-client';
 
 // ── State machine ───────────────────────────────────────────────────
 
@@ -85,6 +85,55 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
       onStateChange?.(newState);
     },
     [onStateChange]
+  );
+
+  /** Process a single SSE event and update state. */
+  const processSSEEvent = useCallback(
+    (event: SSEEvent, currentSpec: DrawToolArgs | null): DrawToolArgs | null => {
+      switch (event.event) {
+        case 'tool_start':
+          transition(StreamState.DRAWING);
+          onChunk?.({ ops: [], step_summary: `Drawing with ${event.name}…`, done: false });
+          return currentSpec;
+
+        case 'partial_spec': {
+          const newElements = event.elements.filter((el) => !seenElementsRef.current.has(el.id));
+          for (const el of newElements) {
+            seenElementsRef.current.add(el.id);
+          }
+          if (newElements.length > 0) {
+            onChunk?.({
+              ops: newElements,
+              step_summary: `Rendered ${seenElementsRef.current.size} elements`,
+              done: false,
+            });
+          }
+          return currentSpec;
+        }
+
+        case 'complete_spec':
+          transition(StreamState.PROCESSING);
+          onChunk?.({
+            ops: event.spec.elements,
+            step_summary: `Complete: ${event.spec.elements.length} elements`,
+            done: true,
+          });
+          return event.spec;
+
+        case 'error':
+          onChunk?.({ ops: [], step_summary: '', done: true, error: event.detail });
+          onError?.(new Error(event.detail));
+          return currentSpec;
+
+        case 'done':
+          onChunk?.({ ops: [], step_summary: 'Done', done: true });
+          return currentSpec;
+
+        default:
+          return currentSpec;
+      }
+    },
+    [transition, onChunk, onError]
   );
 
   /**
@@ -182,54 +231,8 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
         return null;
       }
     },
-    [endpoint, onChunk, onError, onComplete, transition]
+    [endpoint, onChunk, onError, onComplete, transition, processSSEEvent]
   );
-
-  /** Process a single SSE event and update state. */
-  function processSSEEvent(event: SSEEvent, currentSpec: DrawToolArgs | null): DrawToolArgs | null {
-    switch (event.event) {
-      case 'tool_start':
-        transition(StreamState.DRAWING);
-        onChunk?.({ ops: [], step_summary: `Drawing with ${event.name}…`, done: false });
-        return currentSpec;
-
-      case 'partial_spec': {
-        const newElements = event.elements.filter((el) => !seenElementsRef.current.has(el.id));
-        for (const el of newElements) {
-          seenElementsRef.current.add(el.id);
-        }
-        if (newElements.length > 0) {
-          onChunk?.({
-            ops: newElements,
-            step_summary: `Rendered ${seenElementsRef.current.size} elements`,
-            done: false,
-          });
-        }
-        return currentSpec;
-      }
-
-      case 'complete_spec':
-        transition(StreamState.PROCESSING);
-        onChunk?.({
-          ops: event.spec.elements,
-          step_summary: `Complete: ${event.spec.elements.length} elements`,
-          done: true,
-        });
-        return event.spec;
-
-      case 'error':
-        onChunk?.({ ops: [], step_summary: '', done: true, error: event.detail });
-        onError?.(new Error(event.detail));
-        return currentSpec;
-
-      case 'done':
-        onChunk?.({ ops: [], step_summary: 'Done', done: true });
-        return currentSpec;
-
-      default:
-        return currentSpec;
-    }
-  }
 
   /** Cancel any in-flight stream. */
   const cancel = useCallback(() => {

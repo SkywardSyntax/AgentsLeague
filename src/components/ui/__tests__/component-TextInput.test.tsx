@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 import TextInput from '../TextInput';
 
@@ -110,12 +110,12 @@ describe('TextInput', () => {
 
     it('clears input after submit', () => {
       renderTextInput();
-      const textarea = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+      const textarea = screen.getByLabelText('Message input');
 
       fireEvent.change(textarea, { target: { value: 'Test' } });
       fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
 
-      expect(textarea.value).toBe('');
+      expect((textarea as HTMLTextAreaElement).value).toBe('');
     });
 
     it('does not submit on regular Enter (no modifier)', () => {
@@ -152,13 +152,13 @@ describe('TextInput', () => {
 
     it('enforces max length of 1000 characters', () => {
       renderTextInput();
-      const textarea = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+      const _textarea = screen.getByLabelText('Message input');
 
       const longText = 'a'.repeat(1001);
-      fireEvent.change(textarea, { target: { value: longText } });
+      fireEvent.change(_textarea, { target: { value: longText } });
 
       // Should not accept beyond 1000
-      expect(textarea.value.length).toBeLessThanOrEqual(1000);
+      expect((_textarea as unknown as { value: string }).value.length).toBeLessThanOrEqual(1000);
     });
 
     it('shows warning style near limit (90%+)', () => {
@@ -216,12 +216,12 @@ describe('TextInput', () => {
 
     it('clears input when clear button is clicked', () => {
       renderTextInput();
-      const textarea = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+      const textarea = screen.getByLabelText('Message input');
 
       fireEvent.change(textarea, { target: { value: 'Hello' } });
       fireEvent.click(screen.getByLabelText('Clear input'));
 
-      expect(textarea.value).toBe('');
+      expect((textarea as HTMLTextAreaElement).value).toBe('');
     });
 
     it('refocuses textarea after clear', () => {
@@ -236,7 +236,7 @@ describe('TextInput', () => {
 
     it('hides clear button when disabled', () => {
       renderTextInput({ disabled: true });
-      const textarea = screen.getByLabelText('Message input');
+      const _textarea = screen.getByLabelText('Message input');
 
       // Can't directly set value when disabled, but the clear button should not show
       expect(screen.queryByLabelText('Clear input')).toBeNull();
@@ -248,8 +248,8 @@ describe('TextInput', () => {
   describe('disabled state', () => {
     it('disables textarea when disabled prop is true', () => {
       renderTextInput({ disabled: true });
-      const textarea = screen.getByLabelText('Message input') as HTMLTextAreaElement;
-      expect(textarea.disabled).toBe(true);
+      const textarea = screen.getByLabelText('Message input');
+      expect((textarea as HTMLTextAreaElement).disabled).toBe(true);
     });
   });
 

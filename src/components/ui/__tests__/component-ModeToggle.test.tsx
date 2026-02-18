@@ -229,16 +229,16 @@ describe('ModeToggle', () => {
     it('positions indicator at start for text mode', () => {
       mockMode = InteractionMode.TEXT;
       const { container } = renderModeToggle();
-      const indicator = container.querySelector('[aria-hidden="true"]') as HTMLElement;
-      expect(indicator.style.transform).toBe('translateX(0)');
+      const indicator = container.querySelector('[aria-hidden="true"]')!;
+      expect((indicator as HTMLElement).style.transform).toBe('translateX(0)');
     });
 
     it('positions indicator translated for voice mode', () => {
       mockMode = InteractionMode.VOICE;
       const { container } = renderModeToggle();
-      const indicator = container.querySelector('[aria-hidden="true"]') as HTMLElement;
-      expect(indicator.style.transform).toContain('translateX');
-      expect(indicator.style.transform).not.toBe('translateX(0)');
+      const indicator = container.querySelector('[aria-hidden="true"]')!;
+      expect((indicator as HTMLElement).style.transform).toContain('translateX');
+      expect((indicator as HTMLElement).style.transform).not.toBe('translateX(0)');
     });
   });
 });

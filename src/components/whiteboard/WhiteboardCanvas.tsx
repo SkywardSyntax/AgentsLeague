@@ -94,14 +94,14 @@ export default function WhiteboardCanvas({
   } = useCanvasRefs(containerRef);
 
   // ── Renderer bound to content layer ───────────────────
-  const { rendererRef, render, clear, logPerformance } = useRenderer(contentRef);
+  const { rendererRef, logPerformance } = useRenderer(contentRef);
 
   // ── Whiteboard context store ──────────────────────────
   const { elements, camera, setCamera, selectedIds, setSelectedIds } = useWhiteboard();
 
   // ── Drawing session (zustand) ─────────────────────────
   const drawingState = useDrawingSessionStore((s) => s.drawingState);
-  const commitOps = useDrawingSessionStore((s) => s.commitOps);
+  const _commitOps = useDrawingSessionStore((s) => s.commitOps);
 
   // ── Selection ─────────────────────────────────────────
   const selection = useSelection();
@@ -634,7 +634,7 @@ function drawSelectionHighlights(
   canvas: HTMLCanvasElement | null,
   camera: Camera,
   dpr: number,
-  highlights: Array<{ bounds: BoundingBox; handleSize?: number }>,
+  highlights: { bounds: BoundingBox; handleSize?: number }[],
 ): void {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');

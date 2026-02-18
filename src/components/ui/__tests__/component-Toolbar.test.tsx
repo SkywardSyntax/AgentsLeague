@@ -4,7 +4,7 @@
  * mode toggle, settings, keyboard navigation, mobile menu.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { createElement } from 'react';
 import Toolbar from '../Toolbar';
@@ -206,7 +206,7 @@ describe('Toolbar', () => {
       expect(mockReset).toHaveBeenCalled();
     });
 
-    it('auto-dismisses confirmation after timeout', async () => {
+    it('auto-dismisses confirmation after timeout', () => {
       vi.useFakeTimers();
       renderToolbar();
       const clearBtn = screen.getAllByLabelText('Clear Canvas')[0]!;

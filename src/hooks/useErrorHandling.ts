@@ -134,21 +134,21 @@ export function classifyError(error: unknown): ClassifiedError {
   // API error response with known error code
   if (error != null && typeof error === 'object') {
     const err = error as Record<string, unknown>;
-    if (typeof err['code'] === 'string' && err['code'] in API_ERROR_MAP) {
-      return API_ERROR_MAP[err['code'] as string]!;
+    if (typeof err.code === 'string' && err.code in API_ERROR_MAP) {
+      return API_ERROR_MAP[err.code]!;
     }
     // Also check 'error' field (matches server response format)
-    if (typeof err['error'] === 'string' && err['error'] in API_ERROR_MAP) {
-      const classified = API_ERROR_MAP[err['error'] as string]!;
-      return typeof err['message'] === 'string'
-        ? { ...classified, message: err['message'] }
+    if (typeof err.error === 'string' && err.error in API_ERROR_MAP) {
+      const classified = API_ERROR_MAP[err.error]!;
+      return typeof err.message === 'string'
+        ? { ...classified, message: err.message }
         : classified;
     }
     // HTTP status-based classification
-    if (typeof err['status'] === 'number') {
-      const status = err['status'] as number;
+    if (typeof err.status === 'number') {
+      const status = err.status;
       if (status === 400)
-        return { category: 'validation', message: String(err['message'] ?? 'Bad request'), retryable: false };
+        return { category: 'validation', message: typeof err.message === 'string' ? err.message : 'Bad request', retryable: false };
       if (status === 401 || status === 403)
         return { category: 'auth', message: 'Authentication error', retryable: false };
       if (status === 429)
@@ -225,7 +225,7 @@ export function useErrorHandling() {
   const [error, setError] = useState<ClassifiedError | null>(null);
 
   const createToast = useCallback(
-    (type: ToastType, message: string, action?: RecoveryAction | undefined): string => {
+    (type: ToastType, message: string, action?: RecoveryAction  ): string => {
       const id = crypto.randomUUID();
       const toast: Toast = { id, type, message, duration: TOAST_DURATIONS[type], action };
       addToast(toast);

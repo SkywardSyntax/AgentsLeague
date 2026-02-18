@@ -315,7 +315,7 @@ export class WhiteboardRenderer {
     }
 
     // Try cache hit
-    if (cached && cached.version === version && !el.rotation) {
+    if (cached?.version === version && !el.rotation) {
       this.blitCached(cached.bitmap, bounds, camera);
       this.perfMonitor.recordCacheHit();
       return;

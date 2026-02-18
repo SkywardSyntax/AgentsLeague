@@ -33,7 +33,8 @@ function parseContent(text: string): { type: 'text' | 'code'; value: string; lan
     if (match.index > last) {
       segments.push({ type: 'text', value: text.slice(last, match.index) });
     }
-    segments.push({ type: 'code', value: match[2]!, lang: match[1] || undefined });
+    const lang = match[1] ?? undefined;
+    segments.push(lang ? { type: 'code', value: match[2]!, lang } : { type: 'code', value: match[2]! });
     last = match.index + match[0].length;
   }
 
@@ -76,7 +77,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
     <div className="group relative my-2 rounded-lg overflow-hidden border border-border-subtle">
       {/* Header */}
       <div className="flex items-center justify-between bg-surface-sunken px-3 py-1.5">
-        <span className="text-xs text-content-tertiary font-mono">{lang || 'code'}</span>
+        <span className="text-xs text-content-tertiary font-mono">{lang ?? 'code'}</span>
         <button
           type="button"
           onClick={handleCopy}
@@ -324,7 +325,7 @@ function MessageBubble({
           ) : segments ? (
             segments.map((seg, i) =>
               seg.type === 'code' ? (
-                <CodeBlock key={i} code={seg.value} lang={seg.lang} />
+                <CodeBlock key={i} code={seg.value} {...(seg.lang ? { lang: seg.lang } : {})} />
               ) : (
                 <MessageText key={i} text={seg.value} />
               ),
@@ -349,7 +350,7 @@ function MessageBubble({
           <MessageActions
             message={message}
             onDelete={() => onDelete(message.id)}
-            onRegenerate={isAssistant && onRegenerate ? () => onRegenerate(message) : undefined}
+            {...(isAssistant && onRegenerate ? { onRegenerate: () => onRegenerate(message) } : {})}
             onCopy={handleCopyMessage}
           />
         </div>
@@ -563,7 +564,7 @@ export function ChatPanel() {
             key={msg.id}
             message={msg}
             onDelete={deleteMessage}
-            onRegenerate={msg.role === MessageRole.ASSISTANT ? handleRegenerate : undefined}
+            {...(msg.role === MessageRole.ASSISTANT ? { onRegenerate: handleRegenerate } : {})}
           />
         ))}
 
