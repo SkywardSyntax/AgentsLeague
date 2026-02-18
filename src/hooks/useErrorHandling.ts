@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
+import { generateUUID } from '@/lib/uuid-utils';
 
 // ── Toast Types ──────────────────────────────────────────────────────
 
@@ -229,7 +230,7 @@ export function useErrorHandling() {
 
   const createToast = useCallback(
     (type: ToastType, message: string, action?: RecoveryAction  ): string => {
-      const id = crypto.randomUUID();
+      const id = generateUUID();
       const toast: Toast = { id, type, message, duration: TOAST_DURATIONS[type], action };
       addToast(toast);
       return id;

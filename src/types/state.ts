@@ -7,6 +7,7 @@
 
 import type { DrawingShape } from './drawing';
 import type { UnitFloat } from './primitives';
+import { generateUUID } from '@/lib/uuid-utils';
 
 // ── State definitions ───────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ export function transition(
         return {
           status: 'processing',
           prompt: event.prompt,
-          requestId: crypto.randomUUID(),
+          requestId: generateUUID(),
         };
       }
       break;
@@ -132,7 +133,7 @@ export function transition(
         return {
           status: 'processing',
           prompt: event.prompt,
-          requestId: crypto.randomUUID(),
+          requestId: generateUUID(),
         };
       }
       break;

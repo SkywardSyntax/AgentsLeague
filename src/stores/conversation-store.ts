@@ -6,6 +6,7 @@ import {
   type MessageRole,
   type Message,
 } from '@/types/interaction';
+import { generateUUID } from '@/lib/uuid-utils';
 
 // ── Store Interface ─────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
 
   addMessage: (content, role, options = {}) => {
     const message: Message = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       role,
       content,
       timestamp: Date.now(),

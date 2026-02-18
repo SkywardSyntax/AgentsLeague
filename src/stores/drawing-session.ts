@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { DrawElement, DrawOp } from '@/types';
 import type { WhiteboardState } from '@/types/state';
 import { buildToolResult, type ToolResult } from '@/lib/tool-workflow/ToolResultBuilder';
+import { generateUUID } from '@/lib/uuid-utils';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ export const useDrawingSessionStore = create<DrawingSessionStore>(
 
     addToolCall: (ops) => {
       const record: ToolCallRecord = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         ops,
         timestamp: Date.now(),
       };

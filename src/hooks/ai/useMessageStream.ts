@@ -11,6 +11,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { Message, ReasoningData } from '@/types/interaction';
 import { InteractionMode, MessageRole } from '@/types/interaction';
 import { deduplicatedFetch } from '@/utils/api-client';
+import { generateUUID } from '@/lib/uuid-utils';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -210,7 +211,7 @@ export function useMessageStream(options: UseMessageStreamOptions = {}) {
         // Build completed message
         const parsed = parseStreamContent(accumulatorRef.current);
         const completedMessage: Message = {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           role: MessageRole.ASSISTANT,
           content: parsed.text,
           timestamp: Date.now(),
