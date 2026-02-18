@@ -1,46 +1,35 @@
 /**
- * POST /api/draw — Streaming AI drawing generation.
+ * POST /api/chat — Streaming chat about the whiteboard.
  *
  * Accepts { userMessage, conversationHistory } and streams SSE events:
- *   - { type: "draw_op", data: DrawOp }
- *   - { type: "step_progress", step, summary }
+ *   - { type: "message", data: string }
  *   - { type: "done" }
  *   - { type: "error", code, message }
  */
 
 import OpenAI from 'openai';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
-import { DrawRequestSchema, validateBody, errorResponse, handleOpenAIError } from '@/lib/api-utils/validation';
+import { ChatRequestSchema, validateBody, errorResponse, handleOpenAIError } from '@/lib/api-utils/validation';
 import { toSSE, writeError, createAbortSignal, sseHeaders } from '@/lib/api-utils/streaming';
 import { rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
-const DRAW_SYSTEM_PROMPT = `You are an AI whiteboard assistant.
-When the user asks you to draw, reply ONLY with a JSON array of drawing operations.
-Each operation is one of:
-  { "op": "add", "element": { "id": "<unique>", "type": "rect"|"ellipse"|"line"|"arrow"|"freehand"|"text"|"image", ... } }
-  { "op": "update", "id": "<existing-id>", "patch": { ... } }
-  { "op": "delete", "id": "<existing-id>" }
-  { "op": "clear" }
-Output ONLY valid JSON. Do not include markdown fences or commentary.`;
+const CHAT_SYSTEM_PROMPT = `You are a helpful assistant that can discuss the user's whiteboard. You can describe what's on the canvas, suggest improvements, and answer questions. Be concise.`;
 
 export async function POST(request: Request): Promise<Response> {
-  // Rate limit by IP
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const rl = await rateLimit(ip, { windowMs: 60_000, max: 20 });
+  const rl = await rateLimit(ip, { windowMs: 60_000, max: 30 });
   if (!rl.ok) {
     return errorResponse('RATE_LIMITED', 'Too many requests', 429, {
       retryAfter: rl.retryAfter,
     });
   }
 
-  // Validate request body
-  const result = await validateBody(request, DrawRequestSchema);
+  const result = await validateBody(request, ChatRequestSchema);
   if ('error' in result) return result.error;
   const { userMessage, conversationHistory } = result.data;
 
-  // Build input messages for OpenAI Responses API
   const input: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [];
   for (const msg of conversationHistory) {
     input.push({ role: msg.role, content: msg.content });
@@ -55,11 +44,11 @@ export async function POST(request: Request): Promise<Response> {
     const stream = await client.responses.create(
       {
         model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
-        instructions: DRAW_SYSTEM_PROMPT,
+        instructions: CHAT_SYSTEM_PROMPT,
         input,
         stream: true,
         temperature: 0.7,
-        max_output_tokens: 16_000,
+        max_output_tokens: 4_096,
       },
       { signal },
     );
@@ -67,29 +56,11 @@ export async function POST(request: Request): Promise<Response> {
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          let accumulated = '';
           for await (const event of stream as AsyncIterable<ResponseStreamEvent>) {
             if (event.type === 'response.output_text.delta') {
-              accumulated += event.delta;
-              // Try to parse complete draw ops from accumulated JSON
-              const ops = tryParseDrawOps(accumulated);
-              if (ops) {
-                for (const op of ops) {
-                  controller.enqueue(toSSE({ type: 'draw_op', data: op }));
-                }
-                accumulated = '';
-              }
+              controller.enqueue(toSSE({ type: 'message', data: event.delta }));
             } else if (event.type === 'error') {
               controller.enqueue(writeError('STREAM_ERROR', event.message));
-            }
-          }
-          // Final parse attempt for any remaining content
-          if (accumulated.trim()) {
-            const ops = tryParseDrawOps(accumulated);
-            if (ops) {
-              for (const op of ops) {
-                controller.enqueue(toSSE({ type: 'draw_op', data: op }));
-              }
             }
           }
           controller.enqueue(toSSE({ type: 'done' }));
@@ -108,18 +79,5 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(readable, { headers: sseHeaders(requestId) });
   } catch (err) {
     return handleOpenAIError(err);
-  }
-}
-
-/** Try to parse accumulated text as a JSON array of draw operations. */
-function tryParseDrawOps(text: string): Array<Record<string, unknown>> | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('[')) return null;
-  try {
-    const parsed: unknown = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) return parsed as Array<Record<string, unknown>>;
-    return null;
-  } catch {
-    return null;
   }
 }
