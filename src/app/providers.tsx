@@ -35,7 +35,7 @@ function ThemeProvider({ children }: { children: ReactNode }) {
       <button
         onClick={toggleTheme}
         aria-label="Toggle dark mode"
-        className="fixed top-3 right-3 z-50 rounded-lg p-2 bg-surface border border-border cursor-pointer text-sm hover:bg-surface-raised transition-colors"
+        className="fixed bottom-4 left-20 z-tooltip rounded-lg p-2 bg-surface border border-border cursor-pointer text-sm hover:bg-surface-raised transition-colors"
       >
         {theme === 'light' ? '🌙' : '☀️'}
       </button>

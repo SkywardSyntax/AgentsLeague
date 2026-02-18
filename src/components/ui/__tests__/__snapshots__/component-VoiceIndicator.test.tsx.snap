@@ -13,7 +13,7 @@ exports[`VoiceIndicator > rendering > snapshot matches idle state 1`] = `
     <button
       aria-label="Start voice input"
       aria-pressed="false"
-      class="relative flex h-12 w-12 items-center justify-center rounded-full transition-all duration-normal bg-accent text-content-inverse shadow-sm hover:bg-accent-hover hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+      class="relative flex h-12 w-12 items-center justify-center rounded-full transition-[color,background-color,box-shadow] duration-normal bg-accent text-content-inverse shadow-sm hover:bg-accent-hover hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
       type="button"
     >
       <svg

@@ -158,8 +158,8 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: userMessage,
-            history: conversationHistory.map((m) => ({
+            userMessage,
+            conversationHistory: conversationHistory.map((m) => ({
               role: m.role,
               content: m.content,
             })),

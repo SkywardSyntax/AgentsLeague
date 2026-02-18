@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
 import type { Camera, DrawElement, ToolType } from '@/types';
 
 interface WhiteboardState {
@@ -25,19 +25,22 @@ export function WhiteboardProvider({ children }: { children: ReactNode }) {
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const [activeTool, setActiveTool] = useState<ToolType>('select');
 
+  const value = useMemo(
+    () => ({
+      elements,
+      selectedIds,
+      camera,
+      activeTool,
+      setElements,
+      setSelectedIds,
+      setCamera,
+      setActiveTool,
+    }),
+    [elements, selectedIds, camera, activeTool],
+  );
+
   return (
-    <WhiteboardContext.Provider
-      value={{
-        elements,
-        selectedIds,
-        camera,
-        activeTool,
-        setElements,
-        setSelectedIds,
-        setCamera,
-        setActiveTool,
-      }}
-    >
+    <WhiteboardContext.Provider value={value}>
       {children}
     </WhiteboardContext.Provider>
   );

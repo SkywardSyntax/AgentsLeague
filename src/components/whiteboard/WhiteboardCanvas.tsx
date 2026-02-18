@@ -517,7 +517,7 @@ export default function WhiteboardCanvas({
         {/* CursorLayer — z-30 */}
         <canvas
           ref={cursorRef}
-          className="absolute inset-0 z-30 h-full w-full pointer-events-none"
+          className="absolute inset-0 z-cursor h-full w-full pointer-events-none"
           aria-hidden="true"
         />
       </div>
@@ -525,7 +525,7 @@ export default function WhiteboardCanvas({
       {/* Loading skeleton overlay */}
       {isFirstDrawLoading && (
         <div
-          className="absolute inset-0 z-35 flex items-center justify-center pointer-events-none"
+          className="absolute inset-0 z-canvas-loading flex items-center justify-center pointer-events-none"
           aria-live="polite"
           aria-label="Loading drawing"
         >
@@ -538,7 +538,7 @@ export default function WhiteboardCanvas({
       {/* Streaming progress bar */}
       {showProgress && (
         <div
-          className="absolute top-0 left-0 right-0 z-50 h-1"
+          className="absolute top-0 left-0 right-0 z-ui h-1"
           role="progressbar"
           aria-valuenow={Math.round(streamState.progress)}
           aria-valuemin={0}
@@ -553,7 +553,7 @@ export default function WhiteboardCanvas({
       )}
 
       {/* TextOverlay — DOM-based text nodes positioned over canvas */}
-      <div className="absolute inset-0 z-40 pointer-events-none">
+      <div className="absolute inset-0 z-text-overlay pointer-events-none">
         {textElements.map((el) => (
           <div
             key={el.id}

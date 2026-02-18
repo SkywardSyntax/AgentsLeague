@@ -9,7 +9,7 @@ export default function PropertyPanel({ isVisible }: PropertyPanelProps) {
 
   return (
     <aside
-      className="fixed bottom-4 left-4 right-4 z-40 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-[hsl(var(--color-border-subtle))] bg-[hsl(var(--color-surface)/0.85)] p-4 shadow-lg backdrop-blur-xl sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:w-80"
+      className="fixed bottom-4 left-4 right-4 z-ui max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-[hsl(var(--color-border-subtle))] bg-[hsl(var(--color-surface)/0.85)] p-4 shadow-lg backdrop-blur-xl sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:w-80"
       aria-label="Element properties"
       role="region"
     >

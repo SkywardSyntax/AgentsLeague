@@ -4,7 +4,7 @@ exports[`WhiteboardCanvas > rendering > snapshot matches default render 1`] = `
 <div
   aria-label="Interactive whiteboard canvas. Use toolbar to select drawing tools."
   aria-roledescription="whiteboard"
-  class="relative h-full w-full overflow-hidden bg-[var(--color-canvas-bg)]"
+  class="relative h-full w-full overflow-hidden bg-canvas"
   role="application"
   style="width: 100%; height: 100%;"
   tabindex="0"
@@ -26,11 +26,11 @@ exports[`WhiteboardCanvas > rendering > snapshot matches default render 1`] = `
     />
     <canvas
       aria-hidden="true"
-      class="absolute inset-0 z-30 h-full w-full pointer-events-none"
+      class="absolute inset-0 z-cursor h-full w-full pointer-events-none"
     />
   </div>
   <div
-    class="absolute inset-0 z-40 pointer-events-none"
+    class="absolute inset-0 z-text-overlay pointer-events-none"
   />
   <div
     aria-label="Canvas objects"

@@ -19,7 +19,7 @@ function OnboardingTip({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div
       role="status"
-      className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 animate-[fadeSlideUp_0.3s_ease-out] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3 shadow-xl max-w-xs sm:max-w-sm text-center"
+      className="fixed bottom-20 left-1/2 z-tooltip -translate-x-1/2 animate-[fadeSlideUp_0.3s_ease-out] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3 shadow-xl max-w-xs sm:max-w-sm text-center"
     >
       <p className="text-sm text-[var(--color-text-primary)] font-medium mb-1">
         Welcome to AI Whiteboard ✦
@@ -43,7 +43,7 @@ function OnboardingTip({ onDismiss }: { onDismiss: () => void }) {
 
 function ToolbarFallback() {
   return (
-    <div className="fixed right-4 top-4 z-50 h-10 w-48 animate-pulse rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] hidden md:block" />
+    <div className="fixed right-4 top-4 z-toolbar h-10 w-48 animate-pulse rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] hidden md:block" />
   );
 }
 
@@ -193,7 +193,7 @@ function HomeContent() {
       {/* ── Mobile chat toggle ───────────────────────────── */}
       <button
         onClick={() => setChatCollapsed((v) => !v)}
-        className="fixed bottom-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg md:hidden hover:opacity-90 active:scale-95 transition-all"
+        className="fixed bottom-4 left-4 z-toolbar flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg md:hidden hover:opacity-90 active:scale-95 transition-all"
         aria-label={chatCollapsed ? 'Show chat' : 'Hide chat'}
       >
         {chatCollapsed ? '💬' : '✕'}

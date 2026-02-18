@@ -315,13 +315,13 @@ export default function Toolbar({ onSettingsOpen }: ToolbarProps) {
         aria-label="Canvas controls"
         aria-orientation="horizontal"
         onKeyDown={handleToolbarKeyDown}
-        className="fixed right-4 top-4 z-50 hidden items-center gap-1 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.85)] px-2 py-1.5 shadow-lg backdrop-blur-xl md:flex"
+        className="fixed right-4 top-4 z-toolbar hidden items-center gap-1 rounded-xl border border-[hsl(var(--toolbar-border))] bg-[hsl(var(--toolbar-bg)/0.85)] px-2 py-1.5 shadow-lg backdrop-blur-xl md:flex"
       >
         {renderButtons(false)}
       </div>
 
       {/* ── Mobile hamburger (< md) ────────────────────────────── */}
-      <div className="fixed right-4 top-4 z-50 md:hidden">
+      <div className="fixed right-4 top-4 z-toolbar md:hidden">
         <button
           onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? 'Close menu' : 'Open menu'}

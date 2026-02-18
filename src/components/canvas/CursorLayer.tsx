@@ -8,7 +8,7 @@ export default function CursorLayer() {
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 z-30 h-full w-full pointer-events-none"
+      className="absolute inset-0 z-cursor h-full w-full pointer-events-none"
       aria-hidden="true"
     />
   );

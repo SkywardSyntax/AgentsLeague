@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import {
   InteractionMode,
   MessageRole,
@@ -31,6 +31,13 @@ export function useTextMode(options: UseTextModeOptions = {}) {
   const addMessage = useConversationStore((s) => s.addMessage);
   const updateMessage = useConversationStore((s) => s.updateMessage);
   const setProcessing = useConversationStore((s) => s.setProcessing);
+  const messages = useConversationStore((s) => s.messages);
+  const messagesRef = useRef(messages);
+
+  // Keep ref updated with latest messages without affecting dependency array
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const [streamedText, setStreamedText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -63,7 +70,13 @@ export function useTextMode(options: UseTextModeOptions = {}) {
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: message.trim() }),
+          body: JSON.stringify({
+            userMessage: message.trim(),
+            conversationHistory: messagesRef.current.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+          }),
           signal: controller.signal,
         });
 

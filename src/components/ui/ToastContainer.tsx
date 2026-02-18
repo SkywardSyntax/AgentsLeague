@@ -56,7 +56,7 @@ export function ToastContainer() {
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-[calc(100vw-2rem)] max-w-sm sm:w-auto"
+      className="fixed bottom-4 right-4 z-toast flex flex-col gap-2 w-[calc(100vw-2rem)] max-w-sm sm:w-auto"
     >
       {toasts.map((t) => (
         <ToastItem key={t.id} toast={t} />
