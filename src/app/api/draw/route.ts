@@ -10,9 +10,16 @@
 
 import OpenAI from 'openai';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
-import { DrawRequestSchema, validateBody, errorResponse, handleOpenAIError } from '@/lib/api-utils/validation';
+import {
+  DrawRequestSchema,
+  validateBody,
+  errorResponse,
+  handleOpenAIError,
+} from '@/lib/api-utils/validation';
 import { toSSE, writeError, createAbortSignal, sseHeaders } from '@/lib/api-utils/streaming';
 import { rateLimit } from '@/lib/rate-limit';
+import { drawingCacheKey, drawingSpecCache, generateETag } from '@/lib/api-cache';
+import { logRequest, logResponse, logError } from '@/lib/api-logger';
 
 export const runtime = 'nodejs';
 
@@ -40,6 +47,30 @@ export async function POST(request: Request): Promise<Response> {
   if ('error' in result) return result.error;
   const { userMessage, conversationHistory } = result.data;
 
+  const requestId = crypto.randomUUID();
+  logRequest(requestId, request, '/api/draw');
+
+  // Check drawing spec cache
+  const cacheKey = drawingCacheKey(userMessage, conversationHistory.length);
+  const cached = drawingSpecCache.get(cacheKey);
+  if (cached) {
+    logResponse(requestId, 200, { cached: true });
+    const etag = cached.etag;
+    const ifNoneMatch = request.headers.get('If-None-Match');
+    if (ifNoneMatch === etag) {
+      return new Response(null, { status: 304, headers: { ETag: etag } });
+    }
+    return new Response(cached.value, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'public, max-age=300, stale-while-revalidate=600',
+        ETag: etag,
+        'X-Request-Id': requestId,
+        'X-Cache': 'HIT',
+      },
+    });
+  }
+
   // Build input messages for OpenAI Responses API
   const input: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
   for (const msg of conversationHistory) {
@@ -47,7 +78,6 @@ export async function POST(request: Request): Promise<Response> {
   }
   input.push({ role: 'user', content: userMessage });
 
-  const requestId = crypto.randomUUID();
   const signal = createAbortSignal(30_000);
 
   try {
@@ -58,11 +88,15 @@ export async function POST(request: Request): Promise<Response> {
         instructions: DRAW_SYSTEM_PROMPT,
         input,
         stream: true,
+        store: true,
         temperature: 0.7,
         max_output_tokens: 16_000,
       },
-      { signal },
+      { signal }
     );
+
+    // Collect full response for caching
+    let fullResponseSSE = '';
 
     const readable = new ReadableStream({
       async start(controller) {
@@ -75,12 +109,25 @@ export async function POST(request: Request): Promise<Response> {
               const ops = tryParseDrawOps(accumulated);
               if (ops) {
                 for (const op of ops) {
-                  controller.enqueue(toSSE({ type: 'draw_op', data: op }));
+                  const sse = toSSE({ type: 'draw_op', data: op });
+                  controller.enqueue(sse);
+                  fullResponseSSE += new TextDecoder().decode(sse);
                 }
                 accumulated = '';
               }
             } else if (event.type === 'error') {
               controller.enqueue(writeError('STREAM_ERROR', event.message));
+            } else if (event.type === 'response.completed') {
+              const usage = event.response?.usage;
+              logResponse(requestId, 200, {
+                tokens: usage
+                  ? {
+                      prompt: usage.input_tokens,
+                      completion: usage.output_tokens,
+                      total: usage.total_tokens,
+                    }
+                  : undefined,
+              });
             }
           }
           // Final parse attempt for any remaining content
@@ -88,14 +135,25 @@ export async function POST(request: Request): Promise<Response> {
             const ops = tryParseDrawOps(accumulated);
             if (ops) {
               for (const op of ops) {
-                controller.enqueue(toSSE({ type: 'draw_op', data: op }));
+                const sse = toSSE({ type: 'draw_op', data: op });
+                controller.enqueue(sse);
+                fullResponseSSE += new TextDecoder().decode(sse);
               }
             }
           }
-          controller.enqueue(toSSE({ type: 'done' }));
+          const doneSSE = toSSE({ type: 'done' });
+          controller.enqueue(doneSSE);
+          fullResponseSSE += new TextDecoder().decode(doneSSE);
+
+          // Cache the full response
+          if (fullResponseSSE) {
+            const etag = generateETag(fullResponseSSE);
+            drawingSpecCache.set(cacheKey, fullResponseSSE, etag);
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Stream interrupted';
           controller.enqueue(writeError('STREAM_ERROR', msg));
+          logError(requestId, err);
         } finally {
           controller.close();
         }
@@ -105,8 +163,14 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
 
-    return new Response(readable, { headers: sseHeaders(requestId) });
+    return new Response(readable, {
+      headers: {
+        ...sseHeaders(requestId),
+        'X-Cache': 'MISS',
+      },
+    });
   } catch (err) {
+    logError(requestId, err);
     return handleOpenAIError(err);
   }
 }

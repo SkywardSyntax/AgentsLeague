@@ -11,3 +11,13 @@ export {
   RenderPercentileTracker,
   LATENCY_BUDGETS,
 } from './metrics';
+export {
+  debounce,
+  deduplicatedFetch,
+  cancelAllInFlight,
+  monitoredFetch,
+  prefetch,
+  getPrefetched,
+  getClientAPIMetrics,
+  logAPIMetrics,
+} from './api-client';

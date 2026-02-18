@@ -9,9 +9,15 @@
 
 import OpenAI from 'openai';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
-import { ChatRequestSchema, validateBody, errorResponse, handleOpenAIError } from '@/lib/api-utils/validation';
+import {
+  ChatRequestSchema,
+  validateBody,
+  errorResponse,
+  handleOpenAIError,
+} from '@/lib/api-utils/validation';
 import { toSSE, writeError, createAbortSignal, sseHeaders } from '@/lib/api-utils/streaming';
 import { rateLimit } from '@/lib/rate-limit';
+import { logRequest, logResponse, logError } from '@/lib/api-logger';
 
 export const runtime = 'nodejs';
 
@@ -37,6 +43,7 @@ export async function POST(request: Request): Promise<Response> {
   input.push({ role: 'user', content: userMessage });
 
   const requestId = crypto.randomUUID();
+  logRequest(requestId, request, '/api/chat');
   const signal = createAbortSignal(30_000);
 
   try {
@@ -47,10 +54,11 @@ export async function POST(request: Request): Promise<Response> {
         instructions: CHAT_SYSTEM_PROMPT,
         input,
         stream: true,
+        store: true,
         temperature: 0.7,
         max_output_tokens: 4_096,
       },
-      { signal },
+      { signal }
     );
 
     const readable = new ReadableStream({
@@ -61,12 +69,24 @@ export async function POST(request: Request): Promise<Response> {
               controller.enqueue(toSSE({ type: 'message', data: event.delta }));
             } else if (event.type === 'error') {
               controller.enqueue(writeError('STREAM_ERROR', event.message));
+            } else if (event.type === 'response.completed') {
+              const usage = event.response?.usage;
+              logResponse(requestId, 200, {
+                tokens: usage
+                  ? {
+                      prompt: usage.input_tokens,
+                      completion: usage.output_tokens,
+                      total: usage.total_tokens,
+                    }
+                  : undefined,
+              });
             }
           }
           controller.enqueue(toSSE({ type: 'done' }));
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Stream interrupted';
           controller.enqueue(writeError('STREAM_ERROR', msg));
+          logError(requestId, err);
         } finally {
           controller.close();
         }
@@ -78,6 +98,7 @@ export async function POST(request: Request): Promise<Response> {
 
     return new Response(readable, { headers: sseHeaders(requestId) });
   } catch (err) {
+    logError(requestId, err);
     return handleOpenAIError(err);
   }
 }

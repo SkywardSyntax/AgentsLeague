@@ -87,7 +87,7 @@ describe('POST /api/draw', () => {
       createMockStream([
         { type: 'response.output_text.delta', delta: ops },
         { type: 'response.completed' },
-      ]),
+      ])
     );
 
     const { POST } = await import('@/app/api/draw/route');
@@ -105,7 +105,7 @@ describe('POST /api/draw', () => {
 
   it('handles streaming errors gracefully', async () => {
     mockCreate.mockResolvedValueOnce(
-      createMockStream([{ type: 'error', message: 'Something went wrong' }]),
+      createMockStream([{ type: 'error', message: 'Something went wrong' }])
     );
 
     const { POST } = await import('@/app/api/draw/route');
@@ -151,9 +151,7 @@ describe('POST /api/draw', () => {
   });
 
   it('accepts conversationHistory', async () => {
-    mockCreate.mockResolvedValueOnce(
-      createMockStream([{ type: 'response.completed' }]),
-    );
+    mockCreate.mockResolvedValueOnce(createMockStream([{ type: 'response.completed' }]));
 
     const { POST } = await import('@/app/api/draw/route');
     const req = makeRequest({
@@ -175,7 +173,7 @@ describe('POST /api/draw', () => {
           { role: 'user', content: 'Make it bigger' },
         ]),
       }),
-      expect.anything(),
+      expect.anything()
     );
   });
 });
@@ -204,7 +202,7 @@ describe('POST /api/chat', () => {
       createMockStream([
         { type: 'response.output_text.delta', delta: 'Hello' },
         { type: 'response.output_text.delta', delta: ' world' },
-      ]),
+      ])
     );
 
     const { POST } = await import('@/app/api/chat/route');
@@ -235,7 +233,8 @@ describe('GET /api/health', () => {
     mockModelsList.mockResolvedValueOnce({ data: [] });
 
     const { GET } = await import('@/app/api/health/route');
-    const res = await GET();
+    const req = new Request('http://localhost/api/health');
+    const res = await GET(req);
     const body = (await res.json()) as Record<string, unknown>;
 
     expect(res.status).toBe(200);
@@ -247,7 +246,8 @@ describe('GET /api/health', () => {
     mockModelsList.mockRejectedValueOnce(new Error('Network error'));
 
     const { GET } = await import('@/app/api/health/route');
-    const res = await GET();
+    const req = new Request('http://localhost/api/health');
+    const res = await GET(req);
     const body = (await res.json()) as Record<string, unknown>;
 
     expect(res.status).toBe(200);

@@ -6,8 +6,9 @@
 
 import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
+import { generateETag, isNotModified } from '@/lib/api-cache';
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: Request): Promise<NextResponse> {
   let openaiConnected = false;
 
   try {
@@ -19,12 +20,22 @@ export async function GET(): Promise<NextResponse> {
     // OpenAI unreachable — degrade gracefully
   }
 
-  return NextResponse.json(
-    {
-      status: 'ok',
-      openai_connected: openaiConnected,
-      timestamp: new Date().toISOString(),
+  const body = JSON.stringify({
+    status: 'ok',
+    openai_connected: openaiConnected,
+    timestamp: new Date().toISOString(),
+  });
+
+  const etag = generateETag(body);
+  if (isNotModified(request, etag)) {
+    return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+  }
+
+  return NextResponse.json(JSON.parse(body), {
+    status: 200,
+    headers: {
+      'Cache-Control': 'public, max-age=10, stale-while-revalidate=30',
+      ETag: etag,
     },
-    { status: 200 },
-  );
+  });
 }

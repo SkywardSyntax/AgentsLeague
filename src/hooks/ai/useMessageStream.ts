@@ -10,6 +10,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Message, ReasoningData } from '@/types/interaction';
 import { InteractionMode, MessageRole } from '@/types/interaction';
+import { deduplicatedFetch } from '@/utils/api-client';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -104,12 +105,7 @@ type ChatSSEEvent = MessageEvent | DoneEvent | ErrorSSEEvent;
 // ── Hook ────────────────────────────────────────────────────────
 
 export function useMessageStream(options: UseMessageStreamOptions = {}) {
-  const {
-    endpoint = '/api/chat',
-    onToken,
-    onError,
-    onComplete,
-  } = options;
+  const { endpoint = '/api/chat', onToken, onError, onComplete } = options;
 
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -123,7 +119,7 @@ export function useMessageStream(options: UseMessageStreamOptions = {}) {
   const streamTextMessage = useCallback(
     async function* (
       userMessage: string,
-      conversationHistory: Message[] = [],
+      conversationHistory: Message[] = []
     ): AsyncGenerator<string> {
       // Abort any in-flight request
       abortRef.current?.abort();
@@ -134,7 +130,7 @@ export function useMessageStream(options: UseMessageStreamOptions = {}) {
       setIsStreaming(true);
 
       try {
-        const response = await fetch(endpoint, {
+        const response = await deduplicatedFetch('chat-stream', endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -234,7 +230,7 @@ export function useMessageStream(options: UseMessageStreamOptions = {}) {
         setIsStreaming(false);
       }
     },
-    [endpoint, onToken, onError, onComplete],
+    [endpoint, onToken, onError, onComplete]
   );
 
   /**
@@ -244,7 +240,7 @@ export function useMessageStream(options: UseMessageStreamOptions = {}) {
   const streamText = useCallback(
     async (
       userMessage: string,
-      conversationHistory: Message[] = [],
+      conversationHistory: Message[] = []
     ): Promise<ParsedContent | null> => {
       const gen = streamTextMessage(userMessage, conversationHistory);
       // Consume the generator to drive the stream
@@ -256,7 +252,7 @@ export function useMessageStream(options: UseMessageStreamOptions = {}) {
       if (!accumulatorRef.current) return null;
       return parseStreamContent(accumulatorRef.current);
     },
-    [streamTextMessage],
+    [streamTextMessage]
   );
 
   /** Cancel any in-flight stream. */

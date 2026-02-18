@@ -10,9 +10,7 @@ const nextConfig: NextConfig = {
 
   // Strip console.log/warn in production (keep console.error)
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production'
-      ? { exclude: ['error'] }
-      : false,
+    removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error'] } : false,
   },
 
   // Image optimization

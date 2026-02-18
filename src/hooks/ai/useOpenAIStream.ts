@@ -9,9 +9,10 @@
 
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useMemo } from 'react';
 import type { Message } from '@/types/interaction';
 import type { DrawToolArgs, DrawToolElement } from '@/lib/openai/tools';
+import { deduplicatedFetch, debounce, monitoredFetch } from '@/utils/api-client';
 
 // ── State machine ───────────────────────────────────────────────────
 
@@ -71,13 +72,7 @@ export interface UseOpenAIStreamOptions {
 // ── Hook implementation ─────────────────────────────────────────────
 
 export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
-  const {
-    endpoint = '/api/draw',
-    onChunk,
-    onError,
-    onComplete,
-    onStateChange,
-  } = options;
+  const { endpoint = '/api/draw', onChunk, onError, onComplete, onStateChange } = options;
 
   const [state, setState] = useState<StreamState>(StreamState.IDLE);
   const [lastSpec, setLastSpec] = useState<DrawToolArgs | null>(null);
@@ -89,7 +84,7 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
       setState(newState);
       onStateChange?.(newState);
     },
-    [onStateChange],
+    [onStateChange]
   );
 
   /**
@@ -99,7 +94,7 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
   const streamDrawing = useCallback(
     async (
       userMessage: string,
-      conversationHistory: Message[] = [],
+      conversationHistory: Message[] = []
     ): Promise<DrawToolArgs | null> => {
       // Abort any in-flight request
       abortRef.current?.abort();
@@ -110,7 +105,7 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
       transition(StreamState.PROCESSING);
 
       try {
-        const response = await fetch(endpoint, {
+        const response = await deduplicatedFetch('draw-stream', endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -187,14 +182,11 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
         return null;
       }
     },
-    [endpoint, onChunk, onError, onComplete, transition],
+    [endpoint, onChunk, onError, onComplete, transition]
   );
 
   /** Process a single SSE event and update state. */
-  function processSSEEvent(
-    event: SSEEvent,
-    currentSpec: DrawToolArgs | null,
-  ): DrawToolArgs | null {
+  function processSSEEvent(event: SSEEvent, currentSpec: DrawToolArgs | null): DrawToolArgs | null {
     switch (event.event) {
       case 'tool_start':
         transition(StreamState.DRAWING);
@@ -202,9 +194,7 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
         return currentSpec;
 
       case 'partial_spec': {
-        const newElements = event.elements.filter(
-          (el) => !seenElementsRef.current.has(el.id),
-        );
+        const newElements = event.elements.filter((el) => !seenElementsRef.current.has(el.id));
         for (const el of newElements) {
           seenElementsRef.current.add(el.id);
         }
@@ -247,8 +237,18 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
     transition(StreamState.IDLE);
   }, [transition]);
 
+  /** Debounced version of streamDrawing (300ms) for rapid canvas changes. */
+  const debouncedStreamDrawing = useMemo(
+    () =>
+      debounce((userMessage: string, conversationHistory: Message[] = []) => {
+        void streamDrawing(userMessage, conversationHistory);
+      }, 300),
+    [streamDrawing]
+  );
+
   return {
     streamDrawing,
+    debouncedStreamDrawing,
     cancel,
     state,
     lastSpec,
