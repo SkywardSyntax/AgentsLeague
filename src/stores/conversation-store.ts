@@ -15,6 +15,7 @@ interface ConversationStore {
   isProcessing: boolean;
 
   addMessage: (content: string, role: MessageRole, options?: Partial<Pick<Message, 'source' | 'drawing' | 'reasoning' | 'meta'>>) => Message;
+  deleteMessage: (id: string) => void;
   clearHistory: () => void;
   setMode: (mode: InteractionMode) => void;
   setProcessing: (isProcessing: boolean) => void;
@@ -42,6 +43,11 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     set((state) => ({ messages: [...state.messages, message] }));
     return message;
   },
+
+  deleteMessage: (id) =>
+    set((state) => ({
+      messages: state.messages.filter((m) => m.id !== id),
+    })),
 
   clearHistory: () => set({ messages: [] }),
 
