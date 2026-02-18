@@ -203,13 +203,16 @@ export function useSessionSync(): void {
       persistSnapshot(snapshot);
     };
 
-    window.addEventListener('beforeunload', handleUnload);
-    document.addEventListener('visibilitychange', () => {
+    const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') handleUnload();
-    });
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('beforeunload', handleUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 }

@@ -9,7 +9,7 @@
 
 'use client';
 
-import { useCallback, useRef, useState, useMemo } from 'react';
+import { useCallback, useRef, useState, useMemo, useEffect } from 'react';
 import type { Message } from '@/types/interaction';
 import type { DrawToolArgs, DrawToolElement } from '@/lib/openai/tools';
 import { deduplicatedFetch, debounce } from '@/utils/api-client';
@@ -248,6 +248,13 @@ export function useOpenAIStream(options: UseOpenAIStreamOptions = {}) {
       }, 300),
     [streamDrawing]
   );
+
+  // Cancel pending debounced call on unmount
+  useEffect(() => {
+    return () => {
+      debouncedStreamDrawing.cancel?.();
+    };
+  }, [debouncedStreamDrawing]);
 
   return {
     streamDrawing,

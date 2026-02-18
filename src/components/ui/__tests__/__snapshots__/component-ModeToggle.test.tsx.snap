@@ -3,18 +3,18 @@
 exports[`ModeToggle > rendering > snapshot matches text mode 1`] = `
 <div
   aria-label="Interaction mode"
-  class="relative flex h-8 w-[152px] rounded-full bg-[var(--color-surface-raised)] p-0.5 text-xs font-medium shadow-inner transition-colors duration-150"
+  class="relative flex h-8 w-[152px] rounded-full bg-surface-raised p-0.5 text-xs font-medium shadow-inner transition-colors duration-fast"
   role="radiogroup"
 >
   <span
     aria-hidden="true"
-    class="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-[var(--color-accent)] shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+    class="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-accent shadow-sm transition-transform duration-normal ease-default"
     style="transform: translateX(0);"
   />
   <button
     aria-checked="true"
     aria-label="Text mode"
-    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-white"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-fast text-content-inverse"
     role="radio"
     tabindex="0"
     type="button"
@@ -49,7 +49,7 @@ exports[`ModeToggle > rendering > snapshot matches text mode 1`] = `
   <button
     aria-checked="false"
     aria-label="Voice mode"
-    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-fast text-content-secondary hover:text-content-primary"
     role="radio"
     tabindex="-1"
     type="button"
@@ -93,18 +93,18 @@ exports[`ModeToggle > rendering > snapshot matches text mode 1`] = `
 exports[`ModeToggle > rendering > snapshot matches voice mode 1`] = `
 <div
   aria-label="Interaction mode"
-  class="relative flex h-8 w-[152px] rounded-full bg-[var(--color-surface-raised)] p-0.5 text-xs font-medium shadow-inner transition-colors duration-150"
+  class="relative flex h-8 w-[152px] rounded-full bg-surface-raised p-0.5 text-xs font-medium shadow-inner transition-colors duration-fast"
   role="radiogroup"
 >
   <span
     aria-hidden="true"
-    class="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-[var(--color-accent)] shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+    class="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-accent shadow-sm transition-transform duration-normal ease-default"
     style="transform: translateX(calc(100% - 2px));"
   />
   <button
     aria-checked="false"
     aria-label="Text mode"
-    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-fast text-content-secondary hover:text-content-primary"
     role="radio"
     tabindex="-1"
     type="button"
@@ -139,7 +139,7 @@ exports[`ModeToggle > rendering > snapshot matches voice mode 1`] = `
   <button
     aria-checked="true"
     aria-label="Voice mode"
-    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 text-white"
+    class="relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-fast text-content-inverse"
     role="radio"
     tabindex="0"
     type="button"

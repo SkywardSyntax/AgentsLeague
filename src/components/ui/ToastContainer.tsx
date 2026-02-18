@@ -9,26 +9,28 @@ const ICONS: Record<ToastType, string> = {
   warning: '⚠',
 };
 
-const STYLE: Record<ToastType, string> = {
-  success: 'bg-green-600 text-white',
-  error: 'bg-red-600 text-white',
-  info: 'bg-blue-600 text-white',
-  warning: 'bg-yellow-500 text-black',
+const ACCENT: Record<ToastType, string> = {
+  success: 'text-[hsl(var(--color-success))]',
+  error: 'text-[hsl(var(--color-error))]',
+  info: 'text-[hsl(var(--color-accent))]',
+  warning: 'text-[hsl(var(--color-warning))]',
 };
 
 function ToastItem({ toast }: { readonly toast: Toast }) {
   return (
     <div
       role="alert"
-      className={`flex items-center gap-2 rounded-lg px-4 py-3 shadow-lg text-sm ${STYLE[toast.type]} animate-[slideIn_0.2s_ease-out]`}
+      className="flex items-center gap-2.5 rounded-xl border border-[hsl(var(--color-border-subtle))] bg-[hsl(var(--color-surface)/0.85)] px-4 py-3 shadow-lg backdrop-blur-xl text-sm text-[hsl(var(--color-text-primary))] animate-[toastSlideIn_var(--duration-normal,250ms)_var(--ease-out-expo,cubic-bezier(0.16,1,0.3,1))]"
     >
-      <span aria-hidden="true" className="text-base">{ICONS[toast.type]}</span>
+      <span aria-hidden="true" className={`text-base font-semibold ${ACCENT[toast.type]}`}>
+        {ICONS[toast.type]}
+      </span>
       <span className="flex-1">{toast.message}</span>
       {toast.action && (
         <button
           type="button"
           onClick={toast.action.handler}
-          className="ml-2 underline font-medium hover:opacity-80"
+          className="ml-1 text-[hsl(var(--color-accent))] font-medium hover:opacity-80 transition-opacity"
         >
           {toast.action.label}
         </button>
@@ -37,7 +39,7 @@ function ToastItem({ toast }: { readonly toast: Toast }) {
         type="button"
         onClick={() => dismissToast(toast.id)}
         aria-label="Dismiss"
-        className="ml-1 opacity-70 hover:opacity-100"
+        className="ml-0.5 rounded-md p-0.5 opacity-40 hover:opacity-100 transition-opacity"
       >
         ✕
       </button>
@@ -53,7 +55,7 @@ export function ToastContainer() {
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm"
+      className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-[calc(100vw-2rem)] max-w-sm sm:w-auto"
     >
       {toasts.map((t) => (
         <ToastItem key={t.id} toast={t} />

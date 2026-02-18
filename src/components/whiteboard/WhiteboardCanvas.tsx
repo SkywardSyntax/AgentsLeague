@@ -267,6 +267,24 @@ export default function WhiteboardCanvas({
 
   // ── GestureHandler (touch gestures via imperative API) ─
 
+  // Refs to hold current state without recreating gesture handler
+  const cameraRef = useRef(camera);
+  const selectionRef = useRef(selection);
+  const undoRedoRef = useRef(undoRedo);
+
+  // Update refs whenever values change
+  useEffect(() => {
+    cameraRef.current = camera;
+  }, [camera]);
+
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
+  useEffect(() => {
+    undoRedoRef.current = undoRedo;
+  }, [undoRedo]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -276,13 +294,13 @@ export default function WhiteboardCanvas({
 
     gesture.on('tap', (e) => {
       const rect = container.getBoundingClientRect();
-      const worldX = (e.position.x - rect.left - camera.x) / camera.zoom;
-      const worldY = (e.position.y - rect.top - camera.y) / camera.zoom;
-      const hits = selection.hitTest(worldX, worldY);
+      const worldX = (e.position.x - rect.left - cameraRef.current.x) / cameraRef.current.zoom;
+      const worldY = (e.position.y - rect.top - cameraRef.current.y) / cameraRef.current.zoom;
+      const hits = selectionRef.current.hitTest(worldX, worldY);
       if (hits.length > 0 && hits[0]) {
-        selection.selectElement(hits[0].id);
+        selectionRef.current.selectElement(hits[0].id);
       } else {
-        selection.deselectAll();
+        selectionRef.current.deselectAll();
       }
     });
 
@@ -290,17 +308,17 @@ export default function WhiteboardCanvas({
       const rect = container.getBoundingClientRect();
       const cx = e.position.x - rect.left;
       const cy = e.position.y - rect.top;
-      const newZoom = clampZoom(camera.zoom * e.scale);
-      const actualScale = newZoom / camera.zoom;
+      const newZoom = clampZoom(cameraRef.current.zoom * e.scale);
+      const actualScale = newZoom / cameraRef.current.zoom;
       setCamera({
-        x: cx - (cx - camera.x) * actualScale,
-        y: cy - (cy - camera.y) * actualScale,
+        x: cx - (cx - cameraRef.current.x) * actualScale,
+        y: cy - (cy - cameraRef.current.y) * actualScale,
         zoom: newZoom,
       });
     });
 
     gesture.on('three-finger-undo', () => {
-      undoRedo.undo();
+      undoRedoRef.current.undo();
     });
 
     gesture.attach(container);
@@ -309,7 +327,7 @@ export default function WhiteboardCanvas({
       gesture.detach(container);
       gestureRef.current = null;
     };
-  }, [camera, setCamera, selection, undoRedo]);
+  }, [setCamera]);
 
   // ── Pointer event handlers (pan) ──────────────────────
 
@@ -334,12 +352,12 @@ export default function WhiteboardCanvas({
       lastPointer.current = { x: e.clientX, y: e.clientY };
 
       setCamera({
-        x: camera.x + dx,
-        y: camera.y + dy,
-        zoom: camera.zoom,
+        x: cameraRef.current.x + dx,
+        y: cameraRef.current.y + dy,
+        zoom: cameraRef.current.zoom,
       });
     },
-    [camera, setCamera],
+    [],
   );
 
   const handlePointerUp = useCallback(
@@ -356,8 +374,9 @@ export default function WhiteboardCanvas({
     (e: ReactWheelEvent<HTMLDivElement>) => {
       e.preventDefault();
 
-      const newZoom = clampZoom(camera.zoom - e.deltaY * ZOOM_SENSITIVITY);
-      const scale = newZoom / camera.zoom;
+      const prev = cameraRef.current;
+      const newZoom = clampZoom(prev.zoom - e.deltaY * ZOOM_SENSITIVITY);
+      const scale = newZoom / prev.zoom;
 
       // Zoom toward cursor position
       const rect = containerRef.current?.getBoundingClientRect();
@@ -367,12 +386,12 @@ export default function WhiteboardCanvas({
       const cursorY = e.clientY - rect.top;
 
       setCamera({
-        x: cursorX - (cursorX - camera.x) * scale,
-        y: cursorY - (cursorY - camera.y) * scale,
+        x: cursorX - (cursorX - prev.x) * scale,
+        y: cursorY - (cursorY - prev.y) * scale,
         zoom: newZoom,
       });
     },
-    [camera, setCamera],
+    [],
   );
 
   // ── Touch handlers ────────────────────────────────────
@@ -418,9 +437,10 @@ export default function WhiteboardCanvas({
         const prevDist = touchStartRef.current.dist;
         if (prevDist === 0) return;
 
+        const prev = cameraRef.current;
         const scale = dist / prevDist;
-        const newZoom = clampZoom(camera.zoom * scale);
-        const actualScale = newZoom / camera.zoom;
+        const newZoom = clampZoom(prev.zoom * scale);
+        const actualScale = newZoom / prev.zoom;
 
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
@@ -429,15 +449,15 @@ export default function WhiteboardCanvas({
         const cy = midY - rect.top;
 
         setCamera({
-          x: cx - (cx - camera.x) * actualScale,
-          y: cy - (cy - camera.y) * actualScale,
+          x: cx - (cx - prev.x) * actualScale,
+          y: cy - (cy - prev.y) * actualScale,
           zoom: newZoom,
         });
 
         touchStartRef.current = { x: midX, y: midY, dist };
       }
     },
-    [camera, setCamera],
+    [],
   );
 
   // ── Text overlay elements ─────────────────────────────

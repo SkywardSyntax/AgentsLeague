@@ -9,12 +9,12 @@ export default function PropertyPanel({ isVisible }: PropertyPanelProps) {
 
   return (
     <aside
-      className="fixed bottom-2 left-2 right-2 z-40 rounded-xl bg-[var(--color-surface)] p-3 shadow-lg sm:bottom-4 sm:left-4 sm:right-auto sm:w-64 sm:p-4"
+      className="fixed bottom-4 left-4 right-4 z-40 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-[hsl(var(--color-border-subtle))] bg-[hsl(var(--color-surface)/0.85)] p-4 shadow-lg backdrop-blur-xl sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:w-80"
       aria-label="Element properties"
       role="region"
     >
       {/* FillControl, StrokeControl, TypographyControl will go here */}
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--color-text-secondary))]">
         Properties
       </h3>
     </aside>

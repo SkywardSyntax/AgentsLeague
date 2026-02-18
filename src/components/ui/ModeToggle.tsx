@@ -103,13 +103,13 @@ export default function ModeToggle({ onChange }: ModeToggleProps) {
       ref={containerRef}
       role="radiogroup"
       aria-label="Interaction mode"
-      className="relative flex h-8 w-[152px] rounded-full bg-[var(--color-surface-raised)] p-0.5 text-xs font-medium shadow-inner transition-colors duration-150"
+      className="relative flex h-8 w-[152px] rounded-full bg-surface-raised p-0.5 text-xs font-medium shadow-inner transition-colors duration-fast"
       onKeyDown={handleKeyDown}
     >
       {/* Sliding indicator */}
       <span
         aria-hidden="true"
-        className="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-[var(--color-accent)] shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+        className="absolute top-0.5 left-0.5 h-7 w-[74px] rounded-full bg-accent shadow-sm transition-transform duration-normal ease-default"
         style={{ transform: isVoice ? 'translateX(calc(100% - 2px))' : 'translateX(0)' }}
       />
 
@@ -121,10 +121,10 @@ export default function ModeToggle({ onChange }: ModeToggleProps) {
         aria-label="Text mode"
         tabIndex={!isVoice ? 0 : -1}
         onClick={() => handleSwitch(InteractionMode.TEXT)}
-        className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 ${
+        className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-fast ${
           !isVoice
-            ? 'text-white'
-            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+            ? 'text-content-inverse'
+            : 'text-content-secondary hover:text-content-primary'
         }`}
       >
         <KeyboardIcon className="shrink-0" />
@@ -139,10 +139,10 @@ export default function ModeToggle({ onChange }: ModeToggleProps) {
         aria-label="Voice mode"
         tabIndex={isVoice ? 0 : -1}
         onClick={() => handleSwitch(InteractionMode.VOICE)}
-        className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-150 ${
+        className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full transition-colors duration-fast ${
           isVoice
-            ? 'text-white'
-            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+            ? 'text-content-inverse'
+            : 'text-content-secondary hover:text-content-primary'
         }`}
       >
         <MicIcon className="shrink-0" />

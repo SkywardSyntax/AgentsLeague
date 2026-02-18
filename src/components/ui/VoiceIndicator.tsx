@@ -29,18 +29,23 @@ function Waveform({ active, level }: WaveformProps) {
     }
 
     let animating = true;
-    const animate = () => {
+    let lastTime = 0;
+    const FRAME_INTERVAL = 33; // ~30fps throttle to reduce React re-renders
+    const animate = (time: number) => {
       if (!animating) return;
-      setBars((prev) =>
-        prev.map((_, i) => {
-          const center = BAR_COUNT / 2;
-          const dist = Math.abs(i - center) / center;
-          const envelope = 1 - dist * 0.5;
-          const noise = 0.3 + Math.random() * 0.7;
-          const h = MIN_BAR_HEIGHT + (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT) * level * envelope * noise;
-          return Math.round(Math.min(h, MAX_BAR_HEIGHT));
-        }),
-      );
+      if (time - lastTime >= FRAME_INTERVAL) {
+        lastTime = time;
+        setBars((prev) =>
+          prev.map((_, i) => {
+            const center = BAR_COUNT / 2;
+            const dist = Math.abs(i - center) / center;
+            const envelope = 1 - dist * 0.5;
+            const noise = 0.3 + Math.random() * 0.7;
+            const h = MIN_BAR_HEIGHT + (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT) * level * envelope * noise;
+            return Math.round(Math.min(h, MAX_BAR_HEIGHT));
+          }),
+        );
+      }
       frameRef.current = requestAnimationFrame(animate);
     };
     frameRef.current = requestAnimationFrame(animate);
@@ -59,7 +64,7 @@ function Waveform({ active, level }: WaveformProps) {
       {bars.map((h, i) => (
         <div
           key={i}
-          className={`w-[3px] rounded-full transition-all duration-[80ms] ${
+          className={`w-[3px] rounded-full transition-[height] duration-instant ${
             active
               ? 'bg-accent'
               : 'bg-border'
@@ -171,7 +176,7 @@ function MicButton({ state, isSupported, onStart, onStop }: MicButtonProps) {
     >
       {/* Pulse ring for listening state */}
       {isListening && (
-        <span className="absolute inset-0 animate-ping rounded-full bg-error/30" aria-hidden="true" />
+        <span className="absolute inset-0 animate-pulse rounded-full bg-error/20" aria-hidden="true" />
       )}
 
       {/* Mic icon */}
