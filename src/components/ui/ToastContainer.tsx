@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { useErrorHandling, dismissToast, type Toast, type ToastType } from '@/hooks/useErrorHandling';
 
 const ICONS: Record<ToastType, string> = {
@@ -16,7 +17,7 @@ const ACCENT: Record<ToastType, string> = {
   warning: 'text-[hsl(var(--color-warning))]',
 };
 
-function ToastItem({ toast }: { readonly toast: Toast }) {
+const ToastItem = memo(function ToastItem({ toast }: { readonly toast: Toast }) {
   return (
     <div
       role="alert"
@@ -45,7 +46,7 @@ function ToastItem({ toast }: { readonly toast: Toast }) {
       </button>
     </div>
   );
-}
+});
 
 export function ToastContainer() {
   const { toasts } = useErrorHandling();

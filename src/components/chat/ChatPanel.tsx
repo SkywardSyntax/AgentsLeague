@@ -7,6 +7,7 @@ import {
   useRef,
   type FormEvent,
   type KeyboardEvent,
+  memo,
 } from 'react';
 import {
   InteractionMode,
@@ -210,7 +211,7 @@ function MessageActions({
 
 // ── MessageBubble ───────────────────────────────────────────────
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   onDelete,
   onRegenerate,
@@ -357,7 +358,7 @@ function MessageBubble({
       </div>
     </div>
   );
-}
+});
 
 function MessageText({ text }: { text: string }) {
   return (
