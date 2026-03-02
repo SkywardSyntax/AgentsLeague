@@ -225,7 +225,6 @@ export function useAgentStream() {
                 }
               }
             }
-            }
           }
 
           const trailing = buffer.trim();

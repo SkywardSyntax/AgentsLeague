@@ -537,9 +537,13 @@ export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', '
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption'] as const;
 
+export function isEnumMember<T extends readonly string[]>(allowed: T, value: string): value is T[number] {
+  return (allowed as readonly string[]).includes(value);
+}
+
 function asEnum<T extends readonly string[]>(value: unknown, allowed: T): T[number] | null {
-  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
-    ? (value as T[number])
+  return typeof value === 'string' && isEnumMember(allowed, value)
+    ? value
     : null;
 }
 

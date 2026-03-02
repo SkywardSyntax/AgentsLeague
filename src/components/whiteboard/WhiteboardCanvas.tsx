@@ -3,12 +3,14 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveStroke, DrawBatch, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
-import { createActiveBatch, easeOutCubic, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
   partialPolylineByLength,
+  screenStrokePx,
+  computeFitCamera,
 } from '@/lib/whiteboard/geometry';
-import { drawStroke, drawSmoothStroke } from '@/lib/whiteboard/canvas-draw';
+import { computeFps, isDebugShortcut, createDrawCallCounter, formatFps } from '@/lib/whiteboard/canvas-debug';
 
 interface Camera {
   x: number;
@@ -27,7 +29,42 @@ const MAX_COMMITTED = 2000;
 
 import { clamp } from '@/lib/whiteboard/geometry';
 
-export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
+function drawStroke(
+  ctx: CanvasRenderingContext2D,
+  points: StrokeTrajectory['points'],
+  color: string,
+  baseWidth: number,
+  camera: Camera,
+  dpr: number,
+) {
+  if (points.length < 2) return;
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const n = points.length - 1;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
+    const t = i / n;
+
+    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
+    const worldWidth = baseWidth * widthMod;
+    const px = screenStrokePx(worldWidth, camera.zoom, dpr);
+    const worldLineWidth = px / (camera.zoom * dpr);
+
+    ctx.lineWidth = worldLineWidth;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+}
+
+const MAX_RETRY_ATTEMPTS = 3;
+
+export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLCanvasElement>(null);
   const committedRef = useRef<HTMLCanvasElement>(null);
@@ -38,20 +75,60 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
   const committedDirtyRef = useRef(true);
 
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
+  const clearGenerationRef = useRef(0);
   const rafRef = useRef<number | null>(null);
-  const [dpr, setDpr] = useState(1);
-  const [size, setSize] = useState({ width: 1000, height: 700 });
-  const [camera, setCamera] = useState<Camera>({ x: 40, y: 40, zoom: 1 });
-  const [stats, setStats] = useState({ active: 0, committed: 0 });
+  const drawErrorCountRef = useRef(0);
+  const retryAttemptsRef = useRef(0);
+
+  const [renderError, setRenderError] = useState(false);
+
+  // Store onWarning in a ref to avoid re-running batch effect on callback identity changes
+  const onWarningRef = useRef(onWarning);
+  onWarningRef.current = onWarning;
+
+  // Camera/dpr/size stored as refs so RAF loop doesn't restart on changes (C1 fix)
+  const cameraRef = useRef<Camera>({ x: 40, y: 40, zoom: 1 });
+  const dprRef = useRef(1);
+  const sizeRef = useRef({ width: 1000, height: 700 });
+  // Track previous camera for grid dirty check
+  const prevCameraRef = useRef<Camera>({ x: 40, y: 40, zoom: 1 });
+  const prevSizeRef = useRef({ width: 1000, height: 700 });
+
+  // Stats displayed via refs + direct DOM updates to avoid React re-renders (C2 fix)
+  const statsRef = useRef({ active: 0, committed: 0 });
+  const statsZoomElRef = useRef<HTMLDivElement>(null);
+  const statsCommittedElRef = useRef<HTMLDivElement>(null);
+  const statsActiveElRef = useRef<HTMLDivElement>(null);
+
+  const debugVisibleRef = useRef(false);
+  const statsFpsElRef = useRef<HTMLDivElement>(null);
+  const statsDrawCallsElRef = useRef<HTMLDivElement>(null);
+  const frameTimesRef = useRef<number[]>([]);
+  const lastFrameTimeRef = useRef(0);
+  const drawCallCounterRef = useRef(createDrawCallCounter());
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (isDebugShortcut(e)) {
+        debugVisibleRef.current = !debugVisibleRef.current;
+        const overlay = containerRef.current?.querySelector('[data-testid="debug-overlay"]') as HTMLElement | null;
+        if (overlay) overlay.style.display = debugVisibleRef.current ? '' : 'none';
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const resizeCanvases = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-    const nextDpr = window.devicePixelRatio || 1;
+    // Guard: skip resize if container has no renderable area
+    if (rect.width < 1 || rect.height < 1) return;
+    const nextDpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 5));
 
-    setDpr(nextDpr);
-    setSize({ width: rect.width, height: rect.height });
+    dprRef.current = nextDpr;
+    sizeRef.current = { width: rect.width, height: rect.height };
 
     [bgRef.current, committedRef.current, activeRef.current].forEach((canvas) => {
       if (!canvas) return;
@@ -66,7 +143,12 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => resizeCanvases());
-    window.addEventListener('resize', resizeCanvases);
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedResize = () => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => resizeCanvases(), 100);
+    };
+    window.addEventListener('resize', debouncedResize);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -77,7 +159,8 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener('resize', resizeCanvases);
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      window.removeEventListener('resize', debouncedResize);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [resizeCanvases]);
@@ -91,16 +174,28 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
         if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
         processedBatchIdsRef.current.add(batch.batch_id);
 
-        const compiled = await compileBatchToStrokes(batch);
+        let compiled;
+        try {
+          compiled = await compileBatchToStrokes(batch);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          onWarningRef.current(`Failed to compile batch ${batch.batch_id}: ${msg}`);
+          continue;
+        }
         if (cancelled) return;
 
         if (compiled.clear) {
           committedStrokesRef.current = [];
           activeStrokesRef.current = [];
+          // Fix N4: clear processed IDs to prevent unbounded memory growth
+          processedBatchIdsRef.current.clear();
+          processedBatchIdsRef.current.add(batch.batch_id);
+          // Fix N5: bump generation so RAF loop discards pre-clear completed strokes
+          clearGenerationRef.current += 1;
           committedDirtyRef.current = true;
         }
 
-        compiled.warnings.forEach(onWarning);
+        compiled.warnings.forEach((w) => onWarningRef.current(w));
 
         if (compiled.strokes.length > 0) {
           normalizeBatchTextSpacingAgainstScene(
@@ -108,24 +203,38 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
             compiled.strokes,
             committedStrokesRef.current.concat(activeStrokesRef.current),
           );
-          const active = createActiveBatch(compiled.strokes, performance.now());
-          activeStrokesRef.current.push(...active);
+          const rm = prefersReducedMotion();
+          if (rm) {
+            // Reduced motion: commit strokes immediately, no animation
+            committedStrokesRef.current = committedStrokesRef.current.concat(compiled.strokes);
+            committedDirtyRef.current = true;
+          } else {
+            const active = createActiveBatch(compiled.strokes, performance.now());
+            activeStrokesRef.current.push(...active);
+          }
         }
       }
     };
 
-    void process();
+    void process().catch((err: unknown) => {
+      if (!cancelled) {
+        onWarningRef.current(`Batch compilation failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [batches, onWarning]);
+  }, [batches]);
+
+  // RAF loop generation: incrementing restarts the loop via useEffect dependency
+  const [rafGeneration, setRafGeneration] = useState(0);
 
   useEffect(() => {
-    // Camera, dpr, or size changed — committed canvas needs full redraw
-    committedDirtyRef.current = true;
+    let lastClearGeneration = clearGenerationRef.current;
 
     const drawFrame = () => {
+      try {
       const bgCanvas = bgRef.current;
       const committedCanvas = committedRef.current;
       const activeCanvas = activeRef.current;
@@ -142,11 +251,37 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
         return;
       }
 
+      const camera = cameraRef.current;
+      const dpr = dprRef.current;
+      const size = sizeRef.current;
+
+      // FPS tracking
+      const frameNow = performance.now();
+      if (lastFrameTimeRef.current > 0) {
+        const delta = frameNow - lastFrameTimeRef.current;
+        const ft = frameTimesRef.current;
+        ft.push(delta);
+        if (ft.length > 60) ft.shift();
+      }
+      lastFrameTimeRef.current = frameNow;
+      drawCallCounterRef.current.reset();
+
       const scale = dpr * camera.zoom;
       const tx = camera.x * dpr;
       const ty = camera.y * dpr;
 
-      const drawGrid = () => {
+      // Grid caching: only redraw background when camera or size changed (C6 fix)
+      const prev = prevCameraRef.current;
+      const prevSize = prevSizeRef.current;
+      const cameraChanged =
+        prev.x !== camera.x || prev.y !== camera.y || prev.zoom !== camera.zoom ||
+        prevSize.width !== size.width || prevSize.height !== size.height;
+
+      if (cameraChanged) {
+        prevCameraRef.current = { ...camera };
+        prevSizeRef.current = { ...size };
+        committedDirtyRef.current = true;
+
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
         bgCtx.fillStyle = '#f7f9fc';
@@ -175,22 +310,43 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
           bgCtx.lineTo(maxX, y);
           bgCtx.stroke();
         }
-      };
+      }
 
-      drawGrid();
+      // Viewport bounds in world space for culling
+      const vpMinX = -camera.x / camera.zoom;
+      const vpMinY = -camera.y / camera.zoom;
+      const vpMaxX = vpMinX + size.width / camera.zoom;
+      const vpMaxY = vpMinY + size.height / camera.zoom;
+      const cullMargin = 50;
 
-      // Only redraw committed canvas when dirty (new strokes, camera change, resize, clear)
+      // Committed layer: only redraw when dirty
       if (committedDirtyRef.current) {
         committedCtx.setTransform(1, 0, 0, 1, 0, 0);
         committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
         committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
 
         for (const stroke of committedStrokesRef.current) {
-          drawSmoothStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+          if (stroke.bounds) {
+            const b = stroke.bounds;
+            if (b.maxX < vpMinX - cullMargin || b.minX > vpMaxX + cullMargin ||
+                b.maxY < vpMinY - cullMargin || b.minY > vpMaxY + cullMargin) {
+              continue;
+            }
+          }
+          drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+          drawCallCounterRef.current.increment();
         }
         committedDirtyRef.current = false;
       }
 
+      // Skip active layer when no strokes are animating
+      if (activeStrokesRef.current.length === 0) {
+        if (statsRef.current.active > 0) {
+          // Clear once when transitioning from active→empty
+          activeCtx.setTransform(1, 0, 0, 1, 0, 0);
+          activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
+        }
+      } else {
       activeCtx.setTransform(1, 0, 0, 1, 0, 0);
       activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
       activeCtx.setTransform(scale, 0, 0, scale, tx, ty);
@@ -207,7 +363,17 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
             : stroke.length * rawT;
         const partial = partialPolylineByLength(stroke.points, stroke.cumulativeLengths, visibleLength);
 
+        if (stroke.bounds) {
+          const b = stroke.bounds;
+          if (b.maxX < vpMinX - cullMargin || b.minX > vpMaxX + cullMargin ||
+              b.maxY < vpMinY - cullMargin || b.minY > vpMaxY + cullMargin) {
+            if (rawT >= 1) { completed.push(stroke); } else { nextActive.push(stroke); }
+            continue;
+          }
+        }
+
         drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr);
+          drawCallCounterRef.current.increment();
 
         if (rawT >= 1) {
           completed.push(stroke);
@@ -216,24 +382,50 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
         }
       }
 
-      if (completed.length > 0) {
+      // Fix N5: discard completed strokes if a clear happened mid-frame (zombie stroke fix)
+      const currentGen = clearGenerationRef.current;
+      if (completed.length > 0 && currentGen === lastClearGeneration) {
         committedStrokesRef.current = committedStrokesRef.current.concat(completed);
         if (committedStrokesRef.current.length > MAX_COMMITTED) {
           committedStrokesRef.current = committedStrokesRef.current.slice(-MAX_COMMITTED);
         }
         committedDirtyRef.current = true;
       }
+      lastClearGeneration = currentGen;
       activeStrokesRef.current = nextActive;
+      } // end active strokes else-branch
 
-      const nextStats = {
-        active: activeStrokesRef.current.length,
-        committed: committedStrokesRef.current.length,
-      };
-      setStats((prev) =>
-        prev.active === nextStats.active && prev.committed === nextStats.committed
-          ? prev
-          : nextStats,
-      );
+      // Fix C2: update stats via direct DOM mutation instead of setState
+      const nextActive_count = activeStrokesRef.current.length;
+      const nextCommitted_count = committedStrokesRef.current.length;
+      if (statsRef.current.active !== nextActive_count || statsRef.current.committed !== nextCommitted_count) {
+        statsRef.current = { active: nextActive_count, committed: nextCommitted_count };
+        if (statsCommittedElRef.current) statsCommittedElRef.current.textContent = `Committed: ${nextCommitted_count}`;
+        if (statsActiveElRef.current) statsActiveElRef.current.textContent = `Active: ${nextActive_count}`;
+      }
+      // Update zoom display on camera change
+      if (cameraChanged && statsZoomElRef.current) {
+        statsZoomElRef.current.textContent = `Zoom: ${(camera.zoom * 100).toFixed(0)}%`;
+      }
+
+      // Update FPS and draw-call stats when debug overlay is visible
+      if (debugVisibleRef.current) {
+        const fps = computeFps(frameTimesRef.current);
+        if (statsFpsElRef.current) statsFpsElRef.current.textContent = `FPS: ${formatFps(fps)}`;
+        if (statsDrawCallsElRef.current) statsDrawCallsElRef.current.textContent = `Draws: ${drawCallCounterRef.current.read()}`;
+      }
+
+      drawErrorCountRef.current = 0;
+      } catch (err) {
+        drawErrorCountRef.current += 1;
+        console.error('WhiteboardCanvas draw error:', err);
+        if (drawErrorCountRef.current >= 10) {
+          onWarningRef.current('Rendering paused due to repeated errors. Try resizing the window.');
+          setRenderError(true);
+          rafRef.current = null;
+          return;
+        }
+      }
 
       rafRef.current = requestAnimationFrame(drawFrame);
     };
@@ -241,8 +433,50 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
     rafRef.current = requestAnimationFrame(drawFrame);
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     };
-  }, [camera, dpr, size.height, size.width]);
+  }, [rafGeneration]);
+
+  const fitToContent = useCallback(() => {
+    const strokes = committedStrokesRef.current;
+    if (strokes.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of strokes) {
+      if (s.bounds) {
+        if (s.bounds.minX < minX) minX = s.bounds.minX;
+        if (s.bounds.minY < minY) minY = s.bounds.minY;
+        if (s.bounds.maxX > maxX) maxX = s.bounds.maxX;
+        if (s.bounds.maxY > maxY) maxY = s.bounds.maxY;
+      } else {
+        for (const p of s.points) {
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+      }
+    }
+    if (!isFinite(minX)) return;
+    const result = computeFitCamera(
+      { minX, minY, maxX, maxY },
+      sizeRef.current.width,
+      sizeRef.current.height,
+      MIN_ZOOM,
+      MAX_ZOOM,
+    );
+    if (!result) return;
+    cameraRef.current = result;
+    committedDirtyRef.current = true;
+  }, []);
+
+  const retryRendering = useCallback(() => {
+    if (retryAttemptsRef.current >= MAX_RETRY_ATTEMPTS) return;
+    retryAttemptsRef.current += 1;
+    drawErrorCountRef.current = 0;
+    setRenderError(false);
+    committedDirtyRef.current = true;
+    setRafGeneration((g) => g + 1);
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -252,25 +486,94 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
     let lastX = 0;
     let lastY = 0;
 
+    // Pinch-to-zoom: track active pointers
+    const activePointers = new Map<number, { x: number; y: number }>();
+    let lastPinchDist = 0;
+
+    function getPinchDistance(): number {
+      const pts = Array.from(activePointers.values());
+      if (pts.length < 2) return 0;
+      const dx = pts[1]!.x - pts[0]!.x;
+      const dy = pts[1]!.y - pts[0]!.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function getPinchCenter(): { x: number; y: number } {
+      const pts = Array.from(activePointers.values());
+      return {
+        x: (pts[0]!.x + pts[1]!.x) / 2,
+        y: (pts[0]!.y + pts[1]!.y) / 2,
+      };
+    }
+
     const onPointerDown = (e: PointerEvent) => {
-      isPanning = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (activePointers.size === 2) {
+        // Entering pinch mode — cancel any pan
+        isPanning = false;
+        lastPinchDist = getPinchDistance();
+      } else if (activePointers.size === 1) {
+        isPanning = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+      }
       container.setPointerCapture(e.pointerId);
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (activePointers.size >= 2) {
+        // Pinch-to-zoom
+        const dist = getPinchDistance();
+        if (lastPinchDist > 0 && dist > 0) {
+          const rect = container.getBoundingClientRect();
+          const center = getPinchCenter();
+          const sx = center.x - rect.left;
+          const sy = center.y - rect.top;
+
+          const c = cameraRef.current;
+          const worldX = (sx - c.x) / c.zoom;
+          const worldY = (sy - c.y) / c.zoom;
+
+          const scale = dist / lastPinchDist;
+          const nextZoom = clamp(c.zoom * scale, MIN_ZOOM, MAX_ZOOM);
+
+          cameraRef.current = {
+            x: sx - worldX * nextZoom,
+            y: sy - worldY * nextZoom,
+            zoom: nextZoom,
+          };
+        }
+        lastPinchDist = dist;
+        return;
+      }
+
       if (!isPanning) return;
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
       lastX = e.clientX;
       lastY = e.clientY;
-      setCamera((c) => ({ ...c, x: c.x + dx, y: c.y + dy }));
+      cameraRef.current = {
+        ...cameraRef.current,
+        x: cameraRef.current.x + dx,
+        y: cameraRef.current.y + dy,
+      };
     };
 
     const onPointerUp = (e: PointerEvent) => {
-      isPanning = false;
-      container.releasePointerCapture(e.pointerId);
+      activePointers.delete(e.pointerId);
+      if (activePointers.size < 2) lastPinchDist = 0;
+      if (activePointers.size === 0) isPanning = false;
+      try { container.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    };
+
+    // Fix C12: handle pointercancel to prevent stuck pan state
+    const onPointerCancel = (e: PointerEvent) => {
+      activePointers.delete(e.pointerId);
+      if (activePointers.size < 2) lastPinchDist = 0;
+      if (activePointers.size === 0) isPanning = false;
+      try { container.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     };
 
     const onWheel = (e: WheelEvent) => {
@@ -279,39 +582,52 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
 
-      setCamera((c) => {
-        const worldX = (sx - c.x) / c.zoom;
-        const worldY = (sy - c.y) / c.zoom;
+      const c = cameraRef.current;
+      const worldX = (sx - c.x) / c.zoom;
+      const worldY = (sy - c.y) / c.zoom;
 
-        const zoomFactor = Math.exp(-e.deltaY * 0.0012);
-        const nextZoom = clamp(c.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM);
+      const zoomFactor = Math.exp(-e.deltaY * 0.0012);
+      const nextZoom = clamp(c.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM);
 
-        return {
-          x: sx - worldX * nextZoom,
-          y: sy - worldY * nextZoom,
-          zoom: nextZoom,
-        };
-      });
+      cameraRef.current = {
+        x: sx - worldX * nextZoom,
+        y: sy - worldY * nextZoom,
+        zoom: nextZoom,
+      };
     };
 
     container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('pointermove', onPointerMove);
     container.addEventListener('pointerup', onPointerUp);
+    container.addEventListener('pointercancel', onPointerCancel);
     container.addEventListener('wheel', onWheel, { passive: false });
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      if (e.key === 'Home') {
+        e.preventDefault();
+        fitToContent();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
 
     return () => {
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
+      container.removeEventListener('pointercancel', onPointerCancel);
       container.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [fitToContent]);
 
   return (
     <section className="relative h-full overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-paper)] shadow-[var(--shadow-card)]">
       <div
         ref={containerRef}
-        className="relative h-full w-full cursor-grab active:cursor-grabbing"
+        tabIndex={0}
+        className="relative h-full w-full cursor-grab active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
+        style={{ touchAction: 'none' }}
         aria-label="Whiteboard"
         role="application"
       >
@@ -320,11 +636,42 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
         <canvas ref={activeRef} className="absolute inset-0" />
       </div>
 
-      <div aria-live="polite" className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
-        <div>Zoom: {(camera.zoom * 100).toFixed(0)}%</div>
-        <div>Committed: {stats.committed}</div>
-        <div>Active: {stats.active}</div>
+      {renderError && (
+        <div
+          role="alert"
+          className="absolute inset-x-0 bottom-12 mx-auto w-fit rounded-lg bg-red-50 px-4 py-2 text-sm text-red-800 shadow-md"
+        >
+          Rendering paused —{' '}
+          {retryAttemptsRef.current < MAX_RETRY_ATTEMPTS ? (
+            <button
+              onClick={retryRendering}
+              className="underline font-medium hover:text-red-900 focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
+              aria-label="Retry rendering"
+            >
+              click to retry
+            </button>
+          ) : (
+            <span>max retries reached, please reload</span>
+          )}
+        </div>
+      )}
+
+      <div data-testid="debug-overlay" className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>
+        <div ref={statsZoomElRef}>Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
+        <div ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
+        <div ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
+        <div ref={statsFpsElRef}>FPS: 0.0</div>
+        <div ref={statsDrawCallsElRef}>Draws: 0</div>
       </div>
+
+      <button
+        onClick={fitToContent}
+        className="glass-panel absolute bottom-3 right-3 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:text-[var(--color-text-primary)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
+        aria-label="Fit to content"
+        title="Fit to content (Home)"
+      >
+        ⊞ Fit
+      </button>
     </section>
   );
-});
+}

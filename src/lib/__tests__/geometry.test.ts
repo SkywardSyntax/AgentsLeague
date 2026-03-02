@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
   clamp,
-  cumulativeLengths,
   distance,
+  cumulativeLengths,
+  totalLength,
   partialPolylineByLength,
   resamplePolyline,
   screenStrokePx,
-  totalLength,
   strokesBoundingBox,
   bezierPointAt,
   bezierLength,
   bezierChainLength,
   bezierPointAtArcLength,
   catmullRomToBezier,
+  computeFitCamera,
 } from '@/lib/whiteboard/geometry';
 import type { BezierSegment } from '@/lib/whiteboard/geometry';
 import { rectPoints, withJitter, resolveSourceElementId } from '@/lib/whiteboard/semantic-to-strokes';
+import { withJitterAmount } from '@/lib/whiteboard/stroke-jitter';
 
 describe('geometry + sketch behavior', () => {
   it('follows rectangle corner order and closes path', () => {
@@ -304,7 +306,7 @@ describe('withJitter consolidated', () => {
       { x: 10, y: 10 },
       { x: 20, y: 20 },
     ];
-    const result = withJitter(pts, 'seed', 0.5);
+    const result = withJitterAmount(pts, 'seed', 0.5);
     // First and last preserved
     expect(result[0]).toEqual(pts[0]);
     expect(result[2]).toEqual(pts[2]);
@@ -317,7 +319,7 @@ describe('withJitter consolidated', () => {
       { x: 0, y: 0 },
       { x: 10, y: 10 },
     ];
-    expect(withJitter(pts, 'seed', 0)).toBe(pts);
+    expect(withJitterAmount(pts, 'seed', 0)).toBe(pts);
   });
 });
 
@@ -814,5 +816,158 @@ describe('strokesBoundingBox with padding', () => {
 
   it('empty strokes still return null regardless of padding', () => {
     expect(strokesBoundingBox([], 10)).toBeNull();
+  });
+});
+
+describe('computeFitCamera', () => {
+  it('centers bbox and applies 0.9 margin zoom', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+      1000, 800, 0.25, 4,
+    );
+    expect(result).not.toBeNull();
+    // zoom = min(1000/100, 800/100) * 0.9 = 8 * 0.9 = 7.2 → clamped to 4
+    expect(result!.zoom).toBe(4);
+    // center of bbox = (50, 50), camera: x = 500 - 50*4 = 300, y = 400 - 50*4 = 200
+    expect(result!.x).toBe(300);
+    expect(result!.y).toBe(200);
+  });
+
+  it('fits wide content horizontally', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 2000, maxY: 200 },
+      1000, 800, 0.25, 4,
+    );
+    expect(result).not.toBeNull();
+    // zoom = min(1000/2000, 800/200) * 0.9 = min(0.5, 4) * 0.9 = 0.45
+    expect(result!.zoom).toBeCloseTo(0.45);
+  });
+
+  it('returns null for zero-area bbox', () => {
+    expect(computeFitCamera({ minX: 5, minY: 5, maxX: 5, maxY: 5 }, 1000, 800, 0.25, 4)).toBeNull();
+  });
+
+  it('clamps zoom to minZoom for very large content', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 100000, maxY: 100000 },
+      1000, 800, 0.25, 4,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.zoom).toBe(0.25);
+  });
+
+  it('applies explicit padding parameter', () => {
+    const half = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      0.5,
+    );
+    const full = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      1.0,
+    );
+    expect(half).not.toBeNull();
+    expect(full).not.toBeNull();
+    // zoom scales proportionally with padding
+    expect(half!.zoom / full!.zoom).toBeCloseTo(0.5);
+  });
+
+  it('clamps padding below 0.1', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      0,
+    );
+    const baseline = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      0.1,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.zoom).toBe(baseline!.zoom);
+  });
+
+  it('uses default 0.9 padding when not specified', () => {
+    const withDefault = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 2000, maxY: 200 },
+      1000, 800, 0.25, 4,
+    );
+    const explicit = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 2000, maxY: 200 },
+      1000, 800, 0.25, 4,
+      0.9,
+    );
+    expect(withDefault).toEqual(explicit);
+  });
+});
+
+describe('distance', () => {
+  it('computes 3-4-5 triangle hypotenuse', () => {
+    expect(distance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+  });
+
+  it('returns 0 for same point', () => {
+    expect(distance({ x: 7, y: 7 }, { x: 7, y: 7 })).toBe(0);
+  });
+
+  it('handles negative coordinates', () => {
+    expect(distance({ x: -3, y: -4 }, { x: 0, y: 0 })).toBe(5);
+  });
+});
+
+describe('cumulativeLengths', () => {
+  it('returns cumulative distances for 3-point polyline', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 3, y: 14 }];
+    const result = cumulativeLengths(pts);
+    expect(result).toEqual([0, 5, 15]);
+  });
+
+  it('returns [0] for single point', () => {
+    expect(cumulativeLengths([{ x: 1, y: 2 }])).toEqual([0]);
+  });
+
+  it('returns [] for empty array', () => {
+    expect(cumulativeLengths([])).toEqual([]);
+  });
+});
+
+describe('totalLength', () => {
+  it('computes known triangle perimeter segments', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 3, y: 14 }];
+    expect(totalLength(pts)).toBe(15);
+  });
+
+  it('returns 0 for single point', () => {
+    expect(totalLength([{ x: 5, y: 5 }])).toBe(0);
+  });
+});
+
+describe('resamplePolyline robustness', () => {
+  it('returns copy for spacing = 0', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    const result = resamplePolyline(pts, 0);
+    expect(result).toEqual(pts);
+    expect(result).not.toBe(pts);
+  });
+
+  it('returns copy for spacing = -1', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const result = resamplePolyline(pts, -1);
+    expect(result).toEqual(pts);
+    expect(result).not.toBe(pts);
+  });
+
+  it('returns copy for spacing = NaN', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const result = resamplePolyline(pts, NaN);
+    expect(result).toEqual(pts);
+    expect(result).not.toBe(pts);
+  });
+
+  it('returns single point for all-coincident input', () => {
+    const pts = [{ x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }];
+    const result = resamplePolyline(pts, 2);
+    expect(result).toEqual([{ x: 5, y: 5 }]);
   });
 });

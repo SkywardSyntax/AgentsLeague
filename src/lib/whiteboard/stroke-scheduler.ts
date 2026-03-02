@@ -9,36 +9,71 @@ export const STROKE_SPEED_PX_PER_SECOND = 180;
  * Clamped to [220ms, 2600ms] — short strokes have a minimum visible duration
  * and long strokes cap to avoid excessively slow drawing.
  */
-export function strokeDurationMs(length: number): number {
+
+/** Runtime check for prefers-reduced-motion; re-evaluated on every call so it
+ *  picks up live OS setting changes. Safe for SSR (returns false). */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+export function strokeDurationMs(length: number, reducedMotion = false): number {
+  if (reducedMotion) return 0;
   if (!Number.isFinite(length) || length < 0) return 220;
   const raw = (length / STROKE_SPEED_PX_PER_SECOND) * 1000;
   return Math.min(2600, Math.max(220, raw));
 }
 
+
 export type Clock = () => number;
 
 export const defaultClock: Clock = () => performance.now();
+
+export const MAX_TOTAL_STAGGER_MS = 800;
+const DEFAULT_STAGGER_MS = 60;
+
+export function staggeredStartTimes(
+  count: number,
+  batchStartedAt: number,
+  staggerMs = DEFAULT_STAGGER_MS,
+): number[] {
+  if (count <= 0) return [];
+  const safeStagger = Number.isFinite(staggerMs) && staggerMs > 0
+    ? staggerMs
+    : DEFAULT_STAGGER_MS;
+  const clamped = count > 1
+    ? Math.min(safeStagger, MAX_TOTAL_STAGGER_MS / (count - 1))
+    : safeStagger;
+  return Array.from({ length: count }, (_, i) => batchStartedAt + i * clamped);
+}
 
 /**
  * Convert raw `StrokeTrajectory[]` to `ActiveStroke[]` by precomputing
  * cumulative path lengths and animation duration for each stroke.
  * All strokes in the batch share the same `startedAt` timestamp so they
- * animate in parallel.
+ * animate in parallel (unless stagger is true).
  */
 export function createActiveBatch(
   strokes: StrokeTrajectory[],
   startedAt?: number,
-  clock: Clock = defaultClock,
+  stagger: boolean | Clock = false,
+  reducedMotion = false,
 ): ActiveStroke[] {
+  const clock = typeof stagger === 'function' ? stagger : defaultClock;
+  const doStagger = typeof stagger === 'boolean' ? stagger : false;
   const start = startedAt ?? clock();
-  return strokes.map((stroke) => {
+  const valid = strokes.filter((s) => s.points.length >= 2);
+  const times = doStagger && !reducedMotion
+    ? staggeredStartTimes(valid.length, start)
+    : null;
+  return valid.map((stroke, i) => {
     const cumulative = cumulativeLengths(stroke.points);
     const length = totalLength(stroke.points);
     const factors = cornerSpeedFactors(stroke.points);
     return {
       ...stroke,
-      startedAt: start,
-      durationMs: strokeDurationMs(length),
+      startedAt: times ? times[i]! : start,
+      durationMs: strokeDurationMs(length, reducedMotion),
       length,
       cumulativeLengths: cumulative,
       speedFactors: factors,

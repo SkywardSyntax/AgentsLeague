@@ -20,6 +20,24 @@ let cacheHits = 0;
 let cacheMisses = 0;
 const pendingRenders = new Map<string, Promise<string>>();
 
+function isValidAdaptor(obj: unknown): obj is MathJaxContext['adaptor'] {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'outerHTML' in obj &&
+    typeof (obj as Record<string, unknown>).outerHTML === 'function'
+  );
+}
+
+function isValidHtml(obj: unknown): obj is MathJaxContext['html'] {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'convert' in obj &&
+    typeof (obj as Record<string, unknown>).convert === 'function'
+  );
+}
+
 function identityMatrix(): Matrix2D {
   return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 }

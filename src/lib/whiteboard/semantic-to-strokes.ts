@@ -1,6 +1,8 @@
 import type {
   DrawBatch,
+  DrawElement,
   Point,
+  StylePreset,
   StrokeTrajectory,
 } from '@/types/agent';
 import { renderTexToSvg, extractSvgStrokes } from '@/lib/latex/mathjax-client';
@@ -21,6 +23,7 @@ export { withJitter } from './stroke-jitter';
 
 const DEFAULT_COLOR = '#1f2a44';
 const DEFAULT_BASE_WIDTH = 1.45;
+const MAX_TEXT_LINES = 50;
 
 
 async function compileTextLikeElement(
@@ -44,11 +47,11 @@ async function compileTextLikeElement(
   });
 }
 
-function escapePlainTextForTex(input: string): string {
+export function escapePlainTextForTex(input: string): string {
   return input.replace(/([\\{}$&#_^%~])/g, '\\$1');
 }
 
-function looksMathLikeText(input: string): boolean {
+export function looksMathLikeText(input: string): boolean {
   const value = input.trim();
   if (!value) return false;
   if (/\\[a-zA-Z]+/.test(value)) return true;
@@ -67,10 +70,18 @@ function shiftStrokes(strokes: StrokeTrajectory[], dx: number, dy: number): void
       x: point.x + dx,
       y: point.y + dy,
     }));
+    if (stroke.bounds) {
+      stroke.bounds = {
+        minX: stroke.bounds.minX + dx,
+        minY: stroke.bounds.minY + dy,
+        maxX: stroke.bounds.maxX + dx,
+        maxY: stroke.bounds.maxY + dy,
+      };
+    }
   }
 }
 
-export function resolveSourceElementId(strokeElementId: string, elementIdsSorted: string[]): string | null {
+export function resolveSourceElementId(strokeElementId: string, elementIdsSorted: string[] | Set<string>): string | null {
   for (const id of elementIdsSorted) {
     if (strokeElementId === id || strokeElementId.startsWith(`${id}-`)) return id;
   }
@@ -100,7 +111,7 @@ function textLineOrder(strokeElementId: string): number | null {
 function normalizeTextVerticalSpacing(batch: DrawBatch, strokes: StrokeTrajectory[]): void {
   const elementOrder = new Map(batch.elements.map((el, idx) => [el.id, idx] as const));
   const elementType = new Map(batch.elements.map((el) => [el.id, el.type] as const));
-  const sourceIds = [...elementOrder.keys()].sort((a, b) => b.length - a.length);
+  const sourceIds = new Set(elementOrder.keys());
 
   const groups = new Map<
     string,
@@ -156,7 +167,8 @@ function normalizeTextVerticalSpacing(batch: DrawBatch, strokes: StrokeTrajector
   for (const group of ordered) {
     let requiredDy = 0;
 
-    for (const prev of placed) {
+    for (let j = placed.length - 1; j >= 0; j--) {
+      const prev = placed[j]!;
       const overlapX = horizontalOverlapPx(group.bounds, prev.bounds);
       if (overlapX < 10) continue;
 
@@ -165,8 +177,9 @@ function normalizeTextVerticalSpacing(batch: DrawBatch, strokes: StrokeTrajector
         Math.max(group.bounds.height, prev.bounds.height) * 0.2,
       );
       const minGap = Math.max(group.type === 'latex' || prev.type === 'latex' ? 14 : 10, dynamicGap);
-      const needed = prev.bounds.maxY + minGap - (group.bounds.minY + requiredDy);
+      const needed = prev.bounds.maxY + minGap - group.bounds.minY;
       if (needed > requiredDy) requiredDy = needed;
+      break;
     }
 
     if (requiredDy > 0) {
@@ -182,255 +195,286 @@ function normalizeTextVerticalSpacing(batch: DrawBatch, strokes: StrokeTrajector
   }
 }
 
-export async function compileBatchToStrokes(
-  batch: DrawBatch,
+async function compileOneElement(
+  element: DrawElement,
+  preset: StylePreset | undefined,
 ): Promise<{ strokes: StrokeTrajectory[]; warnings: string[]; clear: boolean }> {
-  const warnings: string[] = [];
   const strokes: StrokeTrajectory[] = [];
-  const preset = batch.style_preset ?? 'clean_pen_sketch';
+  const warnings: string[] = [];
+  const color = element.color ?? DEFAULT_COLOR;
+  const baseWidth = strokeWidthForPreset(preset, element.stroke_width ?? DEFAULT_BASE_WIDTH);
 
-  let clear = false;
+  if (element.type === 'clear') {
+    return { strokes, warnings, clear: true };
+  }
 
-  for (const element of batch.elements) {
-    const color = element.color ?? DEFAULT_COLOR;
-    const baseWidth = strokeWidthForPreset(preset, element.stroke_width ?? DEFAULT_BASE_WIDTH);
+  if (element.type === 'rect') {
+    const points = withJitter(resamplePolyline(rectPoints(element), 4), element.id, preset);
+    strokes.push({ id: `${element.id}-rect`, elementId: element.id, points, color, baseWidth });
+    return { strokes, warnings, clear: false };
+  }
 
-    if (element.type === 'clear') {
-      clear = true;
-      continue;
-    }
+  if (element.type === 'ellipse') {
+    const points = withJitter(resamplePolyline(ellipsePoints(element), 4), element.id, preset);
+    strokes.push({ id: `${element.id}-ellipse`, elementId: element.id, points, color, baseWidth });
+    return { strokes, warnings, clear: false };
+  }
 
-    if (element.type === 'rect') {
-      const points = withJitter(resamplePolyline(rectPoints(element), 4), element.id, preset);
-      strokes.push({ id: `${element.id}-rect`, elementId: element.id, points, color, baseWidth });
-      continue;
-    }
+  if (element.type === 'line') {
+    const points = withJitter(resamplePolyline(linePoints(element), 3), element.id, preset);
+    strokes.push({ id: `${element.id}-line`, elementId: element.id, points, color, baseWidth });
+    return { strokes, warnings, clear: false };
+  }
 
-    if (element.type === 'ellipse') {
-      const points = withJitter(resamplePolyline(ellipsePoints(element), 4), element.id, preset);
-      strokes.push({ id: `${element.id}-ellipse`, elementId: element.id, points, color, baseWidth });
-      continue;
-    }
-
-    if (element.type === 'line') {
-      const points = withJitter(resamplePolyline(linePoints(element), 3), element.id, preset);
-      strokes.push({ id: `${element.id}-line`, elementId: element.id, points, color, baseWidth });
-      continue;
-    }
-
-    if (element.type === 'arrow') {
-      const main = withJitter(resamplePolyline(linePoints(element), 3), `${element.id}-main`, preset);
-      strokes.push({ id: `${element.id}-arrow-main`, elementId: element.id, points: main, color, baseWidth });
-      const heads = arrowHeadPoints(element);
-      heads.forEach((head, idx) => {
-        strokes.push({
-          id: `${element.id}-arrow-head-${idx}`,
-          elementId: element.id,
-          points: withJitter(resamplePolyline(head, 3), `${element.id}-head-${idx}`, preset),
-          color,
-          baseWidth,
-        });
+  if (element.type === 'arrow') {
+    const main = withJitter(resamplePolyline(linePoints(element), 3), `${element.id}-main`, preset);
+    strokes.push({ id: `${element.id}-arrow-main`, elementId: element.id, points: main, color, baseWidth });
+    const heads = arrowHeadPoints(element);
+    heads.forEach((head, idx) => {
+      strokes.push({
+        id: `${element.id}-arrow-head-${idx}`,
+        elementId: element.id,
+        points: withJitter(resamplePolyline(head, 3), `${element.id}-head-${idx}`, preset),
+        color,
+        baseWidth,
       });
-      continue;
-    }
+    });
+    return { strokes, warnings, clear: false };
+  }
 
-    if (element.type === 'text') {
-      let recovered = false;
-      const beforeCount = strokes.length;
+  if (element.type === 'text') {
+    let recovered = false;
 
-      try {
-        const segments = parseStreamingLatex(element.text);
-        let cursorX = element.x;
-        let cursorY = element.y;
-        const fontSize = element.size ?? 18;
-        let lineTop = cursorY;
-        let lineBottom = cursorY + fontSize * 0.92;
-        let lineIndex = 0;
+    try {
+      const segments = parseStreamingLatex(element.text);
+      let cursorX = element.x;
+      let cursorY = element.y;
+      const fontSize = element.size ?? 18;
+      let lineTop = cursorY;
+      let lineBottom = cursorY + fontSize * 0.92;
+      let lineIndex = 0;
 
-        const advanceLine = () => {
-          const minAdvance = fontSize * 1.42;
-          const contentAdvance = Math.max(fontSize * 1.15, lineBottom - lineTop + fontSize * 0.34);
-          const deltaY = Math.max(minAdvance, contentAdvance);
-          cursorX = element.x;
-          cursorY += deltaY;
-          lineTop = cursorY;
-          lineBottom = cursorY + fontSize * 0.92;
-          lineIndex += 1;
-        };
+      const advanceLine = () => {
+        const minAdvance = fontSize * 1.42;
+        const contentAdvance = Math.max(fontSize * 1.15, lineBottom - lineTop + fontSize * 0.34);
+        const deltaY = Math.max(minAdvance, contentAdvance);
+        cursorX = element.x;
+        cursorY += deltaY;
+        lineTop = cursorY;
+        lineBottom = cursorY + fontSize * 0.92;
+        lineIndex += 1;
+      };
 
-        const applyStrokesAndAdvance = (
-          rendered: StrokeTrajectory[],
-          jitterAmount: number,
-          fallbackAdvance: number,
-          minAdvanceGap: number,
-        ) => {
-          rendered.forEach((stroke) => {
-            stroke.points = withJitter(stroke.points, stroke.id, jitterAmount);
-            strokes.push(stroke);
-          });
+      const applyStrokesAndAdvance = (
+        rendered: StrokeTrajectory[],
+        jitterAmount: number,
+        fallbackAdvance: number,
+        minAdvanceGap: number,
+      ) => {
+        rendered.forEach((stroke) => {
+          stroke.points = withJitterAmount(stroke.points, stroke.id, jitterAmount);
+          strokes.push(stroke);
+        });
 
-          const bounds = strokesBounds(rendered);
-          if (bounds) {
-            const advanceX = Math.max(fontSize * 0.28, bounds.maxX - cursorX + minAdvanceGap);
-            cursorX += advanceX;
-            lineTop = Math.min(lineTop, bounds.minY);
-            lineBottom = Math.max(lineBottom, bounds.maxY);
-          } else {
-            cursorX += fallbackAdvance;
-            lineBottom = Math.max(lineBottom, cursorY + fontSize);
+        const bounds = strokesBounds(rendered);
+        if (bounds) {
+          const advanceX = Math.max(fontSize * 0.28, bounds.maxX - cursorX + minAdvanceGap);
+          cursorX += advanceX;
+          lineTop = Math.min(lineTop, bounds.minY);
+          lineBottom = Math.max(lineBottom, bounds.maxY);
+        } else {
+          cursorX += fallbackAdvance;
+          lineBottom = Math.max(lineBottom, cursorY + fontSize);
+        }
+      };
+
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i]!;
+
+        if (segment.kind === 'text') {
+          const allLines = segment.value.replace(/\r\n/g, '\n').split('\n');
+          const lines = allLines.slice(0, MAX_TEXT_LINES);
+          if (allLines.length > MAX_TEXT_LINES) {
+            warnings.push(`Text element ${element.id} truncated from ${allLines.length} to ${MAX_TEXT_LINES} lines`);
           }
-        };
+          for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            const line = lines[lineIdx]!;
+            if (line.length > 0) {
+              const leadingSpaceCount = line.match(/^\s+/)?.[0]?.length ?? 0;
+              const trailingSpaceCount = line.match(/\s+$/)?.[0]?.length ?? 0;
+              const coreStart = leadingSpaceCount;
+              const coreEnd = Math.max(coreStart, line.length - trailingSpaceCount);
+              const core = line.slice(coreStart, coreEnd);
+              const spaceAdvance = fontSize * 0.31;
 
-        for (let i = 0; i < segments.length; i++) {
-          const segment = segments[i]!;
-
-          if (segment.kind === 'text') {
-            const lines = segment.value.split('\n');
-            for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-              const line = lines[lineIdx]!;
-              if (line.length > 0) {
-                const leadingSpaceCount = line.match(/^\s+/)?.[0]?.length ?? 0;
-                const trailingSpaceCount = line.match(/\s+$/)?.[0]?.length ?? 0;
-                const coreStart = leadingSpaceCount;
-                const coreEnd = Math.max(coreStart, line.length - trailingSpaceCount);
-                const core = line.slice(coreStart, coreEnd);
-                const spaceAdvance = fontSize * 0.31;
-
-                if (leadingSpaceCount > 0) {
-                  cursorX += leadingSpaceCount * spaceAdvance;
-                }
-
-                if (core.length > 0) {
-                  const safeLine = escapePlainTextForTex(core);
-                  const lineStrokes = await compileTextLikeElement(
-                    `\\text{${safeLine}}`,
-                    `${element.id}-seg-${i}-line-${lineIdx}-ln-${lineIndex}`,
-                    cursorX,
-                    cursorY,
-                    fontSize,
-                    color,
-                    baseWidth,
-                    false,
-                  );
-                  applyStrokesAndAdvance(
-                    lineStrokes,
-                    0.035,
-                    Math.max(fontSize * 0.45, core.length * (fontSize * 0.5)),
-                    fontSize * 0.1,
-                  );
-                }
-
-                if (trailingSpaceCount > 0) {
-                  cursorX += trailingSpaceCount * spaceAdvance;
-                  lineBottom = Math.max(lineBottom, cursorY + fontSize * 0.92);
-                }
+              if (leadingSpaceCount > 0) {
+                cursorX += leadingSpaceCount * spaceAdvance;
               }
 
-              if (lineIdx < lines.length - 1) {
-                advanceLine();
+              if (core.length > 0) {
+                const safeLine = escapePlainTextForTex(core);
+                const lineStrokes = await compileTextLikeElement(
+                  `\\text{${safeLine}}`,
+                  `${element.id}-seg-${i}-line-${lineIdx}-ln-${lineIndex}`,
+                  cursorX,
+                  cursorY,
+                  fontSize,
+                  color,
+                  baseWidth,
+                  false,
+                );
+                applyStrokesAndAdvance(
+                  lineStrokes,
+                  0.035,
+                  Math.max(fontSize * 0.45, core.length * (fontSize * 0.5)),
+                  fontSize * 0.1,
+                );
+              }
+
+              if (trailingSpaceCount > 0) {
+                cursorX += trailingSpaceCount * spaceAdvance;
+                lineBottom = Math.max(lineBottom, cursorY + fontSize * 0.92);
               }
             }
-            continue;
-          }
 
-          if (segment.display && cursorX !== element.x) {
-            advanceLine();
+            if (lineIdx < lines.length - 1) {
+              advanceLine();
+            }
           }
-
-          const latexStrokes = await compileTextLikeElement(
-            segment.value,
-            `${element.id}-seg-${i}-latex-ln-${lineIndex}`,
-            cursorX,
-            cursorY,
-            fontSize,
-            color,
-            baseWidth,
-            segment.display,
-          );
-          applyStrokesAndAdvance(
-            latexStrokes,
-            0.03,
-            Math.max(fontSize * 0.7, Math.max(1, segment.value.length) * (fontSize * 0.45)),
-            fontSize * 0.2,
-          );
-
-          if (segment.display) {
-            advanceLine();
-          }
+          continue;
         }
 
-        recovered = strokes.length > beforeCount;
+        if (segment.display && cursorX !== element.x) {
+          advanceLine();
+        }
+
+        const latexStrokes = await compileTextLikeElement(
+          segment.value,
+          `${element.id}-seg-${i}-latex-ln-${lineIndex}`,
+          cursorX,
+          cursorY,
+          fontSize,
+          color,
+          baseWidth,
+          segment.display,
+        );
+        applyStrokesAndAdvance(
+          latexStrokes,
+          0.03,
+          Math.max(fontSize * 0.7, Math.max(1, segment.value.length) * (fontSize * 0.45)),
+          fontSize * 0.2,
+        );
+
+        if (segment.display) {
+          advanceLine();
+        }
+      }
+
+      recovered = strokes.length > 0;
+    } catch {
+      recovered = false;
+    }
+
+    if (!recovered && looksMathLikeText(element.text)) {
+      try {
+        const asLatex = await compileTextLikeElement(
+          element.text,
+          `${element.id}-as-latex`,
+          element.x,
+          element.y,
+          element.size ?? 18,
+          color,
+          baseWidth,
+          false,
+        );
+        asLatex.forEach((stroke) => {
+          stroke.points = withJitterAmount(stroke.points, stroke.id, 0.03);
+          strokes.push(stroke);
+        });
+        recovered = asLatex.length > 0;
       } catch {
         recovered = false;
       }
-
-      if (!recovered && looksMathLikeText(element.text)) {
-        try {
-          const asLatex = await compileTextLikeElement(
-            element.text,
-            `${element.id}-as-latex`,
-            element.x,
-            element.y,
-            element.size ?? 18,
-            color,
-            baseWidth,
-            false,
-          );
-          asLatex.forEach((stroke) => {
-            stroke.points = withJitter(stroke.points, stroke.id, 0.03);
-            strokes.push(stroke);
-          });
-          recovered = asLatex.length > 0;
-        } catch {
-          recovered = false;
-        }
-      }
-
-      if (!recovered) {
-        warnings.push(`Text render fallback for element ${element.id}`);
-      }
-      continue;
     }
 
-    if (element.type === 'latex') {
+    if (!recovered) {
+      warnings.push(`Text render fallback for element ${element.id}`);
+    }
+    return { strokes, warnings, clear: false };
+  }
+
+  if (element.type === 'latex') {
+    try {
+      const latexStrokes = await compileTextLikeElement(
+        element.tex,
+        element.id,
+        element.x,
+        element.y,
+        element.fontSize ?? 20,
+        color,
+        baseWidth,
+        element.displayMode ?? true,
+      );
+      latexStrokes.forEach((stroke) => {
+        stroke.points = withJitterAmount(stroke.points, stroke.id, 0.03);
+        strokes.push(stroke);
+      });
+    } catch {
+      warnings.push(`LaTeX parse error for ${element.id}; fallback used`);
+      const safeRaw = escapePlainTextForTex(element.tex);
       try {
-        const latexStrokes = await compileTextLikeElement(
-          element.tex,
+        const fallback = await compileTextLikeElement(
+          `\\texttt{${safeRaw}}`,
           element.id,
           element.x,
           element.y,
-          element.fontSize ?? 20,
+          element.fontSize ?? 18,
           color,
           baseWidth,
-          element.displayMode ?? true,
+          false,
         );
-        latexStrokes.forEach((stroke) => {
-          stroke.points = withJitter(stroke.points, stroke.id, 0.03);
-          strokes.push(stroke);
-        });
+        fallback.forEach((stroke) => strokes.push(stroke));
       } catch {
-        warnings.push(`LaTeX parse error for ${element.id}; fallback used`);
-        const safeRaw = escapePlainTextForTex(element.tex);
-        try {
-          const fallback = await compileTextLikeElement(
-            `\\texttt{${safeRaw}}`,
-            element.id,
-            element.x,
-            element.y,
-            element.fontSize ?? 18,
-            color,
-            baseWidth,
-            false,
-          );
-          fallback.forEach((stroke) => strokes.push(stroke));
-        } catch {
-          warnings.push(`Fallback text failed for ${element.id}`);
-        }
+        warnings.push(`Fallback text failed for ${element.id}`);
       }
     }
   }
 
+  return { strokes, warnings, clear: false };
+}
+
+export async function compileBatchToStrokes(
+  batch: DrawBatch,
+): Promise<{ strokes: StrokeTrajectory[]; warnings: string[]; clear: boolean }> {
+  const preset = batch.style_preset ?? 'clean_pen_sketch';
+
+  const results = await Promise.all(batch.elements.map((el) => compileOneElement(el, preset)));
+
+  const strokes: StrokeTrajectory[] = [];
+  const warnings: string[] = [];
+  let clear = false;
+
+  for (const r of results) {
+    if (r.clear) clear = true;
+    strokes.push(...r.strokes);
+    warnings.push(...r.warnings);
+  }
+
   normalizeTextVerticalSpacing(batch, strokes);
+
+  // Compute bounding boxes for viewport culling (after normalization shifts)
+  for (const stroke of strokes) {
+    if (stroke.points.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of stroke.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      stroke.bounds = { minX, minY, maxX, maxY };
+    }
+  }
 
   return { strokes, warnings, clear };
 }
