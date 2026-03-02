@@ -1,6 +1,7 @@
 export { planSemanticBatch, fromLegacyDrawBatchToSemanticStub, measureBlock } from './templates';
 export { enforceDrawBatchConstraints, BoundsCache } from './constraints';
-export { lowerPlannedLayoutToDrawBatch } from './lowerer';
+export { lowerPlannedLayoutToDrawBatch, DEFAULT_MAX_LOWERED_ELEMENTS } from './lowerer';
+export type { LowerOptions } from './lowerer';
 export { buildStructuredWhiteboardContext, extendStructuredWhiteboardContext } from './context-v2';
 export { boundsOf } from './bounds';
 export type {

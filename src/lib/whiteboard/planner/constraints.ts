@@ -18,12 +18,14 @@ export class BoundsCache {
     this.cache.delete(id);
   }
 
+  clear(): void {
+    this.cache.clear();
+  }
+
   updateAfterShift(id: string, dx: number, dy: number): void {
-    const b = this.cache.get(id);
-    if (!b) {
-      this.cache.delete(id);
-      return;
-    }
+    if (!this.cache.has(id)) return;
+    const b = this.cache.get(id)!;
+    if (b === null) return; // null-bounds elements stay null
     this.cache.set(id, {
       minX: b.minX + dx,
       minY: b.minY + dy,
