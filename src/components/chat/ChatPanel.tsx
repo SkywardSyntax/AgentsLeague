@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '@/types/agent';
+import { downloadChatAsMarkdown, downloadChatAsJson } from '@/lib/client/export-chat';
 import { MessageContent } from './MessageContent';
+import { MessageSearch } from './MessageSearch';
 
 export interface ChatThreadMeta {
   id: string;
@@ -47,6 +49,28 @@ export function ChatPanel({
   const canManageChats = status === 'idle';
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery) return messages;
+    const q = searchQuery.toLowerCase();
+    return messages.filter((m) => m.content.toLowerCase().includes(q));
+  }, [messages, searchQuery]);
+
+  const handleSearch = useCallback((query: string) => setSearchQuery(query), []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey) && e.target instanceof HTMLTextAreaElement === false) {
+        e.preventDefault();
+        setSearchVisible(true);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -119,6 +143,35 @@ export function ChatPanel({
       </header>
 
       <div className="flex items-center justify-end gap-2 border-b border-[var(--color-border)] px-4 py-2">
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Export chat"
+            onClick={() => setShowExportMenu((v) => !v)}
+            disabled={messages.length === 0}
+            className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Export
+          </button>
+          {showExportMenu && (
+            <div className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-white shadow-md">
+              <button
+                type="button"
+                onClick={() => { downloadChatAsMarkdown(messages, activeChat?.title ?? 'Chat'); setShowExportMenu(false); }}
+                className="block w-full px-4 py-1.5 text-left text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
+              >
+                Export as MD
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (activeChat) downloadChatAsJson(messages, activeChat); setShowExportMenu(false); }}
+                className="block w-full px-4 py-1.5 text-left text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
+              >
+                Export as JSON
+              </button>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           aria-label="Delete current chat"
@@ -139,6 +192,13 @@ export function ChatPanel({
         </button>
       </div>
 
+      <MessageSearch
+        visible={searchVisible}
+        onSearch={handleSearch}
+        matchCount={searchQuery ? filteredMessages.length : 0}
+        onClose={() => { setSearchVisible(false); setSearchQuery(''); }}
+      />
+
       <div
         ref={messagesContainerRef}
         role="log"
@@ -146,13 +206,13 @@ export function ChatPanel({
         aria-live="polite"
         className="flex-1 space-y-3 overflow-y-auto px-4 py-4"
       >
-        {messages.length === 0 ? (
+        {filteredMessages.length === 0 && messages.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--color-border)]/90 bg-[var(--color-surface-soft)]/80 p-4 text-sm text-[var(--color-text-muted)]">
             Ask a question, request a diagram, or include LaTeX like <code>\(\int_0^1 x^2 dx\)</code>.
           </div>
         ) : null}
 
-        {messages.map((message) => {
+        {filteredMessages.map((message) => {
           const isUser = message.role === 'user';
           return (
             <article
