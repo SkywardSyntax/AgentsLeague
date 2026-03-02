@@ -76,4 +76,62 @@ describe('parseGraphScriptToSemanticBatch', () => {
     expect(batch.relations?.[0]?.from_anchor).toBe('g1-a-right');
     expect(batch.relations?.[1]?.from_anchor).toBe('g1-panel-center');
   });
+
+  it('parses diamond, circle, hexagon, triangle shapes without warnings', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=d1 panel=p1 type=diamond label="Decision"',
+      'shape id=c1 panel=p1 type=circle label="Node"',
+      'shape id=h1 panel=p1 type=hexagon label="Hex"',
+      'shape id=t1 panel=p1 type=triangle label="Tri"',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-shapes', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    expect(panel).toBeDefined();
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes).toHaveLength(4);
+      expect(panel.shapes![0]!.type).toBe('diamond');
+      expect(panel.shapes![1]!.type).toBe('circle');
+      expect(panel.shapes![2]!.type).toBe('hexagon');
+      expect(panel.shapes![3]!.type).toBe('triangle');
+    }
+    // No shape-related warnings
+    const shapeWarnings = result.warnings.filter((w) => w.includes('type'));
+    expect(shapeWarnings).toHaveLength(0);
+  });
+
+  it('resolves shape synonyms: rhombus→diamond, hex→hexagon, tri→triangle', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=s1 panel=p1 type=rhombus',
+      'shape id=s2 panel=p1 type=hex',
+      'shape id=s3 panel=p1 type=tri',
+      'shape id=s4 panel=p1 type=oval',
+      'shape id=s5 panel=p1 type=dot',
+      'shape id=s6 panel=p1 type=decision',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-syn', script });
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes![0]!.type).toBe('diamond');
+      expect(panel.shapes![1]!.type).toBe('hexagon');
+      expect(panel.shapes![2]!.type).toBe('triangle');
+      expect(panel.shapes![3]!.type).toBe('ellipse');
+      expect(panel.shapes![4]!.type).toBe('circle');
+      expect(panel.shapes![5]!.type).toBe('diamond');
+    }
+  });
+
+  it('still warns on unknown shape type', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=s1 panel=p1 type=trapezoid',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-unk', script });
+    expect(result.warnings.some((w) => w.includes('valid type'))).toBe(true);
+  });
 });

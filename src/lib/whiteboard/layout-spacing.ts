@@ -1,5 +1,6 @@
 import type { DrawBatch, StrokeTrajectory } from '@/types/agent';
 import { resolveSourceElementId } from './semantic-to-strokes';
+import { strokesBoundingBox } from './geometry';
 
 interface Bounds {
   minX: number;
@@ -15,25 +16,7 @@ interface Group {
 }
 
 function computeBounds(strokes: StrokeTrajectory[]): Bounds | null {
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  for (const stroke of strokes) {
-    for (const point of stroke.points) {
-      if (point.x < minX) minX = point.x;
-      if (point.x > maxX) maxX = point.x;
-      if (point.y < minY) minY = point.y;
-      if (point.y > maxY) maxY = point.y;
-    }
-  }
-
-  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
-    return null;
-  }
-
-  return { minX, maxX, minY, maxY };
+  return strokesBoundingBox(strokes);
 }
 
 function shiftGroup(group: Group, dy: number): void {

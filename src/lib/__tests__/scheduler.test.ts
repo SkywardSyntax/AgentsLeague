@@ -8,6 +8,7 @@ import {
   easeOutQuart,
   easeInOutCubic,
   cornerSpeedFactors,
+  weightedVisibleLength,
 } from '@/lib/whiteboard/stroke-scheduler';
 
 const makeStrokes = (count: number) =>
@@ -164,5 +165,54 @@ describe('cornerSpeedFactors', () => {
     ];
     const factors = cornerSpeedFactors(pts);
     expect(factors[1]).toBe(0.35); // default minFactor for zero-length segment
+  });
+});
+
+describe('createActiveBatch includes speedFactors', () => {
+  it('populates speedFactors on each active stroke', () => {
+    const strokes = makeStrokes(2);
+    const active = createActiveBatch(strokes, 1000);
+    for (const s of active) {
+      expect(s.speedFactors).toBeDefined();
+      expect(s.speedFactors!.length).toBe(s.points.length);
+    }
+  });
+
+  it('createStaggeredBatch also includes speedFactors', () => {
+    const active = createStaggeredBatch(makeStrokes(1), 0, 1000);
+    expect(active[0]?.speedFactors).toBeDefined();
+  });
+});
+
+describe('weightedVisibleLength', () => {
+  it('returns 0 at t=0', () => {
+    expect(weightedVisibleLength([0, 10, 20], [1, 1, 1], 0)).toBe(0);
+  });
+
+  it('returns total length at t=1', () => {
+    expect(weightedVisibleLength([0, 10, 20], [1, 1, 1], 1)).toBe(20);
+  });
+
+  it('uniform factors give linear mapping', () => {
+    const cum = [0, 10, 20, 30];
+    const factors = [1, 1, 1, 1];
+    expect(weightedVisibleLength(cum, factors, 0.5)).toBeCloseTo(15, 5);
+  });
+
+  it('corner with low speed factor delays midpoint', () => {
+    // Straight-straight with slow middle: pen lingers at point 1
+    const cum = [0, 10, 20];
+    const slowMiddle = [1, 0.5, 1]; // factor 0.5 → takes 2× time at seg 0→1
+    const atHalf = weightedVisibleLength(cum, slowMiddle, 0.5);
+    // With uniform factors, 0.5 → length 10. With slow middle, more time spent on first seg.
+    expect(atHalf).toBeLessThan(10);
+  });
+
+  it('handles single-point cumulative', () => {
+    expect(weightedVisibleLength([0], [1], 0.5)).toBe(0);
+  });
+
+  it('handles empty cumulative', () => {
+    expect(weightedVisibleLength([], [], 0.5)).toBe(0);
   });
 });

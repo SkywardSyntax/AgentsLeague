@@ -7,7 +7,13 @@ import {
   resamplePolyline,
   screenStrokePx,
   totalLength,
+  strokesBoundingBox,
+  bezierPointAt,
+  bezierLength,
+  bezierChainLength,
+  catmullRomToBezier,
 } from '@/lib/whiteboard/geometry';
+import type { BezierSegment } from '@/lib/whiteboard/geometry';
 import { rectPoints, withJitter, resolveSourceElementId } from '@/lib/whiteboard/semantic-to-strokes';
 
 describe('geometry + sketch behavior', () => {
@@ -207,5 +213,126 @@ describe('resolveSourceElementId', () => {
 
   it('returns null for no match', () => {
     expect(resolveSourceElementId('unknown', ['elem1', 'elem2'])).toBeNull();
+  });
+});
+
+describe('strokesBoundingBox', () => {
+  it('computes bounds for strokes with points', () => {
+    const strokes = [
+      { points: [{ x: 10, y: 20 }, { x: 50, y: 60 }] },
+      { points: [{ x: 5, y: 30 }, { x: 40, y: 70 }] },
+    ];
+    const bounds = strokesBoundingBox(strokes);
+    expect(bounds).toEqual({ minX: 5, maxX: 50, minY: 20, maxY: 70, width: 45, height: 50 });
+  });
+
+  it('returns null for empty strokes', () => {
+    expect(strokesBoundingBox([])).toBeNull();
+  });
+
+  it('returns null for strokes with no points', () => {
+    expect(strokesBoundingBox([{ points: [] }])).toBeNull();
+  });
+
+  it('returns zero width/height for a single point', () => {
+    const bounds = strokesBoundingBox([{ points: [{ x: 5, y: 5 }] }]);
+    expect(bounds).toEqual({ minX: 5, maxX: 5, minY: 5, maxY: 5, width: 0, height: 0 });
+  });
+});
+
+describe('bezierPointAt', () => {
+  const straight: BezierSegment = {
+    p0: { x: 0, y: 0 },
+    cp1: { x: 10, y: 0 },
+    cp2: { x: 20, y: 0 },
+    p3: { x: 30, y: 0 },
+  };
+
+  it('returns p0 at t=0', () => {
+    const p = bezierPointAt(straight, 0);
+    expect(p.x).toBeCloseTo(0);
+    expect(p.y).toBeCloseTo(0);
+  });
+
+  it('returns p3 at t=1', () => {
+    const p = bezierPointAt(straight, 1);
+    expect(p.x).toBeCloseTo(30);
+    expect(p.y).toBeCloseTo(0);
+  });
+
+  it('returns midpoint at t=0.5 for a straight segment', () => {
+    const p = bezierPointAt(straight, 0.5);
+    expect(p.x).toBeCloseTo(15);
+    expect(p.y).toBeCloseTo(0);
+  });
+});
+
+describe('bezierLength', () => {
+  it('matches distance for a straight-line Bézier', () => {
+    const seg: BezierSegment = {
+      p0: { x: 0, y: 0 },
+      cp1: { x: 33.33, y: 0 },
+      cp2: { x: 66.67, y: 0 },
+      p3: { x: 100, y: 0 },
+    };
+    expect(bezierLength(seg)).toBeCloseTo(100, 0);
+  });
+
+  it('approximates quarter-circle arc length', () => {
+    const r = 100;
+    const k = 0.5522847498;
+    const seg: BezierSegment = {
+      p0: { x: r, y: 0 },
+      cp1: { x: r, y: r * k },
+      cp2: { x: r * k, y: r },
+      p3: { x: 0, y: r },
+    };
+    const expected = (Math.PI * r) / 2;
+    expect(bezierLength(seg, 64)).toBeCloseTo(expected, 0);
+  });
+});
+
+describe('bezierChainLength', () => {
+  it('sums lengths of multiple segments', () => {
+    const seg: BezierSegment = {
+      p0: { x: 0, y: 0 },
+      cp1: { x: 33, y: 0 },
+      cp2: { x: 67, y: 0 },
+      p3: { x: 100, y: 0 },
+    };
+    expect(bezierChainLength([seg, seg])).toBeCloseTo(200, 0);
+  });
+
+  it('returns 0 for empty array', () => {
+    expect(bezierChainLength([])).toBe(0);
+  });
+});
+
+describe('catmullRomToBezier', () => {
+  it('returns empty for fewer than 2 points', () => {
+    expect(catmullRomToBezier([])).toEqual([]);
+    expect(catmullRomToBezier([{ x: 0, y: 0 }])).toEqual([]);
+  });
+
+  it('2 points → 1 segment', () => {
+    const segs = catmullRomToBezier([{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+    expect(segs).toHaveLength(1);
+    expect(segs[0]!.p0).toEqual({ x: 0, y: 0 });
+    expect(segs[0]!.p3).toEqual({ x: 10, y: 0 });
+  });
+
+  it('3 points → 2 segments', () => {
+    const segs = catmullRomToBezier([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }]);
+    expect(segs).toHaveLength(2);
+  });
+
+  it('collinear points evaluate to the original line', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }, { x: 30, y: 0 }];
+    const segs = catmullRomToBezier(pts);
+    expect(segs).toHaveLength(3);
+    for (const seg of segs) {
+      const mid = bezierPointAt(seg, 0.5);
+      expect(mid.y).toBeCloseTo(0, 5);
+    }
   });
 });

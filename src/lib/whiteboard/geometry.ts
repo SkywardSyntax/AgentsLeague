@@ -103,3 +103,111 @@ export function screenStrokePx(
 ): number {
   return clamp(baseWorldWidth * zoom * dpr, minPx, maxPx);
 }
+
+// --- Bounds ---
+
+export interface StrokeBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+export function strokesBoundingBox(
+  strokes: { points: Point[] }[],
+): StrokeBounds | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const stroke of strokes) {
+    for (const point of stroke.points) {
+      if (point.x < minX) minX = point.x;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.y > maxY) maxY = point.y;
+    }
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    return null;
+  }
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY),
+  };
+}
+
+// --- Bézier curves ---
+
+export interface BezierSegment {
+  p0: Point;
+  cp1: Point;
+  cp2: Point;
+  p3: Point;
+}
+
+export function bezierPointAt(seg: BezierSegment, t: number): Point {
+  const u = 1 - t;
+  const uu = u * u;
+  const uuu = uu * u;
+  const tt = t * t;
+  const ttt = tt * t;
+  return {
+    x: uuu * seg.p0.x + 3 * uu * t * seg.cp1.x + 3 * u * tt * seg.cp2.x + ttt * seg.p3.x,
+    y: uuu * seg.p0.y + 3 * uu * t * seg.cp1.y + 3 * u * tt * seg.cp2.y + ttt * seg.p3.y,
+  };
+}
+
+export function bezierLength(seg: BezierSegment, subdivisions = 16): number {
+  let len = 0;
+  let prev = seg.p0;
+  for (let i = 1; i <= subdivisions; i++) {
+    const pt = bezierPointAt(seg, i / subdivisions);
+    len += distance(prev, pt);
+    prev = pt;
+  }
+  return len;
+}
+
+export function bezierChainLength(segs: BezierSegment[]): number {
+  let total = 0;
+  for (const seg of segs) {
+    total += bezierLength(seg);
+  }
+  return total;
+}
+
+export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegment[] {
+  if (points.length < 2) return [];
+  const alpha = tension;
+  const segs: BezierSegment[] = [];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = i > 0 ? points[i - 1]! : { x: 2 * points[0]!.x - points[1]!.x, y: 2 * points[0]!.y - points[1]!.y };
+    const p1 = points[i]!;
+    const p2 = points[i + 1]!;
+    const p3 = i + 2 < points.length ? points[i + 2]! : { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y };
+
+    const cp1: Point = {
+      x: p1.x + (p2.x - p0.x) / (6 / alpha),
+      y: p1.y + (p2.y - p0.y) / (6 / alpha),
+    };
+    const cp2: Point = {
+      x: p2.x - (p3.x - p1.x) / (6 / alpha),
+      y: p2.y - (p3.y - p1.y) / (6 / alpha),
+    };
+
+    segs.push({ p0: p1, cp1, cp2, p3: p2 });
+  }
+
+  return segs;
+}

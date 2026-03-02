@@ -21,12 +21,14 @@ export function createActiveBatch(
   return strokes.map((stroke) => {
     const cumulative = cumulativeLengths(stroke.points);
     const length = totalLength(stroke.points);
+    const factors = cornerSpeedFactors(stroke.points);
     return {
       ...stroke,
       startedAt: start,
       durationMs: strokeDurationMs(length),
       length,
       cumulativeLengths: cumulative,
+      speedFactors: factors,
     };
   });
 }
@@ -42,12 +44,14 @@ export function createStaggeredBatch(
   return strokes.map((stroke, index) => {
     const cumulative = cumulativeLengths(stroke.points);
     const length = totalLength(stroke.points);
+    const factors = cornerSpeedFactors(stroke.points);
     return {
       ...stroke,
       startedAt: baseStart + index * staggerMs,
       durationMs: strokeDurationMs(length),
       length,
       cumulativeLengths: cumulative,
+      speedFactors: factors,
     };
   });
 }
@@ -125,4 +129,51 @@ export function cornerSpeedFactors(
   factors.push(1);
 
   return factors;
+}
+
+/**
+ * Compute the visible arc length given a weighted progress t ∈ [0,1].
+ * speedFactors < 1 slow the pen (take more time per unit length);
+ * this maps eased progress to a real arc-length value using
+ * per-segment weighted traversal with explicit binary-search inversion.
+ */
+export function weightedVisibleLength(
+  cumulativeLens: number[],
+  speedFactors: number[],
+  t: number,
+): number {
+  if (cumulativeLens.length <= 1 || t <= 0) return 0;
+  const totalLen = cumulativeLens[cumulativeLens.length - 1] ?? 0;
+  if (t >= 1) return totalLen;
+
+  // Build weighted cumulative array: time spent = segLen / speedFactor
+  const n = cumulativeLens.length;
+  const weightedCum: number[] = [0];
+  for (let i = 1; i < n; i++) {
+    const segLen = (cumulativeLens[i] ?? 0) - (cumulativeLens[i - 1] ?? 0);
+    const factor = speedFactors[i] ?? 1;
+    // Lower factor → more weighted time → pen lingers
+    weightedCum.push((weightedCum[i - 1] ?? 0) + segLen / factor);
+  }
+  const totalWeighted = weightedCum[n - 1] ?? 0;
+  if (totalWeighted <= 0) return totalLen * t;
+
+  const targetWeighted = totalWeighted * t;
+
+  // Binary search to invert: find real arc length for targetWeighted
+  let lo = 0;
+  let hi = n - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if ((weightedCum[mid] ?? 0) <= targetWeighted) lo = mid;
+    else hi = mid;
+  }
+
+  const wLo = weightedCum[lo] ?? 0;
+  const wHi = weightedCum[hi] ?? 0;
+  const segWeighted = wHi - wLo;
+  const frac = segWeighted > 0 ? (targetWeighted - wLo) / segWeighted : 0;
+  const realLo = cumulativeLens[lo] ?? 0;
+  const realHi = cumulativeLens[hi] ?? 0;
+  return realLo + (realHi - realLo) * frac;
 }

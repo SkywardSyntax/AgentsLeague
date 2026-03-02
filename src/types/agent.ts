@@ -119,7 +119,7 @@ export interface SemanticEquationStackBlock {
 
 export interface SemanticDiagramShape {
   id: string;
-  type: 'rect' | 'parallelogram' | 'line' | 'arrow';
+  type: 'rect' | 'parallelogram' | 'line' | 'arrow' | 'diamond' | 'circle' | 'ellipse' | 'hexagon' | 'triangle';
   label?: string;
   relative_pose?: RelativePose;
 }
@@ -248,6 +248,7 @@ export interface ActiveStroke extends StrokeTrajectory {
   durationMs: number;
   length: number;
   cumulativeLengths: number[];
+  speedFactors?: number[];
 }
 
 export interface TokenUsage {

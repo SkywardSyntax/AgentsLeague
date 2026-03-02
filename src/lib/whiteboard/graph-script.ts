@@ -10,7 +10,7 @@ import type {
 
 type GraphScriptTemplate = SemanticBatch['template'];
 type GraphScriptIntent = SemanticBatch['intent'];
-type GraphShapeType = 'rect' | 'parallelogram' | 'line' | 'arrow';
+type GraphShapeType = 'rect' | 'parallelogram' | 'line' | 'arrow' | 'diamond' | 'circle' | 'ellipse' | 'hexagon' | 'triangle';
 
 interface ParseLineResult {
   command: string;
@@ -61,6 +61,18 @@ const SHAPE_SYNONYM_MAP: Record<string, GraphShapeType> = {
   segment: 'line',
   vector: 'line',
   arrow: 'arrow',
+  diamond: 'diamond',
+  rhombus: 'diamond',
+  decision: 'diamond',
+  circle: 'circle',
+  dot: 'circle',
+  bubble: 'circle',
+  ellipse: 'ellipse',
+  oval: 'ellipse',
+  hexagon: 'hexagon',
+  hex: 'hexagon',
+  triangle: 'triangle',
+  tri: 'triangle',
 };
 const ANCHOR_ALIAS_MAP: Record<string, string> = {
   centre: 'center',

@@ -8,7 +8,7 @@ import type {
 import { hashString, seededRandom } from '@/lib/math/seed';
 import { renderTexToSvg, extractSvgStrokes } from '@/lib/latex/mathjax-client';
 import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
-import { resamplePolyline } from './geometry';
+import { clamp, distance, resamplePolyline, strokesBoundingBox } from './geometry';
 
 const DEFAULT_COLOR = '#1f2a44';
 const DEFAULT_BASE_WIDTH = 1.45;
@@ -81,8 +81,10 @@ function arrowHeadPoints(el: Extract<DrawElement, { type: 'arrow' }>): Point[][]
   const dx = el.to.x - el.from.x;
   const dy = el.to.y - el.from.y;
   const angle = Math.atan2(dy, dx);
-  const headLen = 14;
-  const wing = Math.PI / 7;
+  const shaftLength = distance(el.from, el.to);
+  const baseWidth = el.stroke_width ?? 1.45;
+  const headLen = clamp(shaftLength * 0.15, 8, 28);
+  const wing = clamp(Math.PI / 7 + (baseWidth - 1.0) * 0.04, Math.PI / 9, Math.PI / 5);
 
   const left: Point = {
     x: el.to.x - Math.cos(angle - wing) * headLen,
@@ -133,40 +135,8 @@ function looksMathLikeText(input: string): boolean {
   return false;
 }
 
-function strokesBounds(strokes: StrokeTrajectory[]): {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-  width: number;
-  height: number;
-} | null {
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  for (const stroke of strokes) {
-    for (const point of stroke.points) {
-      if (point.x < minX) minX = point.x;
-      if (point.x > maxX) maxX = point.x;
-      if (point.y < minY) minY = point.y;
-      if (point.y > maxY) maxY = point.y;
-    }
-  }
-
-  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
-    return null;
-  }
-
-  return {
-    minX,
-    maxX,
-    minY,
-    maxY,
-    width: Math.max(0, maxX - minX),
-    height: Math.max(0, maxY - minY),
-  };
+function strokesBounds(strokes: StrokeTrajectory[]) {
+  return strokesBoundingBox(strokes);
 }
 
 function shiftStrokes(strokes: StrokeTrajectory[], dx: number, dy: number): void {

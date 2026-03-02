@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveStroke, DrawBatch, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
-import { createActiveBatch, easeOutCubic } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
+  catmullRomToBezier,
   partialPolylineByLength,
   screenStrokePx,
 } from '@/lib/whiteboard/geometry';
@@ -25,6 +26,37 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 
 import { clamp } from '@/lib/whiteboard/geometry';
+
+function drawSmoothStroke(
+  ctx: CanvasRenderingContext2D,
+  points: StrokeTrajectory['points'],
+  color: string,
+  baseWidth: number,
+  camera: Camera,
+  dpr: number,
+) {
+  if (points.length < 2) return;
+  if (points.length < 4) {
+    drawStroke(ctx, points, color, baseWidth, camera, dpr);
+    return;
+  }
+
+  const segs = catmullRomToBezier(points);
+  const px = screenStrokePx(baseWidth, camera.zoom, dpr);
+  const worldLineWidth = px / (camera.zoom * dpr);
+
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = worldLineWidth;
+
+  ctx.beginPath();
+  ctx.moveTo(points[0]!.x, points[0]!.y);
+  for (const seg of segs) {
+    ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
+  }
+  ctx.stroke();
+}
 
 function drawStroke(
   ctx: CanvasRenderingContext2D,
@@ -203,7 +235,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       activeCtx.setTransform(scale, 0, 0, scale, tx, ty);
 
       for (const stroke of committedStrokesRef.current) {
-        drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+        drawSmoothStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
       }
 
       const now = performance.now();
@@ -211,13 +243,16 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       const completed: StrokeTrajectory[] = [];
 
       for (const stroke of activeStrokesRef.current) {
-        const t = easeOutCubic((now - stroke.startedAt) / stroke.durationMs);
-        const visibleLength = stroke.length * t;
+        const rawT = easeOutCubic((now - stroke.startedAt) / stroke.durationMs);
+        const visibleLength =
+          stroke.speedFactors && stroke.speedFactors.length === stroke.cumulativeLengths.length
+            ? weightedVisibleLength(stroke.cumulativeLengths, stroke.speedFactors, rawT)
+            : stroke.length * rawT;
         const partial = partialPolylineByLength(stroke.points, stroke.cumulativeLengths, visibleLength);
 
         drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr);
 
-        if (t >= 1) {
+        if (rawT >= 1) {
           completed.push(stroke);
         } else {
           nextActive.push(stroke);
