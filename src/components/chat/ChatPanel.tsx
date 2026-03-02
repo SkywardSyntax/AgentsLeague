@@ -190,10 +190,10 @@ export const ChatPanel = memo(function ChatPanel({
                 onClick={() => handleSelectChat(chat.id)}
                 disabled={!canManageChats || isActive}
                 tabIndex={isActive ? 0 : -1}
-                className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-white/65 hover:bg-white'} disabled:opacity-65`}
+                className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-[var(--color-surface-soft)] hover:bg-[var(--color-surface)]'} disabled:opacity-65`}
               >
                 <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
-                <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] tabular-nums">
+                <span className="rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[10px] tabular-nums">
                   {chat.messageCount}
                 </span>
               </PillButton>
@@ -203,7 +203,7 @@ export const ChatPanel = memo(function ChatPanel({
           <PillButton
             onClick={onCreateChat}
             disabled={!canManageChats}
-            className="shrink-0 bg-white/70 hover:bg-white"
+            className="shrink-0 bg-[var(--color-surface-soft)] hover:bg-[var(--color-surface)]"
           >
             + New Chat
           </PillButton>
@@ -240,12 +240,12 @@ export const ChatPanel = memo(function ChatPanel({
             aria-label="Export chat"
             onClick={() => setShowExportMenu((v) => !v)}
             disabled={messages.length === 0}
-            className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
+            className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-45"
           >
             Export
           </button>
           {showExportMenu && (
-            <div data-export-menu className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-white shadow-md">
+            <div data-export-menu className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-md">
               <button
                 type="button"
                 onClick={() => { downloadChatAsMarkdown(messages, activeChat?.title ?? 'Chat', setExportError); setShowExportMenu(false); }}
@@ -267,7 +267,7 @@ export const ChatPanel = memo(function ChatPanel({
           size="sm"
           onClick={() => onDeleteChat(activeChatId)}
           disabled={chats.length <= 1 || !canManageChats}
-          className="bg-white/70 hover:bg-white"
+          className="bg-[var(--color-surface-soft)] hover:bg-[var(--color-surface)]"
         >
           Delete Chat
         </PillButton>
@@ -275,7 +275,7 @@ export const ChatPanel = memo(function ChatPanel({
           size="sm"
           onClick={onClearChat}
           disabled={messages.length === 0 || status !== 'idle'}
-          className="bg-white/70 hover:bg-white"
+          className="bg-[var(--color-surface-soft)] hover:bg-[var(--color-surface)]"
         >
           Clear Chat
         </PillButton>
@@ -293,7 +293,7 @@ export const ChatPanel = memo(function ChatPanel({
       />
 
       {exportError && (
-        <div role="alert" className="mx-4 mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <div role="alert" className="mx-4 mt-2 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-xs text-[var(--color-danger)]">
           {exportError}
           <button
             type="button"
@@ -343,7 +343,7 @@ export const ChatPanel = memo(function ChatPanel({
                   aria-describedby={`msg-${message.id}`}
                   onClick={() => onDeleteMessage(message.id)}
                   disabled={status !== 'idle'}
-                  className="hover:bg-white/75 hover:text-[var(--color-text-secondary)] disabled:opacity-40"
+                  className="hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-text-secondary)] disabled:opacity-40"
                 >
                   Delete
                 </PillButton>
@@ -389,7 +389,7 @@ export const ChatPanel = memo(function ChatPanel({
             placeholder="Explain this concept and draw it out..."
             rows={3}
             disabled={disabled}
-            className="w-full resize-none rounded-2xl border border-[var(--color-border)] bg-white/88 px-3 py-2 text-sm outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+            className="w-full resize-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
           />
 
           <div className="mt-2 flex items-center justify-between">

@@ -630,7 +630,6 @@ export function AppShell() {
             data-testid="whiteboard-canvas"
             tabIndex={-1}
             className={isAgentMode ? 'h-full w-full' : `w-full md:h-full md:w-[var(--left-width)] ${mobileActivePanel === 'whiteboard' ? 'h-full' : 'hidden'} md:!block`}
-            {...(mobileActivePanel !== 'whiteboard' && !isAgentMode ? { inert: true, 'aria-hidden': true } : {})}
           >
             <WhiteboardCanvas
               key={activeChat.id}
@@ -675,7 +674,6 @@ export function AppShell() {
               data-testid="chat-panel"
               tabIndex={-1}
               className={`min-h-0 w-full md:h-full md:flex-1 ${mobileActivePanel === 'chat' ? 'h-full' : 'hidden'} md:!block`}
-              {...(mobileActivePanel !== 'chat' ? { inert: true, 'aria-hidden': true } : {})}
             >
               <ChatPanel
                 chats={chatMeta}

@@ -76,12 +76,15 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
   const gridColorsRef = useRef({ bg: '#f7f9fc', stroke: 'rgba(77, 93, 118, 0.16)' });
 
+  const gridDirtyRef = useRef(false);
+
   const readGridColors = useCallback(() => {
     const style = getComputedStyle(document.documentElement);
     gridColorsRef.current = {
       bg: style.getPropertyValue('--color-grid-bg').trim() || '#f7f9fc',
       stroke: style.getPropertyValue('--color-grid').trim() || 'rgba(77, 93, 118, 0.16)',
     };
+    gridDirtyRef.current = true;
   }, []);
 
   useEffect(() => {
@@ -325,12 +328,14 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       const prevSize = prevSizeRef.current;
       const cameraChanged =
         prev.x !== camera.x || prev.y !== camera.y || prev.zoom !== camera.zoom ||
-        prevSize.width !== size.width || prevSize.height !== size.height;
+        prevSize.width !== size.width || prevSize.height !== size.height ||
+        gridDirtyRef.current;
 
       if (cameraChanged) {
         prevCameraRef.current = { ...camera };
         prevSizeRef.current = { ...size };
         committedDirtyRef.current = true;
+        gridDirtyRef.current = false;
 
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
@@ -706,7 +711,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         </div>
       )}
 
-      <div data-testid="whiteboard-stats" className="glass-panel pointer-events-none absolute right-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
+      <div data-testid="whiteboard-stats" className="glass-panel pointer-events-none absolute right-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>
         <div data-testid="whiteboard-zoom">Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
         <div data-testid="whiteboard-committed">Committed: {statsRef.current.committed}</div>
         <div data-testid="whiteboard-active">Active: {statsRef.current.active}</div>
