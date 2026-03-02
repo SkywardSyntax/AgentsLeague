@@ -61,5 +61,57 @@ describe('stream overlay utils', () => {
     expect(toStreamTextKey(' 1)  Start with  ')).toBe('text:1) start with');
     expect(toStreamLatexKey(' x^2 + 1 ')).toBe('latex:x^2 + 1');
   });
+
+  it('excludes incomplete last line when content does not end with newline', () => {
+    const content = '1) First step\n2) Second step\n3) Incomplete';
+    const lines = extractStreamStepLines(content);
+    expect(lines).toEqual(['1) First step', '2) Second step']);
+  });
+
+  it('returns all qualifying lines when there are exactly 8', () => {
+    const stepLines = Array.from({ length: 8 }, (_, i) => `${i + 1}) Step ${i + 1}`);
+    const content = stepLines.join('\n') + '\n';
+    const lines = extractStreamStepLines(content);
+    expect(lines).toHaveLength(8);
+    expect(lines).toEqual(stepLines.map((l) => l.trim()));
+  });
+
+  it('returns only the last 8 qualifying lines when there are more', () => {
+    const stepLines = Array.from({ length: 10 }, (_, i) => `${i + 1}) Step ${i + 1}`);
+    const content = stepLines.join('\n') + '\n';
+    const lines = extractStreamStepLines(content);
+    expect(lines).toHaveLength(8);
+    expect(lines[0]).toBe('3) Step 3');
+    expect(lines[7]).toBe('10) Step 10');
+  });
+
+  it('filters out LaTeX-only lines and returns empty for all-LaTeX content', () => {
+    const content = '\\frac{a}{b}\n\\sum x\n\\int_0^1 f(x)dx\n';
+    const lines = extractStreamStepLines(content);
+    expect(lines).toEqual([]);
+  });
+
+  it('accepts mixed step types: numbered, bulleted, and keyword lines', () => {
+    const content = '1) Numbered step\n- Bulleted item\nTherefore the result holds\n';
+    const lines = extractStreamStepLines(content);
+    expect(lines).toEqual([
+      '1) Numbered step',
+      '- Bulleted item',
+      'Therefore the result holds',
+    ]);
+  });
+
+  it('rejects lines with trailing colon exceeding 96 chars', () => {
+    const longLine = 'A'.repeat(96) + ':';
+    const shortLine = 'Setup:';
+    const content = `${longLine}\n${shortLine}\n`;
+    const lines = extractStreamStepLines(content);
+    expect(lines).toEqual(['Setup:']);
+  });
+
+  it('normalizes keys with tabs and mixed whitespace', () => {
+    expect(toStreamTextKey(' \tABC  def\t ')).toBe('text:abc def');
+    expect(toStreamLatexKey('\t x^2  +  1 \t')).toBe('latex:x^2 + 1');
+  });
 });
 
