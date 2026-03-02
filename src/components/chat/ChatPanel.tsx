@@ -1,9 +1,12 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '@/types/agent';
+import { downloadChatAsMarkdown, downloadChatAsJson } from '@/lib/client/export-chat';
 import { MessageContent } from './MessageContent';
 import { StreamProgress, type StreamPhase } from './StreamProgress';
+import { MessageErrorBoundary } from './MessageErrorBoundary';
+import { MessageSearch } from './MessageSearch';
 
 export interface ChatThreadMeta {
   id: string;
@@ -52,32 +55,114 @@ export const ChatPanel = memo(function ChatPanel({
 }: ChatPanelProps) {
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
   const canManageChats = status === 'idle';
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const tablistRef = useRef<HTMLDivElement>(null);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const currentIndex = chats.findIndex((c) => c.id === activeChatId);
+      if (currentIndex === -1) return;
+      const nextIndex =
+        e.key === 'ArrowRight'
+          ? (currentIndex + 1) % chats.length
+          : (currentIndex - 1 + chats.length) % chats.length;
+      const nextChat = chats[nextIndex];
+      if (nextChat && canManageChats) {
+        onSelectChat(nextChat.id);
+        // Focus the newly selected tab
+        const tabs = tablistRef.current?.querySelectorAll<HTMLElement>('[role="tab"]');
+        tabs?.[nextIndex]?.focus();
+      }
+    },
+    [chats, activeChatId, canManageChats, onSelectChat],
+  );
+
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery) return messages;
+    const q = searchQuery.toLowerCase();
+    return messages.filter((m) => m.content.toLowerCase().includes(q));
+  }, [messages, searchQuery]);
+
+  const handleSearch = useCallback((query: string) => setSearchQuery(query), []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey) && e.target instanceof HTMLTextAreaElement === false) {
+        e.preventDefault();
+        setSearchVisible(true);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const close = (e: MouseEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest('[data-export-menu]')) return;
+      setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showExportMenu]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    // Only auto-scroll if user is near the bottom (within 120px)
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   return (
-    <section className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-card)]">
+    <section
+      aria-label="Chat"
+      className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-card)]"
+    >
       <div className="border-b border-[var(--color-border)] px-3 py-2">
         <div className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-0.5">
-          {chats.map((chat) => {
-            const isActive = chat.id === activeChatId;
-            return (
-              <button
-                key={chat.id}
-                type="button"
-                onClick={() => onSelectChat(chat.id)}
-                disabled={!canManageChats || isActive}
-                className={`group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
-                  isActive
-                    ? 'border-[var(--color-accent)]/45 bg-[var(--color-accent-faint)] text-[var(--color-text-primary)]'
-                    : 'border-[var(--color-border)] bg-white/65 text-[var(--color-text-secondary)] hover:bg-white'
-                } disabled:cursor-not-allowed disabled:opacity-65`}
-              >
-                <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
-                <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] tabular-nums">
-                  {chat.messageCount}
-                </span>
-              </button>
-            );
-          })}
+          <div
+            ref={tablistRef}
+            role="tablist"
+            aria-label="Chat threads"
+            onKeyDown={handleTabKeyDown}
+            className="flex items-center gap-2"
+          >
+            {chats.map((chat) => {
+              const isActive = chat.id === activeChatId;
+              return (
+                <button
+                  key={chat.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls="chat-messages-panel"
+                  tabIndex={isActive ? 0 : -1}
+                  onClick={() => onSelectChat(chat.id)}
+                  disabled={!canManageChats}
+                  className={`group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
+                    isActive
+                      ? 'border-[var(--color-accent)]/45 bg-[var(--color-accent-faint)] text-[var(--color-text-primary)]'
+                      : 'border-[var(--color-border)] bg-white/65 text-[var(--color-text-secondary)] hover:bg-white'
+                  } disabled:cursor-not-allowed disabled:opacity-65`}
+                >
+                  <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
+                  <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] tabular-nums">
+                    {chat.messageCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
           <button
             type="button"
@@ -96,15 +181,19 @@ export const ChatPanel = memo(function ChatPanel({
           <p className="font-[var(--font-display)] text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
             {activeChat?.title ?? 'Agent Channel'}
           </p>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
-            <span role="status" aria-live="polite">{status}</span>
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]"
+          >
+            {status}
           </p>
         </div>
         <button
           type="button"
+          aria-label="Stop generation"
           onClick={onCancel}
           disabled={status === 'idle'}
-          aria-label="Stop generation"
           className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           Stop
@@ -112,20 +201,49 @@ export const ChatPanel = memo(function ChatPanel({
       </header>
 
       <div className="flex items-center justify-end gap-2 border-b border-[var(--color-border)] px-4 py-2">
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Export chat"
+            onClick={() => setShowExportMenu((v) => !v)}
+            disabled={messages.length === 0}
+            className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Export
+          </button>
+          {showExportMenu && (
+            <div data-export-menu className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-white shadow-md">
+              <button
+                type="button"
+                onClick={() => { downloadChatAsMarkdown(messages, activeChat?.title ?? 'Chat', setExportError); setShowExportMenu(false); }}
+                className="block w-full px-4 py-1.5 text-left text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
+              >
+                Export as MD
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (activeChat) downloadChatAsJson(messages, activeChat, setExportError); setShowExportMenu(false); }}
+                className="block w-full px-4 py-1.5 text-left text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
+              >
+                Export as JSON
+              </button>
+            </div>
+          )}
+        </div>
         <button
           type="button"
+          aria-label="Delete current chat"
           onClick={() => onDeleteChat(activeChatId)}
           disabled={chats.length <= 1 || !canManageChats}
-          aria-label="Delete current chat"
           className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
         >
           Delete Chat
         </button>
         <button
           type="button"
+          aria-label="Clear messages"
           onClick={onClearChat}
           disabled={messages.length === 0 || status !== 'idle'}
-          aria-label="Clear messages"
           className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
         >
           Clear Chat
@@ -136,18 +254,46 @@ export const ChatPanel = memo(function ChatPanel({
         <StreamProgress phase={streamPhase} retryAttempt={retryAttempt} maxRetries={maxRetries} />
       )}
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {messages.length === 0 ? (
+      <MessageSearch
+        visible={searchVisible}
+        onSearch={handleSearch}
+        matchCount={searchQuery ? filteredMessages.length : 0}
+        onClose={() => { setSearchVisible(false); setSearchQuery(''); }}
+      />
+
+      {exportError && (
+        <div role="alert" className="mx-4 mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {exportError}
+          <button
+            type="button"
+            onClick={() => setExportError(null)}
+            className="ml-2 font-medium underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div
+        ref={messagesContainerRef}
+        id="chat-messages-panel"
+        role="log"
+        aria-label="Chat messages"
+        aria-live="polite"
+        className="flex-1 space-y-3 overflow-y-auto px-4 py-4"
+      >
+        {filteredMessages.length === 0 && messages.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--color-border)]/90 bg-[var(--color-surface-soft)]/80 p-4 text-sm text-[var(--color-text-muted)]">
             Ask a question, request a diagram, or include LaTeX like <code>\(\int_0^1 x^2 dx\)</code>.
           </div>
         ) : null}
 
-        {messages.map((message) => {
+        {filteredMessages.map((message) => {
           const isUser = message.role === 'user';
           return (
             <article
               key={message.id}
+              id={`msg-${message.id}`}
               className={`animate-rise-in rounded-2xl border px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${
                 isUser
                   ? 'ml-6 border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)]'
@@ -161,6 +307,7 @@ export const ChatPanel = memo(function ChatPanel({
                 <button
                   type="button"
                   aria-label={`Delete ${isUser ? 'user' : 'assistant'} message`}
+                  aria-describedby={`msg-${message.id}`}
                   onClick={() => onDeleteMessage(message.id)}
                   disabled={status !== 'idle'}
                   className="rounded-full px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)] transition hover:bg-white/75 hover:text-[var(--color-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -168,40 +315,52 @@ export const ChatPanel = memo(function ChatPanel({
                   Delete
                 </button>
               </div>
-              <MessageContent content={message.content} />
+              <MessageErrorBoundary fallbackText={message.content.slice(0, 120)}>
+                <MessageContent content={message.content} />
+              </MessageErrorBoundary>
             </article>
           );
         })}
+        <div ref={messagesEndRef} />
       </div>
 
       <footer className="border-t border-[var(--color-border)] bg-[var(--color-surface-soft)]/55 p-3">
-        <textarea
-          value={input}
-          onChange={(e) => onInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
+        <form
+          aria-label="Send a message"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSend();
           }}
-          placeholder="Explain this concept and draw it out..."
-          rows={3}
-          disabled={disabled}
-          className="w-full resize-none rounded-2xl border border-[var(--color-border)] bg-white/88 px-3 py-2 text-sm outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
-        />
+        >
+          <textarea
+            aria-label="Message input"
+            value={input}
+            onChange={(e) => onInput(e.target.value)}
+            maxLength={8000}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onSend();
+              }
+            }}
+            placeholder="Explain this concept and draw it out..."
+            rows={3}
+            disabled={disabled}
+            className="w-full resize-none rounded-2xl border border-[var(--color-border)] bg-white/88 px-3 py-2 text-sm outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+          />
 
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline</p>
-          <button
-            type="button"
-            onClick={onSend}
-            disabled={disabled || input.trim().length === 0}
-            aria-label="Send message"
-            className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Send
-          </button>
-        </div>
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline</p>
+            <button
+              type="submit"
+              disabled={disabled || input.trim().length === 0}
+              aria-label="Send message"
+              className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+        </form>
       </footer>
     </section>
   );

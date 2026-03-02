@@ -1,0 +1,340 @@
+import { describe, it, expect } from 'vitest';
+import { parseBlocks } from '../markdown/parse-blocks';
+
+describe('parseBlocks', () => {
+  it('parses a simple paragraph', () => {
+    const result = parseBlocks('Hello world');
+    expect(result).toEqual([{ kind: 'paragraph', content: 'Hello world' }]);
+  });
+
+  it('parses a fenced code block', () => {
+    const input = '```python\nprint("hi")\n```';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'code_block', content: 'print("hi")', language: 'python' },
+    ]);
+  });
+
+  it('parses a code block with no language', () => {
+    const input = '```\nsome code\n```';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'code_block', content: 'some code', language: '' },
+    ]);
+  });
+
+  it('handles unclosed code fence (streaming) as code block', () => {
+    const input = '```typescript\nconst x = 1;\nconst y = 2;';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'code_block', content: 'const x = 1;\nconst y = 2;', language: 'typescript' },
+    ]);
+  });
+
+  it('parses headings at different levels', () => {
+    const input = '# H1\n## H2\n### H3';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'heading', content: 'H1', level: 1 },
+      { kind: 'heading', content: 'H2', level: 2 },
+      { kind: 'heading', content: 'H3', level: 3 },
+    ]);
+  });
+
+  it('parses horizontal rules', () => {
+    const input = 'Above\n\n---\n\nBelow';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'paragraph', content: 'Above' },
+      { kind: 'hr' },
+      { kind: 'paragraph', content: 'Below' },
+    ]);
+  });
+
+  it('parses unordered lists', () => {
+    const input = '- item 1\n- item 2\n- item 3';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'list', ordered: false, items: ['item 1', 'item 2', 'item 3'] },
+    ]);
+  });
+
+  it('parses ordered lists', () => {
+    const input = '1. first\n2. second\n3. third';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'list', ordered: true, items: ['first', 'second', 'third'] },
+    ]);
+  });
+
+  it('parses blockquotes', () => {
+    const input = '> This is a quote\n> Second line';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: 'blockquote', content: 'This is a quote\nSecond line' });
+    const bq = result[0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+  });
+
+  it('parses mixed content correctly', () => {
+    const input = [
+      '# Title',
+      '',
+      'Some paragraph text.',
+      '',
+      '```js',
+      'console.log("hello");',
+      '```',
+      '',
+      '- item a',
+      '- item b',
+      '',
+      '> a quote',
+    ].join('\n');
+
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'heading', content: 'Title', level: 1 },
+      { kind: 'paragraph', content: 'Some paragraph text.' },
+      { kind: 'code_block', content: 'console.log("hello");', language: 'js' },
+      { kind: 'list', ordered: false, items: ['item a', 'item b'] },
+      expect.objectContaining({ kind: 'blockquote', content: 'a quote' }),
+    ]);
+  });
+
+  it('handles tilde code fences', () => {
+    const input = '~~~ruby\nputs "hi"\n~~~';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'code_block', content: 'puts "hi"', language: 'ruby' },
+    ]);
+  });
+
+  it('does not treat --- inside code fence as hr', () => {
+    const input = '```\n---\n```';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'code_block', content: '---', language: '' },
+    ]);
+  });
+
+  it('handles multiple consecutive paragraphs separated by blank lines', () => {
+    const input = 'Para 1\n\nPara 2';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'paragraph', content: 'Para 1' },
+      { kind: 'paragraph', content: 'Para 2' },
+    ]);
+  });
+
+  it('handles multiline paragraph (no blank line between)', () => {
+    const input = 'Line 1\nLine 2\nLine 3';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'paragraph', content: 'Line 1\nLine 2\nLine 3' },
+    ]);
+  });
+
+  it('parses a simple 2-column table with header separator', () => {
+    const input = '| Col A | Col B |\n| --- | --- |\n| val1 | val2 |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'table', headers: ['Col A', 'Col B'], rows: [['val1', 'val2']] },
+    ]);
+  });
+
+  it('parses a table with 3 rows of data', () => {
+    const input = '| Name | Age | City |\n|---|---|---|\n| Alice | 30 | NYC |\n| Bob | 25 | LA |\n| Carol | 35 | SF |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      {
+        kind: 'table',
+        headers: ['Name', 'Age', 'City'],
+        rows: [
+          ['Alice', '30', 'NYC'],
+          ['Bob', '25', 'LA'],
+          ['Carol', '35', 'SF'],
+        ],
+      },
+    ]);
+  });
+
+  it('treats | line without separator row as paragraph', () => {
+    const input = '| not a table |\nsome other line';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'paragraph', content: '| not a table |\nsome other line' },
+    ]);
+  });
+
+  it('parses table interspersed with paragraphs', () => {
+    const input = 'Before\n\n| H1 | H2 |\n|---|---|\n| a | b |\n\nAfter';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'paragraph', content: 'Before' },
+      { kind: 'table', headers: ['H1', 'H2'], rows: [['a', 'b']] },
+      { kind: 'paragraph', content: 'After' },
+    ]);
+  });
+
+  it('handles escaped pipes in table cells', () => {
+    const input = '| A | B |\n|---|---|\n| a\\|b | c |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'table', headers: ['A', 'B'], rows: [['a|b', 'c']] },
+    ]);
+  });
+
+  // --- 3A: Recursive blockquote parsing ---
+
+  it('blockquote containing a code fence parses inner fence as code block child', () => {
+    const input = '> ```js\n> const x = 1;\n> ```';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.kind).toBe('blockquote');
+    const bq = result[0] as { kind: 'blockquote'; content: string; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children![0]).toMatchObject({ kind: 'code_block', language: 'js' });
+  });
+
+  it('blockquote containing a heading parses inner heading as child', () => {
+    const input = '> ## Sub-heading\n> Some text';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const bq = result[0] as { kind: 'blockquote'; content: string; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children!).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'heading', content: 'Sub-heading', level: 2 }),
+        expect.objectContaining({ kind: 'paragraph', content: 'Some text' }),
+      ]),
+    );
+  });
+
+  it('blockquote with no special inner content has children matching lines as paragraph', () => {
+    const input = '> plain text';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const bq = result[0] as { kind: 'blockquote'; content: string; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children![0]).toMatchObject({ kind: 'paragraph', content: 'plain text' });
+  });
+
+  // --- iter7 3A: nested blockquote + table interactions ---
+
+  it('blockquote containing a table parses table as child', () => {
+    const input = '> | A | B |\n> | --- | --- |\n> | x | y |';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const bq = result[0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children!).toEqual([
+      { kind: 'table', headers: ['A', 'B'], rows: [['x', 'y']] },
+    ]);
+  });
+
+  it('nested blockquotes parse recursively', () => {
+    const input = '> > inner quote';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const outer = result[0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(outer.children).toBeDefined();
+    const inner = outer.children![0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(inner.kind).toBe('blockquote');
+    expect(inner.children).toBeDefined();
+    expect(inner.children![0]).toMatchObject({ kind: 'paragraph', content: 'inner quote' });
+  });
+
+  it('table immediately after code fence stays separate', () => {
+    const input = '```\ncode\n```\n| H1 | H2 |\n|---|---|\n| a | b |';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ kind: 'code_block', content: 'code' });
+    expect(result[1]).toEqual({ kind: 'table', headers: ['H1', 'H2'], rows: [['a', 'b']] });
+  });
+
+  it('empty table cells are parsed as empty strings', () => {
+    const input = '| | |\n|---|---|\n| | |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'table', headers: ['', ''], rows: [['', '']] },
+    ]);
+  });
+
+  it('table row without trailing pipe is not parsed as table', () => {
+    const input = '| a | b\n| --- | ---\n| x | y';
+    const result = parseBlocks(input);
+    expect(result.every(b => b.kind !== 'table')).toBe(true);
+  });
+
+  // --- iter8 3A: pathological input hardening ---
+
+  it('treats a line exceeding MAX_LINE_LENGTH as plain text paragraph', () => {
+    const longLine = 'x'.repeat(50_000);
+    const result = parseBlocks(`# Title\n${longLine}\n## After`);
+    expect(result[0]).toMatchObject({ kind: 'heading', content: 'Title' });
+    expect(result[1]).toMatchObject({ kind: 'paragraph', content: longLine });
+    expect(result[2]).toMatchObject({ kind: 'heading', content: 'After' });
+  });
+
+  it('long line does not hang the parser', () => {
+    const longLine = '> '.repeat(25_000);
+    const start = performance.now();
+    const result = parseBlocks(longLine);
+    const elapsed = performance.now() - start;
+    expect(result.length).toBeGreaterThan(0);
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it('caps recursive blockquote depth at MAX_BLOCKQUOTE_DEPTH', () => {
+    // 100 nested > markers — should stop recursing at depth 5
+    const input = Array.from({ length: 100 }, () => '>').join(' ') + ' deep';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+
+    // Walk the nesting — should stop producing children at depth 5
+    let node: { kind: string; children?: unknown[] } = result[0] as { kind: string; children?: unknown[] };
+    let depth = 0;
+    while (node.kind === 'blockquote' && node.children) {
+      depth++;
+      const child = node.children.find((c): c is { kind: string; children?: unknown[] } =>
+        typeof c === 'object' && c !== null && (c as { kind: string }).kind === 'blockquote',
+      );
+      if (!child) break;
+      node = child;
+    }
+    expect(depth).toBeLessThanOrEqual(5);
+  });
+
+  it('unclosed code fence followed by many lines does not hang', () => {
+    const lines = ['```python', ...Array.from({ length: 1000 }, (_, i) => `line ${i}`)];
+    const start = performance.now();
+    const result = parseBlocks(lines.join('\n'));
+    const elapsed = performance.now() - start;
+    expect(result).toHaveLength(1);
+    expect(result[0]!.kind).toBe('code_block');
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  // --- iter12 03-B: tilde fence cannot be closed by backticks (CommonMark) ---
+
+  it('tilde-opened fence is not closed by backtick fence', () => {
+    const input = '~~~\ncode here\n```\nmore code\n~~~';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      kind: 'code_block',
+      content: 'code here\n```\nmore code',
+    });
+  });
+
+  it('backtick-opened fence is not closed by tilde fence', () => {
+    const input = '```\ncode here\n~~~\nmore code\n```';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      kind: 'code_block',
+      content: 'code here\n~~~\nmore code',
+    });
+  });
+});

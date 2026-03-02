@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { memo, useEffect, useState, useCallback, useRef } from 'react';
 import { renderTexToSvg, getCachedSvg } from '@/lib/latex/mathjax-client';
 import { formatTexError, isTimeoutError } from '@/lib/latex/tex-errors';
 
