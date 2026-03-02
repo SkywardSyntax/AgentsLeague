@@ -26,7 +26,7 @@ export interface HandlerContext {
   requestId: string;
 }
 
-type Handler = (request: Request, ctx: HandlerContext) => Promise<Response> | Response;
+export type Handler = (request: Request, ctx: HandlerContext) => Promise<Response> | Response;
 type Middleware = (handler: Handler) => Handler;
 
 export function withRequestId(handler: Handler): Handler {
@@ -181,7 +181,13 @@ export function withRateLimit(config: RateLimitConfig): Middleware {
 
   return (handler: Handler) => async (request: Request, ctx: HandlerContext) => {
     const extractKey = keyExtractor ?? ((req: Request) => req.headers.get('X-Session-Id'));
-    const sessionKey = extractKey(request) ?? 'anonymous';
+    const sessionKey = extractKey(request);
+
+    // Reject requests without a session key to prevent shared-bucket DoS
+    if (!sessionKey) {
+      return apiError(401, 'SESSION_REQUIRED', 'X-Session-Id header is required', ctx.requestId);
+    }
+
     const now = Date.now();
 
     evictExpired(now);
@@ -189,7 +195,22 @@ export function withRateLimit(config: RateLimitConfig): Middleware {
     const entry = buckets.get(sessionKey);
     if (entry && now < entry.resetAt) {
       if (entry.count >= maxRequests) {
-        return apiError(429, 'RATE_LIMITED', `Rate limit exceeded. Try again later.`, ctx.requestId);
+        const retryAfterSec = Math.ceil((entry.resetAt - now) / 1000);
+        return new Response(
+          JSON.stringify({
+            error: 'RATE_LIMITED',
+            message: 'Rate limit exceeded. Try again later.',
+            requestId: ctx.requestId,
+          }),
+          {
+            status: 429,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Request-Id': ctx.requestId,
+              'Retry-After': String(retryAfterSec),
+            },
+          },
+        );
       }
       entry.count++;
     } else {

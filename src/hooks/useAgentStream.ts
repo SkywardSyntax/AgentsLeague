@@ -8,6 +8,7 @@ import type {
   WhiteboardContext,
 } from '@/types/agent';
 import { validateSSEEvent, type ValidatedAgentSSEEvent } from '@/lib/schema';
+import { fetchWithRetry } from '@/lib/client/retry';
 
 export interface StreamHandlers {
   onEvent: (event: ValidatedAgentSSEEvent) => void;
@@ -37,23 +38,40 @@ export function useAgentStream() {
       abortRef.current = controller;
 
       try {
-        const res = await fetch('/api/agent/stream', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream',
+        const res = await fetchWithRetry(
+          '/api/agent/stream',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'text/event-stream',
+              'X-Session-Id': args.sessionId,
+            },
+            cache: 'no-store',
+            body: JSON.stringify({
+                sessionId: args.sessionId,
+                userMessage: args.userMessage,
+                history: args.history,
+                plannerMode: args.plannerMode,
+                whiteboardContext: args.whiteboardContext,
+                whiteboardContextV2: args.whiteboardContextV2,
+              }),
+            signal: controller.signal,
           },
-          cache: 'no-store',
-          body: JSON.stringify({
-              sessionId: args.sessionId,
-              userMessage: args.userMessage,
-              history: args.history,
-              plannerMode: args.plannerMode,
-              whiteboardContext: args.whiteboardContext,
-              whiteboardContextV2: args.whiteboardContextV2,
-            }),
-          signal: controller.signal,
-        });
+          {
+            maxRetries: 2,
+            baseDelayMs: 1000,
+            retryableStatuses: [429, 502, 503],
+            onRetry: (attempt, maxRetries) => {
+              args.handlers.onEvent({
+                type: 'warning',
+                turnId: 'retry',
+                code: 'RETRY_ATTEMPT',
+                message: `Retrying… (attempt ${attempt + 1}/${maxRetries + 1})`,
+              } as ValidatedAgentSSEEvent);
+            },
+          },
+        );
 
         if (!res.ok || !res.body) {
           args.handlers.onError(`Stream request failed with status ${res.status}`);

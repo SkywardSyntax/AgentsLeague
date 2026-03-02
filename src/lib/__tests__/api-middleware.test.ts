@@ -134,7 +134,7 @@ describe('withRateLimit', () => {
     expect(r3.status).toBe(200);
   });
 
-  it('returns 429 when limit exceeded', async () => {
+  it('returns 429 with Retry-After header when limit exceeded', async () => {
     const mw = withRateLimit({ maxRequests: 2, windowMs: 60_000 });
     const handler = mw(async () => Response.json({ ok: true }));
     const req = () => new Request('http://localhost/test', {
@@ -147,6 +147,10 @@ describe('withRateLimit', () => {
     expect(r3.status).toBe(429);
     const body = await r3.json();
     expect(body.error).toBe('RATE_LIMITED');
+    expect(r3.headers.get('Retry-After')).toBeTruthy();
+    const retryAfter = parseInt(r3.headers.get('Retry-After')!, 10);
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(60);
   });
 
   it('resets after window expires', async () => {
@@ -184,6 +188,16 @@ describe('withRateLimit', () => {
     const r2 = await handler(req2, ctx);
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
+  });
+
+  it('returns 401 when session ID is missing (no anonymous bucket)', async () => {
+    const mw = withRateLimit({ maxRequests: 10, windowMs: 60_000 });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req = new Request('http://localhost/test', { method: 'POST' });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe('SESSION_REQUIRED');
   });
 });
 
@@ -326,5 +340,72 @@ describe('applyMiddleware integration', () => {
     // Oversized
     const res3 = await handler(makeRequest({ msg: 'x' }, { 'Content-Length': '999999' }), ctx);
     expect(res3.status).toBe(413);
+  });
+});
+
+describe('composed middleware stack with rate limit', () => {
+  it('rate limit + content-type + body-size + error boundary — rejects at rate limit with 429', async () => {
+    const stack = compose(
+      (h) => withContentType('application/json', h),
+      withRateLimit({ maxRequests: 1, windowMs: 60_000 }),
+      (h) => withBodySizeLimit(10_000, h),
+      withErrorBoundary,
+    );
+    const handler = stack(async () => Response.json({ ok: true }));
+
+    const req = () => new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'composed-sess' },
+    });
+
+    const r1 = await handler(req(), ctx);
+    expect(r1.status).toBe(200);
+
+    const r2 = await handler(req(), ctx);
+    expect(r2.status).toBe(429);
+    expect(r2.headers.get('Retry-After')).toBeTruthy();
+  });
+
+  it('wrong Content-Type is rejected before rate limit runs', async () => {
+    const stack = compose(
+      (h) => withContentType('application/json', h),
+      withRateLimit({ maxRequests: 1, windowMs: 60_000 }),
+      (h) => withBodySizeLimit(10_000, h),
+      withErrorBoundary,
+    );
+    const handler = stack(async () => Response.json({ ok: true }));
+
+    // Send a bad Content-Type — should be 415 without consuming rate limit
+    const badReq = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', 'X-Session-Id': 'ct-test-sess' },
+      body: 'test',
+    });
+    const res1 = await handler(badReq, ctx);
+    expect(res1.status).toBe(415);
+
+    // Good request after — should still work (rate limit not consumed)
+    const goodReq = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'ct-test-sess' },
+    });
+    const res2 = await handler(goodReq, ctx);
+    expect(res2.status).toBe(200);
+  });
+
+  it('missing session ID returns 401 in composed stack', async () => {
+    const stack = compose(
+      (h) => withContentType('application/json', h),
+      withRateLimit({ maxRequests: 10, windowMs: 60_000 }),
+      withErrorBoundary,
+    );
+    const handler = stack(async () => Response.json({ ok: true }));
+
+    const req = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(401);
   });
 });

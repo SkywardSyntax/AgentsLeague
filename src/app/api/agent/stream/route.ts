@@ -11,8 +11,15 @@ import {
 } from '@/lib/server/openai';
 import { formatSSE, sseHeaders, createSSEHeartbeat, safeEnqueue } from '@/lib/server/sse';
 import { createLogger } from '@/lib/server/logger';
-import { applyMiddleware, withErrorBoundary } from '@/lib/server/api-middleware';
-import type { HandlerContext } from '@/lib/server/api-middleware';
+import {
+  applyMiddleware,
+  compose,
+  withErrorBoundary,
+  withContentType,
+  withBodySizeLimit,
+  withRateLimit,
+} from '@/lib/server/api-middleware';
+import type { HandlerContext, Handler } from '@/lib/server/api-middleware';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import { buildWhiteboardContextMessage, buildWhiteboardContextMessageV2 } from '@/lib/server/stream/context-builder';
 import { boundsOfBatch } from '@/lib/server/stream/bounds';
@@ -83,29 +90,6 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   const startTime = Date.now();
   const log = createLogger({ requestId, route: '/api/agent/stream' });
 
-  // Content-Type validation — consistent across mock and non-mock paths
-  const ct = request.headers.get('Content-Type') ?? '';
-  if (!ct.includes('application/json')) {
-    return new Response(
-      JSON.stringify({ error: 'UNSUPPORTED_MEDIA_TYPE', message: 'Content-Type must be application/json' }),
-      { status: 415, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
-    );
-  }
-
-  // Body size guard — reject before parsing to avoid memory exhaustion
-  const MAX_BODY_BYTES = 524_288; // 512 KB
-  const contentLength = request.headers.get('Content-Length');
-  if (contentLength) {
-    const len = parseInt(contentLength, 10);
-    if (!Number.isNaN(len) && len > MAX_BODY_BYTES) {
-      log.warn('payload_too_large', { bytes: len, maxBytes: MAX_BODY_BYTES });
-      return new Response(
-        JSON.stringify({ error: 'PAYLOAD_TOO_LARGE', message: `Request body exceeds ${MAX_BODY_BYTES} bytes` }),
-        { status: 413, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
-      );
-    }
-  }
-
   // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
   if (isMockMode()) {
     let json: unknown;
@@ -141,7 +125,12 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
     );
   }
 
-  log.info('stream_start', { sessionId: parsed.data.sessionId, plannerMode: parsed.data.plannerMode });
+  log.info('stream_start', {
+    sessionId: parsed.data.sessionId,
+    plannerMode: parsed.data.plannerMode,
+    messageCount: parsed.data.history.length + 1,
+    hasHistory: parsed.data.history.length > 0,
+  });
 
   const client = createOpenAIClient();
   const turnId = randomUUID();
@@ -495,4 +484,12 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   return new Response(stream, { headers: { ...sseHeaders(), 'X-Request-Id': requestId } });
 }
 
-export const POST = applyMiddleware(withErrorBoundary, handlePost);
+export const POST = applyMiddleware(
+  compose(
+    (h: Handler) => withContentType('application/json', h),
+    withRateLimit({ maxRequests: 30, windowMs: 60_000 }),
+    (h: Handler) => withBodySizeLimit(512 * 1024, h),
+    withErrorBoundary,
+  ),
+  handlePost,
+);
