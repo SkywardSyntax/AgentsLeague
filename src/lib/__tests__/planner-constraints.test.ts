@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { enforceDrawBatchConstraints } from '@/lib/whiteboard/planner';
-import type { DrawBatch } from '@/types/agent';
+import { enforceDrawBatchConstraints, BoundsCache } from '@/lib/whiteboard/planner';
+import type { DrawBatch, DrawElement } from '@/types/agent';
 
 describe('planner constraints', () => {
   it('repairs overlapping text blocks', () => {
@@ -323,5 +323,108 @@ describe('planner constraints', () => {
       expect(len).toBeCloseTo(28);
     }
     expect(result.violationsFixed).toContain('arrow_endpoint_adjust');
+  });
+});
+
+describe('BoundsCache', () => {
+  const rect: DrawElement = { id: 'r1', type: 'rect', x: 10, y: 20, w: 100, h: 50 };
+
+  it('get() caches and returns same reference on second call', () => {
+    const cache = new BoundsCache();
+    const first = cache.get(rect);
+    const second = cache.get(rect);
+    expect(first).toBe(second);
+    expect(first).toEqual({ minX: 10, minY: 20, maxX: 110, maxY: 70 });
+  });
+
+  it('invalidate() forces recomputation on next get()', () => {
+    const cache = new BoundsCache();
+    const first = cache.get(rect);
+    cache.invalidate('r1');
+    const second = cache.get(rect);
+    expect(first).not.toBe(second);
+    expect(first).toEqual(second);
+  });
+
+  it('clear() empties entire cache', () => {
+    const cache = new BoundsCache();
+    cache.get(rect);
+    const rect2: DrawElement = { id: 'r2', type: 'rect', x: 0, y: 0, w: 50, h: 50 };
+    cache.get(rect2);
+    cache.clear();
+    const fresh = cache.get(rect);
+    expect(fresh).toEqual({ minX: 10, minY: 20, maxX: 110, maxY: 70 });
+  });
+
+  it('updateAfterShift() adjusts cached bounds by dx/dy', () => {
+    const cache = new BoundsCache();
+    cache.get(rect);
+    cache.updateAfterShift('r1', 5, -3);
+    const updated = cache.get(rect);
+    expect(updated).toEqual({ minX: 15, minY: 17, maxX: 115, maxY: 67 });
+  });
+
+  it('updateAfterShift() on non-cached id is a no-op', () => {
+    const cache = new BoundsCache();
+    cache.updateAfterShift('nonexistent', 10, 10);
+  });
+
+  it('updateAfterShift() on null-bounds entry stays null', () => {
+    const cache = new BoundsCache();
+    const clearEl: DrawElement = { id: 'c1', type: 'clear' };
+    const bounds = cache.get(clearEl);
+    expect(bounds).toBeNull();
+    cache.updateAfterShift('c1', 5, 5);
+    const afterShift = cache.get(clearEl);
+    expect(afterShift).toBeNull();
+  });
+});
+
+describe('enforceDrawBatchConstraints with default config', () => {
+  it('returns batch unchanged with empty fixes for a clean batch', () => {
+    const batch: DrawBatch = {
+      batch_id: 'default-clean',
+      elements: [
+        { id: 'r1', type: 'rect', x: 100, y: 100, w: 200, h: 100 },
+      ],
+    };
+    const result = enforceDrawBatchConstraints(batch);
+    expect(result.violationsFixed).toHaveLength(0);
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.batch.batch_id).toBe('default-clean');
+    const el = result.batch.elements[0]!;
+    if (el.type === 'rect') {
+      expect(el.x).toBe(100);
+      expect(el.y).toBe(100);
+    }
+  });
+
+  it('shifts out-of-bounds element using default canvas dimensions', () => {
+    const batch: DrawBatch = {
+      batch_id: 'default-oob',
+      elements: [
+        { id: 'r1', type: 'rect', x: 1550, y: 1150, w: 100, h: 80 },
+      ],
+    };
+    const result = enforceDrawBatchConstraints(batch);
+    const el = result.batch.elements[0]!;
+    expect(el.type).toBe('rect');
+    if (el.type === 'rect') {
+      expect(el.x + el.w).toBeLessThanOrEqual(1600 - 24);
+      expect(el.y + el.h).toBeLessThanOrEqual(1200 - 24);
+    }
+    expect(result.violationsFixed.length).toBeGreaterThan(0);
+  });
+
+  it('partial config override merges with defaults', () => {
+    const batch: DrawBatch = {
+      batch_id: 'partial-cfg',
+      elements: [
+        { id: 'r1', type: 'rect', x: 50, y: 50, w: 100, h: 80 },
+      ],
+    };
+    const result = enforceDrawBatchConstraints(batch, { canvasWidth: 400 });
+    expect(result.batch.batch_id).toBe('partial-cfg');
+    expect(result.violationsFixed).toHaveLength(0);
   });
 });
