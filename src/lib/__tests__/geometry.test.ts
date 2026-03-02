@@ -367,6 +367,93 @@ describe('resamplePolyline — large spacing and edge cases', () => {
   });
 });
 
+describe('resamplePolyline — epsilon guard and numerical robustness', () => {
+  it('collinear near-zero segments produce valid points, no NaN', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 1e-14, y: 0 },
+      { x: 100, y: 0 },
+    ];
+    const result = resamplePolyline(pts, 10);
+    expect(result.length).toBeGreaterThanOrEqual(2);
+    for (const pt of result) {
+      expect(Number.isFinite(pt.x)).toBe(true);
+      expect(Number.isFinite(pt.y)).toBe(true);
+    }
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(result[result.length - 1]).toEqual({ x: 100, y: 0 });
+  });
+
+  it('two identical points returns single point (degenerate)', () => {
+    const pts = [
+      { x: 42, y: 42 },
+      { x: 42, y: 42 },
+    ];
+    const result = resamplePolyline(pts, 5);
+    // Near-zero segment skipped, last point appended
+    expect(result.length).toBeLessThanOrEqual(2);
+    expect(result[0]).toEqual({ x: 42, y: 42 });
+  });
+
+  it('very small spacing on a long line produces many valid points', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 1000, y: 0 },
+    ];
+    const result = resamplePolyline(pts, 1);
+    expect(result.length).toBeGreaterThanOrEqual(1000);
+    for (const pt of result) {
+      expect(Number.isFinite(pt.x)).toBe(true);
+      expect(Number.isFinite(pt.y)).toBe(true);
+    }
+  });
+
+  it('closed polygon (first === last) resampled output also closes', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+      { x: 0, y: 100 },
+      { x: 0, y: 0 },
+    ];
+    const result = resamplePolyline(pts, 15);
+    const first = result[0]!;
+    const last = result[result.length - 1]!;
+    expect(first.x).toBeCloseTo(last.x, 5);
+    expect(first.y).toBeCloseTo(last.y, 5);
+  });
+
+  it('normal case: uniform spacing produces equidistant points', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ];
+    const result = resamplePolyline(pts, 10);
+    // Should have ~11 points (0, 10, 20, ..., 100)
+    expect(result.length).toBeGreaterThanOrEqual(10);
+    for (let i = 1; i < result.length - 1; i++) {
+      const d = distance(result[i - 1]!, result[i]!);
+      expect(d).toBeCloseTo(10, 5);
+    }
+  });
+
+  it('multiple near-zero segments in sequence do not hang', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 1e-15, y: 0 },
+      { x: 2e-15, y: 0 },
+      { x: 3e-15, y: 0 },
+      { x: 50, y: 0 },
+    ];
+    const result = resamplePolyline(pts, 10);
+    for (const pt of result) {
+      expect(Number.isFinite(pt.x)).toBe(true);
+      expect(Number.isFinite(pt.y)).toBe(true);
+    }
+    expect(result[result.length - 1]).toEqual({ x: 50, y: 0 });
+  });
+});
+
 describe('catmullRomToBezier', () => {
   it('returns empty for fewer than 2 points', () => {
     expect(catmullRomToBezier([])).toEqual([]);

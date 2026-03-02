@@ -1,4 +1,4 @@
-import type { Point } from '@/types/agent';
+import type { DrawElement, Point } from '@/types/agent';
 
 export const MIN_SCREEN_STROKE_PX = 1.25;
 export const MAX_SCREEN_STROKE_PX = 5.5;
@@ -69,7 +69,7 @@ export function resamplePolyline(points: Point[], spacing: number): Point[] {
     let start = points[i - 1]!;
     const end = points[i]!;
     let segLen = distance(start, end);
-    if (segLen === 0) continue;
+    if (segLen < 1e-9) continue;
 
     while (carry + segLen >= spacing) {
       const remain = spacing - carry;
@@ -82,7 +82,7 @@ export function resamplePolyline(points: Point[], spacing: number): Point[] {
       start = next;
       segLen = distance(start, end);
       carry = 0;
-      if (segLen === 0) break;
+      if (segLen < 1e-9) break;
     }
 
     carry += segLen;
@@ -243,4 +243,63 @@ export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegmen
   }
 
   return segs;
+}
+
+/** Compute axis-aligned bounding box for a single DrawElement. */
+export function boundsOfElement(el: DrawElement): StrokeBounds | null {
+  switch (el.type) {
+    case 'rect': {
+      const x0 = Math.min(el.x, el.x + el.w);
+      const x1 = Math.max(el.x, el.x + el.w);
+      const y0 = Math.min(el.y, el.y + el.h);
+      const y1 = Math.max(el.y, el.y + el.h);
+      return { minX: x0, maxX: x1, minY: y0, maxY: y1, width: x1 - x0, height: y1 - y0 };
+    }
+    case 'ellipse': {
+      const absRx = Math.abs(el.rx);
+      const absRy = Math.abs(el.ry);
+      return {
+        minX: el.cx - absRx,
+        maxX: el.cx + absRx,
+        minY: el.cy - absRy,
+        maxY: el.cy + absRy,
+        width: absRx * 2,
+        height: absRy * 2,
+      };
+    }
+    case 'line':
+    case 'arrow': {
+      const minX = Math.min(el.from.x, el.to.x);
+      const maxX = Math.max(el.from.x, el.to.x);
+      const minY = Math.min(el.from.y, el.to.y);
+      const maxY = Math.max(el.from.y, el.to.y);
+      return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+    }
+    case 'text': {
+      const fontSize = el.size ?? 18;
+      const estWidth = Math.max(fontSize, el.text.length * fontSize * 0.5);
+      return {
+        minX: el.x,
+        maxX: el.x + estWidth,
+        minY: el.y,
+        maxY: el.y + fontSize,
+        width: estWidth,
+        height: fontSize,
+      };
+    }
+    case 'latex': {
+      const fontSize = el.fontSize ?? 20;
+      const estWidth = Math.max(fontSize, Math.max(1, el.tex.length) * fontSize * 0.45);
+      return {
+        minX: el.x,
+        maxX: el.x + estWidth,
+        minY: el.y,
+        maxY: el.y + fontSize,
+        width: estWidth,
+        height: fontSize,
+      };
+    }
+    default:
+      return null;
+  }
 }

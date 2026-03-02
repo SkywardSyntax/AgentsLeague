@@ -77,7 +77,7 @@ function linePoints(el: Extract<DrawElement, { type: 'line' } | { type: 'arrow' 
   return [el.from, el.to];
 }
 
-function arrowHeadPoints(el: Extract<DrawElement, { type: 'arrow' }>): Point[][] {
+export function arrowHeadPoints(el: Extract<DrawElement, { type: 'arrow' }>): Point[][] {
   const dx = el.to.x - el.from.x;
   const dy = el.to.y - el.from.y;
   const angle = Math.atan2(dy, dx);
