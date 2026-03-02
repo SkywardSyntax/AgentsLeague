@@ -33,6 +33,13 @@ describe('stroke scheduler', () => {
 
     expect(active[0]?.startedAt).toBe(startedAt);
     expect(active[1]?.startedAt).toBe(startedAt);
+
+    expect(active[0]!.durationMs).toBe(strokeDurationMs(10));
+    expect(active[0]!.length).toBe(10);
+    expect(active[0]!.cumulativeLengths).toEqual([0, 10]);
+    expect(active[1]!.durationMs).toBe(strokeDurationMs(10));
+    expect(active[1]!.length).toBe(10);
+    expect(active[1]!.cumulativeLengths).toEqual([0, 10]);
   });
 
   it('clamps duration bounds', () => {

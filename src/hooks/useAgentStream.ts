@@ -92,6 +92,28 @@ export function parseSSEBuffer(buffer: string): ParsedSSEResult {
   return { events, remainder };
 }
 
+/**
+ * Parse an SSE buffer into decoded event objects. Returns parsed events,
+ * the leftover (incomplete) buffer tail, and any JSON parse errors.
+ */
+export function parseSSEFrames(
+  buffer: string,
+): { events: unknown[]; remaining: string; errors: string[] } {
+  const parts = buffer.split(/\r?\n\r?\n/);
+  const remaining = parts.pop() ?? '';
+  const events: unknown[] = [];
+  const errors: string[] = [];
+  for (const chunk of parts) {
+    for (const line of chunk.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('data:'))) {
+      const json = line.slice(5).trim();
+      if (!json) continue;
+      try { events.push(JSON.parse(json)); }
+      catch { errors.push('Invalid SSE JSON payload received'); }
+    }
+  }
+  return { events, remaining, errors };
+}
+
 
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);

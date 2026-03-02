@@ -17,6 +17,7 @@ import {
   getModel,
 } from '@/lib/server/openai';
 import { formatSSE, sseHeaders, createSSEHeartbeat, safeEnqueue, formatSSEComment } from '@/lib/server/sse';
+import { appendToStreamBuffer } from '@/lib/server/stream-buffer';
 import { createLogger, logStreamEvent } from '@/lib/server/logger';
 import {
   applyMiddleware,
@@ -403,9 +404,10 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
               sawTextThisIteration = true;
               sawTextInTurn = true;
               send({ type: 'assistant.text.delta', turnId, delta: event.delta });
-              streamTextBuffer += event.delta;
-              if (streamTextBuffer.length > MAX_STREAM_BUFFER) {
-                streamTextBuffer = streamTextBuffer.slice(streamTextBuffer.length - MAX_STREAM_BUFFER);
+              {
+                const r = appendToStreamBuffer(streamTextBuffer, event.delta);
+                streamTextBuffer = r.buffer;
+                if (r.truncated) send({ type: 'warning', turnId, code: 'BUFFER_TRUNCATED', message: 'Stream buffer exceeded maximum size' });
               }
               if (/[\\\n\]}]$/.test(event.delta)) {
                 emitProvisionalFromStream();
@@ -417,9 +419,10 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
               sawTextThisIteration = true;
               sawTextInTurn = true;
               send({ type: 'assistant.text.delta', turnId, delta: event.text });
-              streamTextBuffer += event.text;
-              if (streamTextBuffer.length > MAX_STREAM_BUFFER) {
-                streamTextBuffer = streamTextBuffer.slice(streamTextBuffer.length - MAX_STREAM_BUFFER);
+              {
+                const r = appendToStreamBuffer(streamTextBuffer, event.text);
+                streamTextBuffer = r.buffer;
+                if (r.truncated) send({ type: 'warning', turnId, code: 'BUFFER_TRUNCATED', message: 'Stream buffer exceeded maximum size' });
               }
               emitProvisionalFromStream();
               continue;

@@ -74,7 +74,32 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
   const committedDirtyRef = useRef(true);
 
+  const gridColorsRef = useRef({ bg: '#f7f9fc', stroke: 'rgba(77, 93, 118, 0.16)' });
+
+  const readGridColors = useCallback(() => {
+    const style = getComputedStyle(document.documentElement);
+    gridColorsRef.current = {
+      bg: style.getPropertyValue('--color-grid-bg').trim() || '#f7f9fc',
+      stroke: style.getPropertyValue('--color-grid').trim() || 'rgba(77, 93, 118, 0.16)',
+    };
+  }, []);
+
+  useEffect(() => {
+    readGridColors();
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes' && m.attributeName === 'data-theme') {
+          readGridColors();
+          break;
+        }
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, [readGridColors]);
+
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
+  const MAX_PROCESSED_BATCH_IDS = 500;
   const clearGenerationRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const drawErrorCountRef = useRef(0);
@@ -107,6 +132,21 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const lastFrameTimeRef = useRef(0);
   const drawCallCounterRef = useRef(createDrawCallCounter());
 
+  const resetCamera = useCallback(() => {
+    cameraRef.current = { x: 40, y: 40, zoom: 1 };
+    committedDirtyRef.current = true;
+  }, []);
+  const zoomIn = useCallback(() => {
+    const c = cameraRef.current;
+    cameraRef.current = { ...c, zoom: clamp(c.zoom * 1.25, MIN_ZOOM, MAX_ZOOM) };
+    committedDirtyRef.current = true;
+  }, []);
+  const zoomOut = useCallback(() => {
+    const c = cameraRef.current;
+    cameraRef.current = { ...c, zoom: clamp(c.zoom / 1.25, MIN_ZOOM, MAX_ZOOM) };
+    committedDirtyRef.current = true;
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (isDebugShortcut(e)) {
@@ -117,6 +157,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  }, []);
   }, []);
 
   const resizeCanvases = useCallback(() => {
@@ -173,6 +214,16 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         if (cancelled) return;
         if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
         processedBatchIdsRef.current.add(batch.batch_id);
+
+        // Prune to prevent unbounded growth
+        if (processedBatchIdsRef.current.size > MAX_PROCESSED_BATCH_IDS) {
+          const ids = processedBatchIdsRef.current.values();
+          const excess = processedBatchIdsRef.current.size - MAX_PROCESSED_BATCH_IDS;
+          for (let i = 0; i < excess; i++) {
+            const next = ids.next();
+            if (!next.done) processedBatchIdsRef.current.delete(next.value);
+          }
+        }
 
         let compiled;
         try {
@@ -284,11 +335,11 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
-        bgCtx.fillStyle = '#f7f9fc';
+        bgCtx.fillStyle = gridColorsRef.current.bg;
         bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
 
         bgCtx.setTransform(scale, 0, 0, scale, tx, ty);
-        bgCtx.strokeStyle = 'rgba(77, 93, 118, 0.16)';
+        bgCtx.strokeStyle = gridColorsRef.current.stroke;
         bgCtx.lineWidth = 1 / scale;
 
         const grid = 30;
@@ -656,8 +707,46 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         </div>
       )}
 
-      <div data-testid="debug-overlay" className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>
-        <div ref={statsZoomElRef}>Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
+      <div className="absolute left-3 top-3 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={resetCamera}
+          aria-label="Reset view"
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+          title="Reset view (Ctrl+0)"
+        >
+          ⌂
+        </button>
+        <button
+          type="button"
+          onClick={zoomOut}
+          aria-label="Zoom out"
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+          title="Zoom out"
+        >
+          −
+        </button>
+        <span
+          ref={statsZoomElRef}
+          className="glass-panel rounded-lg px-2 py-1.5 text-xs tabular-nums text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"
+          data-testid="zoom-level"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {(cameraRef.current.zoom * 100).toFixed(0)}%
+        </span>
+        <button
+          type="button"
+          onClick={zoomIn}
+          aria-label="Zoom in"
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+          title="Zoom in"
+        >
+          +
+        </button>
+      </div>
+
+      <div data-testid="debug-overlay" className="glass-panel pointer-events-none absolute left-3 top-14 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>
         <div ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
         <div ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
         <div ref={statsFpsElRef}>FPS: 0.0</div>

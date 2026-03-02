@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useSessionManager, type ChatSessionState } from '@/hooks/useSessionManager';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
 import { sanitizeUserMessage } from '@/lib/client/message-validation';
 import { loadSession, saveSession } from '@/lib/client/persistence';
@@ -42,40 +44,79 @@ function createId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function createMessage(role: ChatMessage['role'], content: string): ChatMessage {
+  return {
+    id: createId(),
+    role,
+    content,
+    createdAt: Date.now(),
+  };
+}
+
+function looksDefaultTitle(title: string): boolean {
+  return /^Chat \d+$/.test(title.trim());
+}
+
+function buildChatTitleFromMessage(content: string): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'New Chat';
+  return normalized.length > 40 ? `${normalized.slice(0, 40)}…` : normalized;
+}
+
+function withoutStreamOverlay(chat: ChatSessionState): ChatSessionState {
+  const nextScene = removeStreamOverlayFromScene(chat.scene);
+  const nextBatches = removeStreamOverlayFromBatches(chat.batches);
+  if (nextScene === chat.scene && nextBatches === chat.batches) return chat;
+  return {
+    ...chat,
+    scene: nextScene,
+    batches: nextBatches,
+  };
+}
 export function AppShell() {
+  const {
+    chatSessions,
+    setChatSessions,
+    activeChatId,
+    activeChat,
+    activeChatIdRef,
+    didRestoreSession,
+    sessionId,
+    createChat: createChatBase,
+    selectChat: selectChatBase,
+    deleteChat: deleteChatBase,
+    panelSizes,
+    setPanelSizes,
+  } = useSessionManager();
+
   const [appMode, setAppMode] = useState<AppMode>(() => getInitialAppMode());
   const isAgentMode = appMode === 'agent';
   const [input, setInput] = useState('');
-  const [panelSizes, setPanelSizes] = useState<[number, number]>([62, 38]);
-  const [agentRunning, setAgentRunning] = useState(isAgentMode);
-  const [agentLastQuery, setAgentLastQuery] = useState('');
-  const [agentDomainIndex, setAgentDomainIndex] = useState(0);
-  const [didRestoreSession, setDidRestoreSession] = useState(false);
-  const [seedChat] = useState(() => createEmptyChatSession(1));
-
-  const [chatStore, dispatch] = useReducer(chatSessionReducer, undefined, (): ChatStore => ({
-    chatOrder: [seedChat.id],
-    chats: { [seedChat.id]: seedChat },
-    turn: createInitialTurn(),
-  }));
-  const [activeChatId, setActiveChatId] = useState<string>(seedChat.id);
-
-  const status = chatStore.turn.status;
-  const [sessionId] = useState(() => createId());
-  const activeChatIdRef = useRef<string>(activeChatId);
-  const agentQueryEngineRef = useRef(new QueryEngine());
-  const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTurnEventsRef = useRef<string[]>([]);
-  const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { run, cancel } = useAgentStream();
-
-  const activeChat = useMemo(
-    () => {
-      const firstId = chatStore.chatOrder[0];
-      return chatStore.chats[activeChatId] ?? (firstId ? chatStore.chats[firstId] : null) ?? null;
-    },
-    [activeChatId, chatStore],
-  );
+  type ChatStore,
+  buildRestoreBatch,
+  chatSessionReducer,
+  createEmptyChatSession,
+  createInitialTurn,
+  createMessage,
+  withoutStreamOverlay,
+} from '@/lib/state/chatSessionReducer';
+import type { ValidatedAgentSSEEvent } from '@/lib/schema';
+import {
+  removeStreamOverlayFromBatches,
+  removeStreamOverlayFromScene,
+} from '@/lib/whiteboard/stream-overlay';
+import type {
+  ChatMessage,
+  DrawElement,
+  SemanticBatch,
+  WhiteboardLayoutDiagnostics,
+} from '@/types/agent';
+import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
+import { ErrorBoundary } from '@/components/app/ErrorBoundary';
+import { AppHeader } from '@/components/app/AppHeader';
+import { AgentSidebar } from '@/components/app/AgentSidebar';
+import { WarningOverlay } from '@/components/app/WarningOverlay';
+import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 
   useEffect(() => {
     setAppMode(getClientAppMode(window.location.search));
@@ -217,14 +258,29 @@ export function AppShell() {
       }
 
       if (event.type === 'turn.done') {
-        dispatch({ type: 'TURN_DONE', chatId: targetChatId });
-      }
-      } catch (err) {
-        console.error('[handleEvent] Error processing event:', event?.type, err);
-        pushWarning(`Event processing error: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    [chatStore.turn.streamChatId, pushWarning],
+  const [agentRunning, setAgentRunning] = useState(isAgentMode);
+  const [agentLastQuery, setAgentLastQuery] = useState('');
+  const [agentDomainIndex, setAgentDomainIndex] = useState(0);
+  const [mobileActivePanel, setMobileActivePanel] = useState<'whiteboard' | 'chat'>('whiteboard');
+  const [seedChat] = useState(() => createEmptyChatSession(1));
+
+  const [chatStore, dispatch] = useReducer(chatSessionReducer, undefined, (): ChatStore => ({
+    chatOrder: [seedChat.id],
+    chats: { [seedChat.id]: seedChat },
+    turn: createInitialTurn(),
+  }));
+
+  const status = chatStore.turn.status;
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const agentQueryEngineRef = useRef(new QueryEngine());
+  const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTurnEventsRef = useRef<string[]>([]);
+  const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { run, cancel } = useAgentStream();
+
+  const resetStreamState = useCallback(() => {
+    // Stream state is managed by the reducer; this is a no-op compatibility shim
+  }, []);
   );
 
   const sendMessage = useCallback(
@@ -287,7 +343,7 @@ export function AppShell() {
       setActiveChatId(chatId);
       setInput('');
     },
-    [activeChatId, status],
+    [cancel, resetStreamState, selectChatBase],
   );
 
   const deleteChat = useCallback(
@@ -316,6 +372,8 @@ export function AppShell() {
 
   const clearActiveChat = useCallback(() => {
     if (!activeChat || status !== 'idle') return;
+
+    resetStreamState();
 
     const clearBatch: DrawBatch = {
       batch_id: `clear-${createId()}`,
@@ -441,40 +499,82 @@ export function AppShell() {
         : status === 'streaming'
           ? 'Responding'
           : 'Drawing';
-
-  const statusTone =
-    status === 'idle'
-      ? 'bg-emerald-500'
-      : status === 'thinking'
-        ? 'bg-amber-500'
-        : status === 'streaming'
-          ? 'bg-sky-500'
-          : 'bg-indigo-500';
   const agentDomain = AGENT_DOMAINS[agentDomainIndex % AGENT_DOMAINS.length]!;
+
+  useKeyboardShortcuts(
+    useMemo(
+      () => ({
+        focusInput: () => chatInputRef.current?.focus(),
+        newChat: () => createChat(),
+        cancelStream: () => {
+          if (status !== 'idle') {
+            cancel();
+            resetStreamState();
+            setStatus('idle');
+          }
+        },
+        prevChat: () => {
+          const idx = chatSessions.findIndex((c) => c.id === activeChatId);
+          if (idx > 0) selectChat(chatSessions[idx - 1]!.id);
+        },
+        nextChat: () => {
+          const idx = chatSessions.findIndex((c) => c.id === activeChatId);
+          if (idx < chatSessions.length - 1) selectChat(chatSessions[idx + 1]!.id);
+        },
+        resetZoom: () => {
+          /* handled by WhiteboardCanvas internally */
+        },
+        togglePanel: () =>
+          setMobileActivePanel((p) => (p === 'whiteboard' ? 'chat' : 'whiteboard')),
+      }),
+      [activeChatId, cancel, chatSessions, createChat, resetStreamState, selectChat, status],
+    ),
+  );
+
+  const dismissWarnings = useCallback(() => {
+    if (!activeChat) return;
+    setChatSessions((prev) =>
+      prev.map((chat) =>
+        chat.id === activeChat.id ? { ...chat, warnings: [] } : chat,
+      ),
+    );
+  }, [activeChat, setChatSessions]);
+
+  if (!didRestoreSession) {
+    return (
+      <ErrorBoundary>
+        <main className="relative h-screen w-screen overflow-hidden p-2 sm:p-4" style={{ height: '100dvh' }}>
+          <div className="app-card glass-panel flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
+            <div className="h-14 border-b border-[var(--color-border)]" />
+            <div className="flex flex-1 items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+            </div>
+          </div>
+        </main>
+      </ErrorBoundary>
+    );
+  }
 
   if (!activeChat) return null;
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4">
+    <ErrorBoundary>
+    <main id="main-content" className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:text-[var(--color-text-primary)] focus:shadow-lg">Skip to main content</a>
       <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
-        <header className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-4 sm:px-5">
-          <div>
-            <h1 className="font-[var(--font-display)] text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
-              AgentsLeague
-            </h1>
-            <p className="text-[11px] text-[var(--color-text-muted)]">Interleaved conversational whiteboard</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1.5">
-            <span className={`h-2 w-2 rounded-full ${statusTone}`} data-testid="status-dot" />
-            <span className="text-[11px] font-medium text-[var(--color-text-secondary)]" data-testid="status-label">{statusLabel}</span>
-          </div>
-        </header>
+        <AppHeader status={status} />
 
         <div
-          className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 lg:flex-row"
+          className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 md:flex-row"
           style={{ ['--left-width' as string]: `${panelSizes[0]}%` }}
         >
-          <section data-testid="whiteboard-canvas" className={isAgentMode ? 'h-full w-full' : 'h-[56%] w-full lg:h-full lg:w-[var(--left-width)]'}>
+          <section
+            id="panel-whiteboard"
+            data-testid="whiteboard-canvas"
+            tabIndex={-1}
+            className={isAgentMode ? 'h-full w-full' : `w-full md:h-full md:w-[var(--left-width)] ${mobileActivePanel === 'whiteboard' ? 'h-full' : 'hidden'} md:!block`}
+            {...(mobileActivePanel !== 'whiteboard' && !isAgentMode ? { inert: true, 'aria-hidden': true } : {})}
+          >
             <WhiteboardCanvas
               key={activeChat.id}
               batches={activeChat.batches}
@@ -486,16 +586,17 @@ export function AppShell() {
             <div
               role="separator"
               aria-orientation="vertical"
-              className="group relative hidden w-2 cursor-col-resize rounded-full bg-transparent lg:block"
+              className="group relative hidden w-2 cursor-col-resize rounded-full bg-transparent md:block"
               onPointerDown={(e) => {
-                const startX = e.clientX;
+                let lastX = e.clientX;
                 const target = e.currentTarget;
                 target.setPointerCapture(e.pointerId);
 
                 const onMove = (ev: PointerEvent) => {
-                  const dx = ev.clientX - startX;
-                  const vw = window.innerWidth;
-                  resizeBy((dx / vw) * 100);
+                  const dx = ev.clientX - lastX;
+                  lastX = ev.clientX;
+                  const containerWidth = target.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+                  resizeBy((dx / containerWidth) * 100);
                 };
                 const onUp = () => {
                   target.removeEventListener('pointermove', onMove);
@@ -512,13 +613,20 @@ export function AppShell() {
           )}
 
           {!isAgentMode && (
-            <section data-testid="chat-panel" className="h-[44%] min-h-0 w-full lg:h-full lg:flex-1">
+            <section
+              id="panel-chat"
+              data-testid="chat-panel"
+              tabIndex={-1}
+              className={`min-h-0 w-full md:h-full md:flex-1 ${mobileActivePanel === 'chat' ? 'h-full' : 'hidden'} md:!block`}
+              {...(mobileActivePanel !== 'chat' ? { inert: true, 'aria-hidden': true } : {})}
+            >
               <ChatPanel
                 chats={chatMeta}
                 activeChatId={activeChat.id}
                 messages={activeChat.messages}
                 input={input}
                 status={status}
+                inputRef={chatInputRef}
                 onInput={setInput}
                 onSend={send}
                 onCancel={() => {
@@ -540,38 +648,26 @@ export function AppShell() {
           )}
 
           {isAgentMode && (
-            <aside data-testid="agent-sidebar" className="absolute right-4 top-4 z-20 w-80 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-3 shadow-lg backdrop-blur">
-              <p className="text-sm font-semibold text-[var(--color-text-primary)]">Agent Mode</p>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                Domain: <span data-testid="agent-domain" className="font-medium">{agentDomain}</span> · Status: {statusLabel}
-              </p>
-              <p data-testid="agent-last-query" className="mt-2 line-clamp-3 text-xs text-[var(--color-text-muted)]">
-                Last query: {agentLastQuery || '—'}
-              </p>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  data-testid="agent-toggle"
-                  onClick={() => setAgentRunning((prev) => !prev)}
-                  className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-soft)]"
-                >
-                  {agentRunning ? 'Pause agent' : 'Resume agent'}
-                </button>
-                <button
-                  type="button"
-                  data-testid="agent-clear"
-                  onClick={clearForAgent}
-                  className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-soft)]"
-                >
-                  Clear
-                </button>
-              </div>
-            </aside>
+            <AgentSidebar
+              agentDomain={agentDomain}
+              statusLabel={statusLabel}
+              agentLastQuery={agentLastQuery}
+              agentRunning={agentRunning}
+              onToggleAgent={() => setAgentRunning((prev) => !prev)}
+              onClear={clearForAgent}
+            />
           )}
 
-          {warningsUI}
+          <WarningOverlay warnings={activeChat.warnings} onDismiss={dismissWarnings} />
         </div>
       </div>
+      {!isAgentMode && (
+        <MobilePanelSwitcher
+          activePanel={mobileActivePanel}
+          onSwitch={setMobileActivePanel}
+        />
+      )}
     </main>
+    </ErrorBoundary>
   );
 }

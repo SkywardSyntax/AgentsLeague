@@ -105,6 +105,12 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const copyButtonRef = useRef<HTMLButtonElement>(null);
   const cached = getCachedSvg(tex, displayMode);
 
+  // Promote to most-recently-used on access (Map preserves insertion order)
+  if (cached) {
+    svgCache.delete(cacheKey);
+    svgCache.set(cacheKey, cached);
+  }
+
   useEffect(() => {
     let cancelled = false;
     if (cached) return;
@@ -203,20 +209,26 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   }
 
   if (!visibleSvg) {
-    return <span className="text-[var(--color-text-muted)]">Rendering…</span>;
+    return (
+      <span
+        className={`inline-block animate-pulse rounded bg-[var(--color-surface-soft)] ${
+          displayMode ? 'my-1 h-8 w-48' : 'h-4 w-16'
+        }`}
+      />
+    );
   }
 
   const safeSvg = sanitizeSvg(visibleSvg);
 
-  const ariaLabel = tex.length <= 40 ? `Math: ${tex}` : 'Mathematical expression';
+  const truncatedLabel = tex.length > 80 ? tex.slice(0, 80) + '…' : tex;
 
   return (
     <span
-      className={displayMode ? 'block overflow-x-auto py-1' : 'inline-block align-middle'}
       role="math"
-      aria-label={ariaLabel}
+      aria-label={truncatedLabel}
       tabIndex={0}
-      title={tex.length > 40 ? tex : undefined}
+      title={tex}
+      className={displayMode ? 'block overflow-x-auto py-1' : 'inline-block align-middle'}
       dangerouslySetInnerHTML={{ __html: safeSvg }}
     />
   );

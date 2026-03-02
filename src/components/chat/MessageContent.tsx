@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Fragment, type ReactNode, useMemo } from 'react';
+import React, { Fragment, memo, type ReactNode, useMemo } from 'react';
 import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
 import { parseTextScripts } from '@/lib/latex/text-scripts';
 import { parseBlocks, type BlockSegment } from '@/lib/markdown/parse-blocks';
@@ -155,7 +155,7 @@ function renderBlock(block: BlockSegment, idx: number): ReactNode {
   }
 }
 
-export const MessageContent = React.memo(function MessageContent({ content }: { content: string }) {
+export const MessageContent = memo(function MessageContent({ content }: { content: string }) {
   const blocks = useMemo(() => parseBlocks(content), [content]);
 
   return (
