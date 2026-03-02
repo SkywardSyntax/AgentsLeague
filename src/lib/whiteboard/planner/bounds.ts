@@ -40,12 +40,13 @@ export function boundsOf(el: DrawElement): WhiteboardBounds | null {
   }
   if (el.type === 'latex') {
     if (!allFinite(el.x, el.y)) return null;
+    if (!el.tex) return null;
     const size = el.fontSize ?? 20;
     if (!isFinitePositive(size)) return null;
     const fracCount = (el.tex.match(/\\(?:d?frac|tfrac)\b/g) ?? []).length;
     const rootCount = (el.tex.match(/\\sqrt\b/g) ?? []).length;
     const sumLikeCount = (el.tex.match(/\\(?:sum|prod|int|lim)\b/g) ?? []).length;
-    const matrixLikeCount = (el.tex.match(/\\(?:begin\{[^}]*matrix\}|begin\{array\}|cases|aligned|align)\b/g) ?? [])
+    const matrixLikeCount = (el.tex.match(/\\begin\{(?:[^}]*matrix|array|cases|aligned|align)\}/g) ?? [])
       .length;
     const scriptCount = (el.tex.match(/[\^_]/g) ?? []).length;
     const lineBreakCount = (el.tex.match(/\\\\/g) ?? []).length;

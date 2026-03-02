@@ -100,4 +100,59 @@ describe('boundsOf defensive validation', () => {
     expect(b).not.toBeNull();
     expect(b!.minX).toBeLessThanOrEqual(10);
   });
+
+  it('returns null for latex with empty tex string', () => {
+    const el: DrawElement = { id: 'x4', type: 'latex', tex: '', x: 0, y: 0, fontSize: 24 };
+    expect(boundsOf(el)).toBeNull();
+  });
+
+  it('returns null for latex with fontSize zero', () => {
+    const el: DrawElement = { id: 'x5', type: 'latex', tex: 'x', x: 0, y: 0, fontSize: 0 };
+    expect(boundsOf(el)).toBeNull();
+  });
+
+  it('handles deeply nested fractions with compounding complexity', () => {
+    const nested: DrawElement = {
+      id: 'x6',
+      type: 'latex',
+      tex: '\\frac{\\frac{\\frac{a}{b}}{c}}{d}',
+      x: 100,
+      y: 100,
+      fontSize: 24,
+    };
+    const single: DrawElement = {
+      id: 'x7',
+      type: 'latex',
+      tex: '\\frac{a}{b}',
+      x: 100,
+      y: 100,
+      fontSize: 24,
+    };
+
+    const nestedBounds = boundsOf(nested)!;
+    const singleBounds = boundsOf(single)!;
+    expect(nestedBounds).not.toBeNull();
+    expect(singleBounds).not.toBeNull();
+
+    const nestedHeight = nestedBounds.maxY - nestedBounds.minY;
+    const singleHeight = singleBounds.maxY - singleBounds.minY;
+    expect(nestedHeight).toBeGreaterThan(singleHeight);
+  });
+
+  it('center-aligned latex shifts minX left by half width', () => {
+    const el: DrawElement = {
+      id: 'x8',
+      type: 'latex',
+      tex: 'x^2',
+      x: 200,
+      y: 100,
+      fontSize: 24,
+      align: 'center',
+    };
+
+    const b = boundsOf(el);
+    expect(b).not.toBeNull();
+    expect(b!.minX).toBeLessThan(200);
+    expect(b!.maxX).toBeGreaterThan(200);
+  });
 });

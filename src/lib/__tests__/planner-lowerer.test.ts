@@ -108,4 +108,30 @@ describe('planner lowerer', () => {
     lowerPlannedLayoutToDrawBatch(planned);
     expect(planned.warnings).toHaveLength(0);
   });
+
+  it('drops elements with NaN coordinates', () => {
+    const elements: DrawElement[] = [
+      { id: 't1', type: 'text', x: 10, y: 20, text: 'valid' },
+      { id: 't2', type: 'text', x: NaN, y: 20, text: 'invalid' },
+    ];
+    const planned = makeLayout(elements);
+
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    expect(draw.elements).toHaveLength(1);
+    expect(draw.elements[0]!.id).toBe('t1');
+    expect(planned.warnings).toContain('elements_dropped_invalid');
+  });
+
+  it('drops text elements with size zero', () => {
+    const elements: DrawElement[] = [
+      { id: 't1', type: 'text', x: 10, y: 20, text: 'valid', size: 18 },
+      { id: 't2', type: 'text', x: 10, y: 50, text: 'zero size', size: 0 },
+    ];
+    const planned = makeLayout(elements);
+
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    expect(draw.elements).toHaveLength(1);
+    expect(draw.elements[0]!.id).toBe('t1');
+    expect(planned.warnings).toContain('elements_dropped_invalid');
+  });
 });

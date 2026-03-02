@@ -148,4 +148,77 @@ describe('planner constraints', () => {
     expect(l2.from.y).toBe(l1.from.y);
     expect(repaired.violationsFixed).not.toContain('shape_spacing');
   });
+
+  it('enforceArrowLegibility lengthens arrows shorter than minimum visible length', () => {
+    const batch: DrawBatch = {
+      batch_id: 'arrow-short',
+      elements: [
+        { id: 'a1', type: 'arrow', from: { x: 100, y: 100 }, to: { x: 103, y: 104 } },
+      ],
+    };
+
+    const repaired = enforceDrawBatchConstraints(batch);
+    const arrow = repaired.batch.elements.find((el) => el.id === 'a1')!;
+    expect(arrow.type).toBe('arrow');
+    if (arrow.type !== 'arrow') return;
+
+    const len = Math.hypot(arrow.to.x - arrow.from.x, arrow.to.y - arrow.from.y);
+    expect(len).toBeGreaterThanOrEqual(28);
+    expect(repaired.violationsFixed).toContain('arrow_endpoint_adjust');
+  });
+
+  it('enforceArrowLegibility handles zero-length arrow with from === to', () => {
+    const batch: DrawBatch = {
+      batch_id: 'arrow-zero',
+      elements: [
+        { id: 'a1', type: 'arrow', from: { x: 200, y: 200 }, to: { x: 200, y: 200 } },
+      ],
+    };
+
+    const repaired = enforceDrawBatchConstraints(batch);
+    const arrow = repaired.batch.elements.find((el) => el.id === 'a1')!;
+    expect(arrow.type).toBe('arrow');
+    if (arrow.type !== 'arrow') return;
+
+    const len = Math.hypot(arrow.to.x - arrow.from.x, arrow.to.y - arrow.from.y);
+    expect(len).toBeGreaterThanOrEqual(28);
+    // Zero-length defaults to horizontal unit vector (1, 0)
+    expect(arrow.to.x).toBeCloseTo(200 + 28);
+    expect(arrow.to.y).toBeCloseTo(200);
+  });
+
+  it('resolveLabelShapeSpacing pushes text labels outside overlapping shapes', () => {
+    const batch: DrawBatch = {
+      batch_id: 'label-overlap',
+      elements: [
+        { id: 'r1', type: 'rect', x: 100, y: 100, w: 200, h: 150 },
+        { id: 'label-1', type: 'text', x: 120, y: 130, text: 'Label text', size: 18 },
+      ],
+    };
+
+    const repaired = enforceDrawBatchConstraints(batch);
+    const rect = repaired.batch.elements.find((el) => el.id === 'r1')!;
+    const label = repaired.batch.elements.find((el) => el.id === 'label-1')!;
+
+    expect(rect.type).toBe('rect');
+    expect(label.type).toBe('text');
+    if (rect.type !== 'rect' || label.type !== 'text') return;
+
+    // Label should be pushed below the rect
+    expect(label.y).toBeGreaterThanOrEqual(rect.y + rect.h);
+  });
+
+  it('fixed-point convergence stops early with no violations for clean batch', () => {
+    const batch: DrawBatch = {
+      batch_id: 'clean',
+      elements: [
+        { id: 't1', type: 'text', x: 50, y: 50, text: 'first', size: 18 },
+        { id: 't2', type: 'text', x: 50, y: 200, text: 'second', size: 18 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    expect(result.violationsFixed).toHaveLength(0);
+    expect(result.fallbackUsed).toBe(false);
+  });
 });
