@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  distance,
+  cumulativeLengths,
+  totalLength,
   partialPolylineByLength,
   screenStrokePx,
   computeFitCamera,
@@ -129,6 +132,47 @@ describe('computeFitCamera', () => {
       0.9,
     );
     expect(withDefault).toEqual(explicit);
+  });
+});
+
+describe('distance', () => {
+  it('computes 3-4-5 triangle hypotenuse', () => {
+    expect(distance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+  });
+
+  it('returns 0 for same point', () => {
+    expect(distance({ x: 7, y: 7 }, { x: 7, y: 7 })).toBe(0);
+  });
+
+  it('handles negative coordinates', () => {
+    expect(distance({ x: -3, y: -4 }, { x: 0, y: 0 })).toBe(5);
+  });
+});
+
+describe('cumulativeLengths', () => {
+  it('returns cumulative distances for 3-point polyline', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 3, y: 14 }];
+    const result = cumulativeLengths(pts);
+    expect(result).toEqual([0, 5, 15]);
+  });
+
+  it('returns [0] for single point', () => {
+    expect(cumulativeLengths([{ x: 1, y: 2 }])).toEqual([0]);
+  });
+
+  it('returns [] for empty array', () => {
+    expect(cumulativeLengths([])).toEqual([]);
+  });
+});
+
+describe('totalLength', () => {
+  it('computes known triangle perimeter segments', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 3, y: 14 }];
+    expect(totalLength(pts)).toBe(15);
+  });
+
+  it('returns 0 for single point', () => {
+    expect(totalLength([{ x: 5, y: 5 }])).toBe(0);
   });
 });
 
