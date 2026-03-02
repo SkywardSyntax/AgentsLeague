@@ -320,7 +320,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <canvas ref={activeRef} className="absolute inset-0" />
       </div>
 
-      <div className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
+      <div aria-live="polite" className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
         <div>Zoom: {(camera.zoom * 100).toFixed(0)}%</div>
         <div>Committed: {stats.committed}</div>
         <div>Active: {stats.active}</div>
