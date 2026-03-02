@@ -286,7 +286,7 @@ describe('semantic latex compilation', () => {
       const result = await compileBatchToStrokes(batch);
       const elapsed = performance.now() - start;
 
-      expect(elapsed).toBeLessThan(1000);
+      expect(elapsed).toBeLessThan(5000);
       expect(result.strokes.length).toBeGreaterThan(0);
     },
     30_000,

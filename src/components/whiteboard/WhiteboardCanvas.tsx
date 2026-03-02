@@ -10,6 +10,7 @@ import {
   screenStrokePx,
   computeFitCamera,
 } from '@/lib/whiteboard/geometry';
+import { computeFps, isDebugShortcut, createDrawCallCounter, formatFps } from '@/lib/whiteboard/canvas-debug';
 
 interface Camera {
   x: number;
@@ -100,11 +101,32 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const statsCommittedElRef = useRef<HTMLDivElement>(null);
   const statsActiveElRef = useRef<HTMLDivElement>(null);
 
+  const debugVisibleRef = useRef(false);
+  const statsFpsElRef = useRef<HTMLDivElement>(null);
+  const statsDrawCallsElRef = useRef<HTMLDivElement>(null);
+  const frameTimesRef = useRef<number[]>([]);
+  const lastFrameTimeRef = useRef(0);
+  const drawCallCounterRef = useRef(createDrawCallCounter());
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (isDebugShortcut(e)) {
+        debugVisibleRef.current = !debugVisibleRef.current;
+        const overlay = containerRef.current?.querySelector('[data-testid="debug-overlay"]') as HTMLElement | null;
+        if (overlay) overlay.style.display = debugVisibleRef.current ? '' : 'none';
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const resizeCanvases = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-    const nextDpr = window.devicePixelRatio || 1;
+    // Guard: skip resize if container has no renderable area
+    if (rect.width < 1 || rect.height < 1) return;
+    const nextDpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 5));
 
     dprRef.current = nextDpr;
     sizeRef.current = { width: rect.width, height: rect.height };
@@ -222,6 +244,17 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       const dpr = dprRef.current;
       const size = sizeRef.current;
 
+      // FPS tracking
+      const frameNow = performance.now();
+      if (lastFrameTimeRef.current > 0) {
+        const delta = frameNow - lastFrameTimeRef.current;
+        const ft = frameTimesRef.current;
+        ft.push(delta);
+        if (ft.length > 60) ft.shift();
+      }
+      lastFrameTimeRef.current = frameNow;
+      drawCallCounterRef.current.reset();
+
       const scale = dpr * camera.zoom;
       const tx = camera.x * dpr;
       const ty = camera.y * dpr;
@@ -290,6 +323,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
             }
           }
           drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+          drawCallCounterRef.current.increment();
         }
         committedDirtyRef.current = false;
       }
@@ -325,6 +359,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         }
 
         drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr);
+          drawCallCounterRef.current.increment();
 
         if (t >= 1) {
           completed.push(stroke);
@@ -354,6 +389,13 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       // Update zoom display on camera change
       if (cameraChanged && statsZoomElRef.current) {
         statsZoomElRef.current.textContent = `Zoom: ${(camera.zoom * 100).toFixed(0)}%`;
+      }
+
+      // Update FPS and draw-call stats when debug overlay is visible
+      if (debugVisibleRef.current) {
+        const fps = computeFps(frameTimesRef.current);
+        if (statsFpsElRef.current) statsFpsElRef.current.textContent = `FPS: ${formatFps(fps)}`;
+        if (statsDrawCallsElRef.current) statsDrawCallsElRef.current.textContent = `Draws: ${drawCallCounterRef.current.read()}`;
       }
 
       drawErrorCountRef.current = 0;
@@ -597,10 +639,12 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         </div>
       )}
 
-      <div className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
+      <div data-testid="debug-overlay" className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>
         <div ref={statsZoomElRef}>Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
         <div ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
         <div ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
+        <div ref={statsFpsElRef}>FPS: 0.0</div>
+        <div ref={statsDrawCallsElRef}>Draws: 0</div>
       </div>
 
       <button
