@@ -1,10 +1,28 @@
-import type { Point } from '@/types/agent';
+import type { DrawElement, Point } from '@/types/agent';
 
 export const MIN_SCREEN_STROKE_PX = 1.25;
 export const MAX_SCREEN_STROKE_PX = 5.5;
 
 export function clamp(value: number, min: number, max: number): number {
+  if (Number.isNaN(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Dev-only guard: warn if any point has non-finite coordinates.
+ * No-op in production builds.
+ */
+export function assertFinitePoints(points: Point[], caller: string): void {
+  if (process.env.NODE_ENV === 'production') return;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+      console.warn(
+        `[${caller}] Non-finite coordinate at index ${i}: (${p.x}, ${p.y})`,
+      );
+      return;
+    }
+  }
 }
 
 export function distance(a: Point, b: Point): number {
@@ -35,6 +53,7 @@ export function partialPolylineByLength(
   targetLength: number,
 ): Point[] {
   if (points.length <= 1) return points;
+  assertFinitePoints(points, 'partialPolylineByLength');
   const total = cumulative[cumulative.length - 1] ?? 0;
   if (targetLength <= 0) return [points[0]!];
   if (targetLength >= total) return points;
@@ -64,7 +83,8 @@ export function partialPolylineByLength(
 }
 
 export function resamplePolyline(points: Point[], spacing: number): Point[] {
-  if (points.length <= 1) return points;
+  if (points.length <= 1 || spacing <= 0) return points;
+  assertFinitePoints(points, 'resamplePolyline');
   const sampled: Point[] = [points[0]!];
 
   let carry = 0;
@@ -72,7 +92,7 @@ export function resamplePolyline(points: Point[], spacing: number): Point[] {
     let start = points[i - 1]!;
     const end = points[i]!;
     let segLen = distance(start, end);
-    if (segLen === 0) continue;
+    if (segLen < 1e-9) continue;
 
     while (carry + segLen >= spacing) {
       const remain = spacing - carry;
@@ -85,7 +105,7 @@ export function resamplePolyline(points: Point[], spacing: number): Point[] {
       start = next;
       segLen = distance(start, end);
       carry = 0;
-      if (segLen === 0) break;
+      if (segLen < 1e-9) break;
     }
 
     carry += segLen;
@@ -106,4 +126,215 @@ export function screenStrokePx(
   maxPx = MAX_SCREEN_STROKE_PX,
 ): number {
   return clamp(baseWorldWidth * zoom * dpr, minPx, maxPx);
+}
+
+// --- Bounds ---
+
+export interface StrokeBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+export function strokesBoundingBox(
+  strokes: { points: Point[] }[],
+  padding = 0,
+): StrokeBounds | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const stroke of strokes) {
+    for (const point of stroke.points) {
+      if (point.x < minX) minX = point.x;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.y > maxY) maxY = point.y;
+    }
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    return null;
+  }
+
+  const pad = Math.max(0, padding);
+  return {
+    minX: minX - pad,
+    maxX: maxX + pad,
+    minY: minY - pad,
+    maxY: maxY + pad,
+    width: Math.max(0, maxX - minX + pad * 2),
+    height: Math.max(0, maxY - minY + pad * 2),
+  };
+}
+
+// --- Bézier curves ---
+
+export interface BezierSegment {
+  p0: Point;
+  cp1: Point;
+  cp2: Point;
+  p3: Point;
+}
+
+export function bezierPointAt(seg: BezierSegment, t: number): Point {
+  const u = 1 - t;
+  const uu = u * u;
+  const uuu = uu * u;
+  const tt = t * t;
+  const ttt = tt * t;
+  return {
+    x: uuu * seg.p0.x + 3 * uu * t * seg.cp1.x + 3 * u * tt * seg.cp2.x + ttt * seg.p3.x,
+    y: uuu * seg.p0.y + 3 * uu * t * seg.cp1.y + 3 * u * tt * seg.cp2.y + ttt * seg.p3.y,
+  };
+}
+
+export function bezierLength(seg: BezierSegment, subdivisions = 16): number {
+  let len = 0;
+  let prev = seg.p0;
+  for (let i = 1; i <= subdivisions; i++) {
+    const pt = bezierPointAt(seg, i / subdivisions);
+    len += distance(prev, pt);
+    prev = pt;
+  }
+  return len;
+}
+
+export function bezierPointAtArcLength(
+  seg: BezierSegment,
+  targetLen: number,
+  totalLen?: number,
+  subdivisions = 32,
+): Point {
+  if (targetLen <= 0) return { x: seg.p0.x, y: seg.p0.y };
+  const total = totalLen ?? bezierLength(seg, subdivisions);
+  if (total <= 0 || targetLen >= total) return { x: seg.p3.x, y: seg.p3.y };
+
+  let accumulated = 0;
+  let prev = seg.p0;
+  for (let i = 1; i <= subdivisions; i++) {
+    const t = i / subdivisions;
+    const pt = bezierPointAt(seg, t);
+    const segLen = distance(prev, pt);
+    if (accumulated + segLen >= targetLen) {
+      const overshoot = targetLen - accumulated;
+      const frac = segLen > 0 ? overshoot / segLen : 0;
+      return {
+        x: prev.x + (pt.x - prev.x) * frac,
+        y: prev.y + (pt.y - prev.y) * frac,
+      };
+    }
+    accumulated += segLen;
+    prev = pt;
+  }
+  return { x: seg.p3.x, y: seg.p3.y };
+}
+
+export function bezierChainLength(segs: BezierSegment[]): number {
+  let total = 0;
+  for (const seg of segs) {
+    total += bezierLength(seg);
+  }
+  return total;
+}
+
+export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegment[] {
+  if (points.length < 2) return [];
+  const alpha = clamp(tension, 0.01, 1);
+  const segs: BezierSegment[] = [];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = i > 0 ? points[i - 1]! : { x: 2 * points[0]!.x - points[1]!.x, y: 2 * points[0]!.y - points[1]!.y };
+    const p1 = points[i]!;
+    const p2 = points[i + 1]!;
+    const p3 = i + 2 < points.length ? points[i + 2]! : { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y };
+
+    const cp1: Point = {
+      x: p1.x + (p2.x - p0.x) * alpha / 6,
+      y: p1.y + (p2.y - p0.y) * alpha / 6,
+    };
+    const cp2: Point = {
+      x: p2.x - (p3.x - p1.x) * alpha / 6,
+      y: p2.y - (p3.y - p1.y) * alpha / 6,
+    };
+
+    segs.push({ p0: p1, cp1, cp2, p3: p2 });
+  }
+
+  return segs;
+}
+
+function allFinite(...values: number[]): boolean {
+  for (const v of values) {
+    if (!Number.isFinite(v)) return false;
+  }
+  return true;
+}
+
+/** Compute axis-aligned bounding box for a single DrawElement. */
+export function boundsOfElement(el: DrawElement): StrokeBounds | null {
+  switch (el.type) {
+    case 'rect': {
+      if (!allFinite(el.x, el.y, el.w, el.h)) return null;
+      const x0 = Math.min(el.x, el.x + el.w);
+      const x1 = Math.max(el.x, el.x + el.w);
+      const y0 = Math.min(el.y, el.y + el.h);
+      const y1 = Math.max(el.y, el.y + el.h);
+      return { minX: x0, maxX: x1, minY: y0, maxY: y1, width: x1 - x0, height: y1 - y0 };
+    }
+    case 'ellipse': {
+      if (!allFinite(el.cx, el.cy, el.rx, el.ry)) return null;
+      const absRx = Math.abs(el.rx);
+      const absRy = Math.abs(el.ry);
+      return {
+        minX: el.cx - absRx,
+        maxX: el.cx + absRx,
+        minY: el.cy - absRy,
+        maxY: el.cy + absRy,
+        width: absRx * 2,
+        height: absRy * 2,
+      };
+    }
+    case 'line':
+    case 'arrow': {
+      if (!allFinite(el.from.x, el.from.y, el.to.x, el.to.y)) return null;
+      const minX = Math.min(el.from.x, el.to.x);
+      const maxX = Math.max(el.from.x, el.to.x);
+      const minY = Math.min(el.from.y, el.to.y);
+      const maxY = Math.max(el.from.y, el.to.y);
+      return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+    }
+    case 'text': {
+      const fontSize = el.size ?? 18;
+      if (!allFinite(el.x, el.y, fontSize)) return null;
+      const estWidth = Math.max(fontSize, el.text.length * fontSize * 0.5);
+      return {
+        minX: el.x,
+        maxX: el.x + estWidth,
+        minY: el.y,
+        maxY: el.y + fontSize,
+        width: estWidth,
+        height: fontSize,
+      };
+    }
+    case 'latex': {
+      const fontSize = el.fontSize ?? 20;
+      if (!allFinite(el.x, el.y, fontSize)) return null;
+      const estWidth = Math.max(fontSize, Math.max(1, el.tex.length) * fontSize * 0.45);
+      return {
+        minX: el.x,
+        maxX: el.x + estWidth,
+        minY: el.y,
+        maxY: el.y + fontSize,
+        width: estWidth,
+        height: fontSize,
+      };
+    }
+    default:
+      return null;
+  }
 }

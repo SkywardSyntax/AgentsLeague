@@ -113,6 +113,7 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
       try {
         const rendered = await renderTexToSvg(tex, displayMode);
         if (!cancelled) {
+
           setSvg(rendered);
           setError(null);
           setTimedOut(false);

@@ -10,7 +10,7 @@ import type {
 
 type GraphScriptTemplate = SemanticBatch['template'];
 type GraphScriptIntent = SemanticBatch['intent'];
-type GraphShapeType = 'rect' | 'parallelogram' | 'line' | 'arrow';
+type GraphShapeType = 'rect' | 'parallelogram' | 'line' | 'arrow' | 'diamond' | 'circle' | 'ellipse' | 'hexagon' | 'triangle';
 
 interface ParseLineResult {
   command: string;
@@ -61,6 +61,18 @@ const SHAPE_SYNONYM_MAP: Record<string, GraphShapeType> = {
   segment: 'line',
   vector: 'line',
   arrow: 'arrow',
+  diamond: 'diamond',
+  rhombus: 'diamond',
+  decision: 'diamond',
+  circle: 'circle',
+  dot: 'circle',
+  bubble: 'circle',
+  ellipse: 'ellipse',
+  oval: 'ellipse',
+  hexagon: 'hexagon',
+  hex: 'hexagon',
+  triangle: 'triangle',
+  tri: 'triangle',
 };
 const ANCHOR_ALIAS_MAP: Record<string, string> = {
   centre: 'center',
@@ -76,9 +88,7 @@ const ANCHOR_ALIAS_MAP: Record<string, string> = {
   se: 'bottom-right',
 };
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+import { clamp } from './geometry';
 
 function toNumber(input: string | undefined): number | null {
   if (!input) return null;
@@ -377,7 +387,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
   const batch_id = typeof payload.batch_id === 'string' && payload.batch_id.trim().length > 0
     ? payload.batch_id.trim()
     : `graph-${Date.now()}`;
-  const script = typeof payload.script === 'string' ? payload.script : '';
+  const rawScript = typeof payload.script === 'string' ? payload.script : '';
+  if (rawScript.length > 50_000) {
+    return { semanticBatch: null, warnings: ['Script exceeds maximum length'] };
+  }
+  // Strip control characters (keep \t, \n, \r)
+  const script = rawScript.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
   if (!script.trim()) {
     return { semanticBatch: null, warnings: ['Graph script is empty'] };
   }
@@ -403,6 +418,7 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
   const relations: SemanticRelation[] = [];
   const panelNodeCounts = new Map<string, number>();
   const shapeToPanel = new Map<string, string>();
+  const shapeIdCounts = new Map<string, number>();
 
   const lines = script.split(/\r?\n/);
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
@@ -473,7 +489,7 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
 
     if (COMMAND_SHAPE_SET.has(command)) {
       const panelId = kv.panel ?? kv.graph ?? positional[0];
-      const shapeId = kv.id ?? positional[1] ?? `${command}-${lineIdx + 1}`;
+      let shapeId = kv.id ?? positional[1] ?? `${command}-${lineIdx + 1}`;
       const rawType = kv.type ?? kv.shape ?? positional[2] ?? (command === 'node' ? 'rect' : '');
       const shapeType = parseShapeType(rawType);
       if (!panelId || !shapeType) {
@@ -482,6 +498,19 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
       }
 
       const panel = ensurePanel(panels, panelOrder, panelId);
+
+      // Deterministic rename for duplicate shape IDs within the same panel
+      const existingPanel = shapeToPanel.get(shapeId);
+      if (existingPanel === panelId) {
+        const count = (shapeIdCounts.get(shapeId) ?? 1) + 1;
+        shapeIdCounts.set(shapeId, count);
+        const newId = `${shapeId}-${count}`;
+        warnings.push(`line ${lineIdx + 1}: duplicate shape id "${shapeId}" in panel "${panelId}"; renamed to "${newId}"`);
+        shapeId = newId;
+      } else if (existingPanel && existingPanel !== panelId) {
+        warnings.push(`line ${lineIdx + 1}: duplicate shape id '${shapeId}' across panels; latest one wins`);
+      }
+
       const autoIndex = panelNodeCounts.get(panelId) ?? 0;
       panelNodeCounts.set(panelId, autoIndex + 1);
       const autoPose = command === 'node' ? autoNodePose(autoIndex) : null;
@@ -494,9 +523,6 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
         ...(kv.label ?? kv.text ? { label: kv.label ?? kv.text } : {}),
         ...(pose ? { relative_pose: pose } : {}),
       });
-      if (shapeToPanel.has(shapeId) && shapeToPanel.get(shapeId) !== panelId) {
-        warnings.push(`line ${lineIdx + 1}: duplicate shape id '${shapeId}' across panels; latest one wins`);
-      }
       shapeToPanel.set(shapeId, panelId);
       continue;
     }
@@ -543,7 +569,8 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
         });
         equationOrder.push(stackKey);
       }
-      const stack = equationStacks.get(stackKey)!;
+      const stack = equationStacks.get(stackKey);
+      if (!stack) continue;
       const displayArg = kv.display ?? kv.displaymode;
       stack.lines.push({
         id: lineId,
@@ -607,8 +634,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
   }
 
   const blocks = [
-    ...panelOrder.map((panelId) => panels.get(panelId)!).filter(Boolean),
-    ...equationOrder.map((stackId) => equationStacks.get(stackId)!).filter(Boolean),
+    ...panelOrder.map((panelId) => panels.get(panelId)).filter(
+      (b): b is NonNullable<typeof b> => b != null,
+    ),
+    ...equationOrder.map((stackId) => equationStacks.get(stackId)).filter(
+      (b): b is NonNullable<typeof b> => b != null,
+    ),
     ...captions,
   ];
 

@@ -3,12 +3,12 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveStroke, DrawBatch, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
-import { createActiveBatch, easeOutCubic } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
   partialPolylineByLength,
-  screenStrokePx,
 } from '@/lib/whiteboard/geometry';
+import { drawStroke, drawSmoothStroke } from '@/lib/whiteboard/canvas-draw';
 
 interface Camera {
   x: number;
@@ -23,42 +23,9 @@ interface WhiteboardCanvasProps {
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
+const MAX_COMMITTED = 2000;
 
-function clamp(v: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, v));
-}
-
-function drawStroke(
-  ctx: CanvasRenderingContext2D,
-  points: StrokeTrajectory['points'],
-  color: string,
-  baseWidth: number,
-  camera: Camera,
-  dpr: number,
-) {
-  if (points.length < 2) return;
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  const n = points.length - 1;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1]!;
-    const b = points[i]!;
-    const t = i / n;
-
-    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
-    const worldWidth = baseWidth * widthMod;
-    const px = screenStrokePx(worldWidth, camera.zoom, dpr);
-    const worldLineWidth = px / (camera.zoom * dpr);
-
-    ctx.lineWidth = worldLineWidth;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-}
+import { clamp } from '@/lib/whiteboard/geometry';
 
 export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +35,7 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
 
   const committedStrokesRef = useRef<StrokeTrajectory[]>([]);
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
+  const committedDirtyRef = useRef(true);
 
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number | null>(null);
@@ -92,14 +60,25 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
     });
+
+    committedDirtyRef.current = true;
   }, []);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => resizeCanvases());
     window.addEventListener('resize', resizeCanvases);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        committedDirtyRef.current = true;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resizeCanvases);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [resizeCanvases]);
 
@@ -108,6 +87,7 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
 
     const process = async () => {
       for (const batch of batches) {
+        if (cancelled) return;
         if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
         processedBatchIdsRef.current.add(batch.batch_id);
 
@@ -117,6 +97,7 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
         if (compiled.clear) {
           committedStrokesRef.current = [];
           activeStrokesRef.current = [];
+          committedDirtyRef.current = true;
         }
 
         compiled.warnings.forEach(onWarning);
@@ -141,6 +122,9 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
   }, [batches, onWarning]);
 
   useEffect(() => {
+    // Camera, dpr, or size changed — committed canvas needs full redraw
+    committedDirtyRef.current = true;
+
     const drawFrame = () => {
       const bgCanvas = bgRef.current;
       const committedCanvas = committedRef.current;
@@ -195,30 +179,37 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
 
       drawGrid();
 
-      committedCtx.setTransform(1, 0, 0, 1, 0, 0);
-      committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
-      committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+      // Only redraw committed canvas when dirty (new strokes, camera change, resize, clear)
+      if (committedDirtyRef.current) {
+        committedCtx.setTransform(1, 0, 0, 1, 0, 0);
+        committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
+        committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+
+        for (const stroke of committedStrokesRef.current) {
+          drawSmoothStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+        }
+        committedDirtyRef.current = false;
+      }
 
       activeCtx.setTransform(1, 0, 0, 1, 0, 0);
       activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
       activeCtx.setTransform(scale, 0, 0, scale, tx, ty);
-
-      for (const stroke of committedStrokesRef.current) {
-        drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
-      }
 
       const now = performance.now();
       const nextActive: ActiveStroke[] = [];
       const completed: StrokeTrajectory[] = [];
 
       for (const stroke of activeStrokesRef.current) {
-        const t = easeOutCubic((now - stroke.startedAt) / stroke.durationMs);
-        const visibleLength = stroke.length * t;
+        const rawT = easeOutCubic((now - stroke.startedAt) / stroke.durationMs);
+        const visibleLength =
+          stroke.speedFactors && stroke.speedFactors.length === stroke.cumulativeLengths.length
+            ? weightedVisibleLength(stroke.cumulativeLengths, stroke.speedFactors, rawT)
+            : stroke.length * rawT;
         const partial = partialPolylineByLength(stroke.points, stroke.cumulativeLengths, visibleLength);
 
         drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr);
 
-        if (t >= 1) {
+        if (rawT >= 1) {
           completed.push(stroke);
         } else {
           nextActive.push(stroke);
@@ -227,6 +218,10 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
 
       if (completed.length > 0) {
         committedStrokesRef.current = committedStrokesRef.current.concat(completed);
+        if (committedStrokesRef.current.length > MAX_COMMITTED) {
+          committedStrokesRef.current = committedStrokesRef.current.slice(-MAX_COMMITTED);
+        }
+        committedDirtyRef.current = true;
       }
       activeStrokesRef.current = nextActive;
 
@@ -325,7 +320,7 @@ export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarn
         <canvas ref={activeRef} className="absolute inset-0" />
       </div>
 
-      <div className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
+      <div aria-live="polite" className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
         <div>Zoom: {(camera.zoom * 100).toFixed(0)}%</div>
         <div>Committed: {stats.committed}</div>
         <div>Active: {stats.active}</div>

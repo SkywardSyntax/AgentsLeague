@@ -376,10 +376,7 @@ function asString(input: unknown): string | null {
   return typeof input === 'string' ? input : null;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, Math.min(max, value));
-}
+import { clamp } from '@/lib/whiteboard/geometry';
 
 function pointFrom(input: unknown): { x: number; y: number } | null {
   const rec = asRecord(input);

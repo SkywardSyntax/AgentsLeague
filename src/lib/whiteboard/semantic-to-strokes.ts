@@ -5,7 +5,7 @@ import type {
 } from '@/types/agent';
 import { renderTexToSvg, extractSvgStrokes } from '@/lib/latex/mathjax-client';
 import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
-import { resamplePolyline } from './geometry';
+import { resamplePolyline, strokesBoundingBox } from './geometry';
 import {
   strokeWidthForPreset,
   rectPoints,
@@ -21,6 +21,7 @@ export { withJitter } from './stroke-jitter';
 
 const DEFAULT_COLOR = '#1f2a44';
 const DEFAULT_BASE_WIDTH = 1.45;
+
 
 async function compileTextLikeElement(
   tex: string,
@@ -56,40 +57,8 @@ function looksMathLikeText(input: string): boolean {
   return false;
 }
 
-function strokesBounds(strokes: StrokeTrajectory[]): {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-  width: number;
-  height: number;
-} | null {
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  for (const stroke of strokes) {
-    for (const point of stroke.points) {
-      if (point.x < minX) minX = point.x;
-      if (point.x > maxX) maxX = point.x;
-      if (point.y < minY) minY = point.y;
-      if (point.y > maxY) maxY = point.y;
-    }
-  }
-
-  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
-    return null;
-  }
-
-  return {
-    minX,
-    maxX,
-    minY,
-    maxY,
-    width: Math.max(0, maxX - minX),
-    height: Math.max(0, maxY - minY),
-  };
+function strokesBounds(strokes: StrokeTrajectory[]) {
+  return strokesBoundingBox(strokes);
 }
 
 function shiftStrokes(strokes: StrokeTrajectory[], dx: number, dy: number): void {
@@ -101,7 +70,7 @@ function shiftStrokes(strokes: StrokeTrajectory[], dx: number, dy: number): void
   }
 }
 
-function resolveSourceElementId(strokeElementId: string, elementIdsSorted: string[]): string | null {
+export function resolveSourceElementId(strokeElementId: string, elementIdsSorted: string[]): string | null {
   for (const id of elementIdsSorted) {
     if (strokeElementId === id || strokeElementId.startsWith(`${id}-`)) return id;
   }
@@ -296,7 +265,7 @@ export async function compileBatchToStrokes(
           minAdvanceGap: number,
         ) => {
           rendered.forEach((stroke) => {
-            stroke.points = withJitterAmount(stroke.points, stroke.id, jitterAmount);
+            stroke.points = withJitter(stroke.points, stroke.id, jitterAmount);
             strokes.push(stroke);
           });
 
@@ -408,7 +377,7 @@ export async function compileBatchToStrokes(
             false,
           );
           asLatex.forEach((stroke) => {
-            stroke.points = withJitterAmount(stroke.points, stroke.id, 0.03);
+            stroke.points = withJitter(stroke.points, stroke.id, 0.03);
             strokes.push(stroke);
           });
           recovered = asLatex.length > 0;
@@ -436,7 +405,7 @@ export async function compileBatchToStrokes(
           element.displayMode ?? true,
         );
         latexStrokes.forEach((stroke) => {
-          stroke.points = withJitterAmount(stroke.points, stroke.id, 0.03);
+          stroke.points = withJitter(stroke.points, stroke.id, 0.03);
           strokes.push(stroke);
         });
       } catch {
