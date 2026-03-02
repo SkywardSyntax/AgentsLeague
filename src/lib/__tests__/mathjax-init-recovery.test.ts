@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const MATHJAX_PATH = '@/lib/latex/mathjax-client';
 
-function mockMathJaxModules(mathjaxFactory: () => unknown) {
+function mockMathJaxModules(mathjaxFactory: () => Record<string, unknown>) {
   vi.doMock('mathjax-full/js/mathjax.js', mathjaxFactory);
   vi.doMock('mathjax-full/js/input/tex.js', () => ({
     TeX: function TeX() { return {}; },

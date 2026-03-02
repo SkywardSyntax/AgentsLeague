@@ -22,6 +22,9 @@ describe('semantic latex compilation', () => {
       const result = await compileBatchToStrokes(batch);
       expect(result.warnings).toHaveLength(0);
       expect(result.strokes.length).toBeGreaterThan(0);
+      expect(result.strokes[0]!.points.length).toBeGreaterThan(2);
+      expect(result.strokes[0]!.color).toBe('#1f2a44');
+      expect(result.strokes[0]!.elementId).toBe('eq1');
     },
     20_000,
   );
@@ -59,6 +62,10 @@ describe('semantic latex compilation', () => {
       const result = await compileBatchToStrokes(batch);
       expect(result.warnings).toHaveLength(0);
       expect(result.strokes.length).toBeGreaterThan(0);
+      for (const stroke of result.strokes) {
+        expect(stroke.points.length).toBeGreaterThan(1);
+        expect(stroke.baseWidth).toBeGreaterThan(0);
+      }
     },
     20_000,
   );

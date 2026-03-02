@@ -1,3 +1,4 @@
+/** TeX string with resolved display mode, ready for MathJax rendering. */
 export interface PreparedTex {
   tex: string;
   displayMode: boolean;
@@ -52,6 +53,11 @@ function stripOuterDelimiters(input: string): DelimiterStripResult {
   return { tex: trimmed, displayMode: null };
 }
 
+/**
+ * Strip surrounding delimiters (`$`, `$$`, `\[`, `\(`, etc.) and fix
+ * over-escaped backslashes (`\\frac` → `\frac`). Returns plain TeX
+ * suitable for MathJax's `convert()`.
+ */
 export function normalizeTexForMathJax(input: string): string {
   let tex = input.replace(/\u00a0/g, ' ').trim();
 
@@ -89,6 +95,11 @@ export function normalizeTexForMathJax(input: string): string {
   return tex.trim();
 }
 
+/**
+ * Full preparation pipeline: strip delimiters, normalize escaping, and
+ * resolve display mode. If `displayMode` is provided it takes precedence
+ * over the delimiter-inferred mode.
+ */
 export function prepareTexForMathJax(input: string, displayMode?: boolean): PreparedTex {
   const stripped = stripOuterDelimiters(input);
   const normalized = normalizeTexForMathJax(stripped.tex);
