@@ -102,3 +102,53 @@ describe('suggested_next_regions safety (10A verification)', () => {
     expect(typeof origin!.y).toBe('number');
   });
 });
+
+describe('handleToolCall with known tools and edge inputs', () => {
+  it('emit_draw_batch with empty parsedArgs sends warning and does not crash', () => {
+    const ctx = makeCtx();
+    const result = handleToolCall('emit_draw_batch', {}, ctx);
+    expect(result).not.toBeNull();
+    expect(result!.sawToolBatch).toBe(false);
+    expect(ctx.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'warning', code: 'INVALID_DRAW_BATCH' }),
+    );
+  });
+
+  it('emit_semantic_batch with empty parsedArgs sends warning and does not crash', () => {
+    const ctx = makeCtx();
+    const result = handleToolCall('emit_semantic_batch', {}, ctx);
+    expect(result).not.toBeNull();
+    expect(result!.sawToolBatch).toBe(false);
+    expect(ctx.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'warning', code: 'INVALID_SEMANTIC_BATCH' }),
+    );
+  });
+
+  it('very long tool name (1000 chars) is truncated to 120 in log', () => {
+    const ctx = makeCtx();
+    const longName = 'z'.repeat(1000);
+    handleToolCall(longName, {}, ctx);
+    expect(ctx.log.warn).toHaveBeenCalledWith('unknown_tool_call', {
+      name: 'z'.repeat(120),
+      turnId: 'turn-1',
+    });
+  });
+
+  it('emit_draw_batch with many invalid elements produces warnings without crash', () => {
+    const ctx = makeCtx();
+    const manyBadElements = Array.from({ length: 50 }, (_, i) => ({
+      id: `bad-${i}`,
+      type: 'rect',
+      x: 0,
+      y: 0,
+    }));
+    const result = handleToolCall(
+      'emit_draw_batch',
+      { batch_id: 'flood-test', elements: manyBadElements },
+      ctx,
+    );
+    expect(result).not.toBeNull();
+    // All invalid rects (missing w/h) → batch should fail or be empty
+    expect(result!.sawToolBatch).toBe(false);
+  });
+});

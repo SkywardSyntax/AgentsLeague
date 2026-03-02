@@ -39,19 +39,19 @@ export function buildWhiteboardContextMessageV2(context: StructuredWhiteboardCon
     .map(([type, count]) => `${type}:${count}`)
     .join(', ');
 
-  const occupied = context.occupied_regions
+  const occupied = (context.occupied_regions ?? [])
     .slice(-10)
     .map((r) => `${r.id}@(${r.x.toFixed(0)},${r.y.toFixed(0)},${r.w.toFixed(0)}x${r.h.toFixed(0)})#${r.priority}`)
     .join(' | ');
-  const anchors = context.anchors
+  const anchors = (context.anchors ?? [])
     .slice(-12)
     .map((a) => `${a.role}:${a.id}@(${a.x.toFixed(0)},${a.y.toFixed(0)})`)
     .join(' | ');
-  const recent = context.recent_blocks
+  const recent = (context.recent_blocks ?? [])
     .slice(-10)
     .map((b) => `${b.kind}:${b.id}[${b.region}]${b.text_preview ? `="${b.text_preview}"` : ''}`)
     .join(' | ');
-  const suggested = context.suggested_next_regions
+  const suggested = (context.suggested_next_regions ?? [])
     .map(
       (r) =>
         `${r.name}@(${r.x.toFixed(0)},${r.y.toFixed(0)},${r.w.toFixed(0)}x${r.h.toFixed(0)};score=${r.score.toFixed(2)})`,

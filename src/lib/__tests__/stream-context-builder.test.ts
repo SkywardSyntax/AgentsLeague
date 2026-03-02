@@ -95,4 +95,37 @@ describe('buildWhiteboardContextMessageV2', () => {
     const msg = buildWhiteboardContextMessageV2(small);
     expect(msg.length).toBeLessThanOrEqual(50);
   });
+
+  it('handles empty occupied_regions without crash', () => {
+    const empty = { ...ctx, occupied_regions: [] };
+    const msg = buildWhiteboardContextMessageV2(empty);
+    expect(msg).toContain('occupied_regions=none');
+  });
+
+  it('handles anchors: undefined without crash', () => {
+    const noAnchors = { ...ctx, anchors: undefined } as any;
+    expect(() => buildWhiteboardContextMessageV2(noAnchors)).not.toThrow();
+    const msg = buildWhiteboardContextMessageV2(noAnchors);
+    expect(msg).toContain('anchors=none');
+  });
+
+  it('handles scene_summary.element_count: 0', () => {
+    const zeroCount = {
+      ...ctx,
+      scene_summary: { ...ctx.scene_summary, element_count: 0 },
+    };
+    const msg = buildWhiteboardContextMessageV2(zeroCount);
+    expect(msg).toContain('element_count=0');
+  });
+
+  it('clips output when text previews are very long', () => {
+    const longPreview = 'x'.repeat(10_000);
+    const longCtx: StructuredWhiteboardContext = {
+      ...ctx,
+      recent_blocks: [{ id: 'b1', kind: 'equation_stack', region: 'left', text_preview: longPreview }],
+      token_budget_hint: { max_chars: 500 },
+    };
+    const msg = buildWhiteboardContextMessageV2(longCtx);
+    expect(msg.length).toBeLessThanOrEqual(500);
+  });
 });
