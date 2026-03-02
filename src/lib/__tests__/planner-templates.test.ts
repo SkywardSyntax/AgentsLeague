@@ -286,4 +286,120 @@ describe('planner templates', () => {
       expect(eq1.x).not.toBe(eq2.x);
     }
   });
+
+  it('places annotation block with arrow and text near target', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-anno',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'eq-target',
+          kind: 'equation_stack',
+          lines: [{ id: 'l1', tex: 'E=mc^2' }],
+        },
+        {
+          id: 'anno1',
+          kind: 'annotation',
+          target_block_id: 'eq-target',
+          text: 'Famous energy equation',
+          style: 'callout',
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    const arrow = planned.elements.find((el) => el.id === 'anno1-arrow');
+    const textEls = planned.elements.filter((el) => el.id.startsWith('anno1-text'));
+
+    expect(arrow).toBeDefined();
+    expect(arrow?.type).toBe('arrow');
+    expect(textEls.length).toBeGreaterThan(0);
+  });
+
+  it('annotation with underline style places text below target', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-anno-under',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'eq-target',
+          kind: 'equation_stack',
+          lines: [{ id: 'l1', tex: 'a+b=c' }],
+        },
+        {
+          id: 'anno-u',
+          kind: 'annotation',
+          target_block_id: 'eq-target',
+          text: 'Triangle identity',
+          style: 'underline',
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    const arrow = planned.elements.find((el) => el.id === 'anno-u-arrow');
+    expect(arrow).toBeDefined();
+    expect(arrow?.type).toBe('arrow');
+  });
+
+  it('annotation with missing target emits warning', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-anno-missing',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'anno-orphan',
+          kind: 'annotation',
+          target_block_id: 'nonexistent',
+          text: 'Orphaned annotation',
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    expect(planned.warnings.some((w) => w.includes('nonexistent'))).toBe(true);
+    // No arrow should be emitted for orphaned annotation
+    const arrow = planned.elements.find((el) => el.id === 'anno-orphan-arrow');
+    expect(arrow).toBeUndefined();
+  });
+
+  it('compactSemanticBatchForLegibility trims annotation text', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-anno-compact',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'eq1',
+          kind: 'equation_stack',
+          lines: [{ id: 'l1', tex: 'x=1' }],
+        },
+        {
+          id: 'anno-long',
+          kind: 'annotation',
+          target_block_id: 'eq1',
+          text: 'A'.repeat(100),
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    const annoBlock = planned.semanticBatch.blocks.find((b) => b.id === 'anno-long');
+    expect(annoBlock).toBeDefined();
+    if (annoBlock?.kind === 'annotation') {
+      expect(annoBlock.text.length).toBeLessThanOrEqual(61); // 60 + ellipsis
+    }
+  });
+
+  it('measureBlock returns reasonable height for annotation block', () => {
+    const block = {
+      id: 'anno-measure',
+      kind: 'annotation' as const,
+      target_block_id: 'some-target',
+      text: 'This is a test annotation.',
+    };
+
+    const { height } = measureBlock(block, 600);
+    expect(height).toBeGreaterThan(10);
+    expect(height).toBeLessThan(200);
+  });
 });

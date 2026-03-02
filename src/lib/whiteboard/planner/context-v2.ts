@@ -76,6 +76,15 @@ function recentBlocksFromSemanticBatch(batch: SemanticBatch): StructuredWhiteboa
         };
       }
 
+      if (block.kind === 'annotation') {
+        return {
+          id: `${batch.batch_id}:${block.id}`,
+          kind: block.kind,
+          region: 'auto',
+          text_preview: block.text.slice(0, 80),
+        };
+      }
+
       return {
         id: `${batch.batch_id}:${block.id}`,
         kind: block.kind,

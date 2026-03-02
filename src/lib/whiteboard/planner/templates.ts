@@ -2,6 +2,7 @@ import type {
   ArrowElement,
   DrawElement,
   Point,
+  SemanticAnnotationBlock,
   SemanticBatch,
   SemanticCaptionBlock,
   SemanticDiagramPanelBlock,
@@ -224,12 +225,25 @@ export function measureCaptionBlock(
   return { width: w, height: h };
 }
 
+export function measureAnnotationBlock(
+  block: SemanticAnnotationBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  const w = Math.min(regionWidth * 0.5, 260);
+  const avgCharPx = Math.max(8, 16 * 0.5);
+  const maxChars = Math.max(16, Math.floor((w - 20) / avgCharPx));
+  const lines = wrapPlainText(block.text, maxChars);
+  const h = lines.length * Math.max(23, Math.floor(16 * 1.24)) + 10;
+  return { width: w, height: h };
+}
+
 export function measureBlock(
   block: SemanticBatch['blocks'][number],
   regionWidth: number,
 ): { width: number; height: number } {
   if (block.kind === 'equation_stack') return measureEquationStack(block, regionWidth);
   if (block.kind === 'diagram_panel') return measureDiagramPanel(block, regionWidth);
+  if (block.kind === 'annotation') return measureAnnotationBlock(block, regionWidth);
   return measureCaptionBlock(block, regionWidth);
 }
 
@@ -483,6 +497,44 @@ function placeCaptionBlock(
   return y + 10;
 }
 
+function placeAnnotationBlock(
+  block: SemanticAnnotationBlock,
+  targetPos: PanelPlacement,
+  state: BuildState,
+): void {
+  const style = block.style ?? 'callout';
+  let textX: number;
+  let textY: number;
+  let arrowFrom: Point;
+  let arrowTo: Point;
+
+  if (style === 'underline') {
+    textX = targetPos.center.x - 60;
+    textY = targetPos.bottomY + 8;
+    arrowFrom = { x: textX, y: textY - 4 };
+    arrowTo = { x: targetPos.center.x, y: targetPos.bottomY - 4 };
+  } else if (style === 'bracket') {
+    textX = targetPos.entry.x - 20;
+    textY = targetPos.center.y;
+    arrowFrom = { x: textX + 10, y: textY - 6 };
+    arrowTo = { x: targetPos.entry.x + 4, y: targetPos.center.y };
+  } else {
+    // callout: position to the right of the target
+    textX = targetPos.exit.x + 24;
+    textY = targetPos.center.y - 10;
+    arrowFrom = { x: textX - 4, y: textY + 8 };
+    arrowTo = { x: targetPos.exit.x + 4, y: targetPos.center.y };
+  }
+
+  pushElement(state, {
+    id: `${block.id}-arrow`,
+    type: 'arrow',
+    from: arrowFrom,
+    to: arrowTo,
+  });
+  pushWrappedText(state, `${block.id}-text`, textX, textY, block.text, 16, 220);
+}
+
 function diagramHintWeight(block: SemanticDiagramPanelBlock): number {
   if (block.region_hint === 'left') return 0;
   if (block.region_hint === 'center') return 1;
@@ -577,6 +629,13 @@ function compactSemanticBatchForLegibility(
       continue;
     }
 
+    if (block.kind === 'annotation') {
+      const text = compactText(block.text, 60);
+      if (!text) continue;
+      compactedBlocks.push({ ...block, text });
+      continue;
+    }
+
     const text = compactText(block.text, 74);
     if (!text) continue;
     compactedBlocks.push({
@@ -586,6 +645,15 @@ function compactSemanticBatchForLegibility(
   }
 
   const idSet = new Set(compactedBlocks.map((block) => block.id));
+
+  // Drop annotation blocks whose target was removed during compaction
+  const validBlocks = compactedBlocks.filter((block) => {
+    if (block.kind !== 'annotation') return true;
+    if (idSet.has(block.target_block_id)) return true;
+    warnings.push(`Annotation ${block.id} target ${block.target_block_id} not found`);
+    return false;
+  });
+
   const relations =
     semanticBatch.relations
       ?.filter((relation) => idSet.has(relation.from_block_id) && idSet.has(relation.to_block_id))
@@ -597,8 +665,8 @@ function compactSemanticBatchForLegibility(
   return {
     ...semanticBatch,
     blocks:
-      compactedBlocks.length > 0
-        ? compactedBlocks
+      validBlocks.length > 0
+        ? validBlocks
         : [
             {
               id: `fallback-${semanticBatch.batch_id}`,
@@ -773,7 +841,11 @@ function buildAdaptiveLayout(
   const diagramBlocks = semanticBatch.blocks
     .filter((block): block is SemanticDiagramPanelBlock => block.kind === 'diagram_panel')
     .sort((a, b) => diagramHintWeight(a) - diagramHintWeight(b));
-  const textBlocks = semanticBatch.blocks.filter((block) => block.kind !== 'diagram_panel');
+  const annotationBlocks = semanticBatch.blocks
+    .filter((block): block is SemanticAnnotationBlock => block.kind === 'annotation');
+  const textBlocks = semanticBatch.blocks.filter(
+    (block) => block.kind !== 'diagram_panel' && block.kind !== 'annotation',
+  );
 
   const panelPlacements = new Map<string, PanelPlacement>();
   const panelColumns: Array<{ x: number; w: number }> = [];
@@ -847,6 +919,17 @@ function buildAdaptiveLayout(
       exit: { x: lane.region.x + lane.region.w + 10, y: midY },
       bottomY: lane.cursorY,
     });
+  }
+
+  // Place annotation blocks attached to their targets (don't consume lanes)
+  for (const block of annotationBlocks) {
+    const targetPos =
+      panelPlacements.get(block.target_block_id) ?? textBlockPositions.get(block.target_block_id);
+    if (!targetPos) {
+      state.warnings.push(`Annotation ${block.id} target ${block.target_block_id} not found`);
+      continue;
+    }
+    placeAnnotationBlock(block, targetPos, state);
   }
 
   // Render relations between ANY block types (panel↔panel, panel↔equation, etc.)
