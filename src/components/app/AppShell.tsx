@@ -42,6 +42,7 @@ interface AgentAPI {
   getElementCount: () => number;
   clearActiveChat: () => void;
   getLastTurnEvents: () => string[];
+  getLastDomain: () => string;
 }
 
 declare global {
@@ -138,6 +139,7 @@ export function AppShell() {
   const turnHadRenderableOutputRef = useRef(false);
   const turnSawToolBatchRef = useRef(false);
   const agentQueryEngineRef = useRef(new QueryEngine());
+  const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTurnEventsRef = useRef<string[]>([]);
   const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDiagnosticsRef = useRef<
@@ -483,19 +485,6 @@ export function AppShell() {
     if (sent) setInput('');
   }, [input, sendMessage]);
 
-  useEffect(() => {
-    if (!isAgentMode || !agentRunning) return;
-    if (status !== 'idle') return;
-
-    const domain = AGENT_DOMAINS[agentDomainIndex % AGENT_DOMAINS.length]!;
-    const query = agentQueryEngineRef.current.generate(domain);
-    const sent = sendMessage(query);
-    if (!sent) return;
-
-    setAgentLastQuery(query);
-    setAgentDomainIndex((prev) => prev + 1);
-  }, [agentDomainIndex, agentRunning, isAgentMode, sendMessage, status]);
-
   const createChat = useCallback(() => {
     if (status !== 'idle') return;
     const nextChat = createEmptyChatSession(chatSessions.length + 1);
@@ -602,6 +591,47 @@ export function AppShell() {
     lastTurnEventsRef.current = [];
   }, [clearActiveChat]);
 
+  const AGENT_SCENE_LIMIT = 60;
+  const AGENT_INTER_TURN_DELAY_MS = 2000;
+
+  useEffect(() => {
+    if (!isAgentMode || !agentRunning) return;
+    if (status !== 'idle') return;
+
+    // Auto-clear scene only (preserve domain progress) when crowded
+    if (activeChat.scene.length > AGENT_SCENE_LIMIT) {
+      agentDelayRef.current = setTimeout(() => {
+        agentDelayRef.current = null;
+        clearForAgent();
+      }, 0);
+      return () => {
+        if (agentDelayRef.current) {
+          clearTimeout(agentDelayRef.current);
+          agentDelayRef.current = null;
+        }
+      };
+    }
+
+    // Inter-turn delay to prevent rapid-fire queries
+    agentDelayRef.current = setTimeout(() => {
+      agentDelayRef.current = null;
+      const domain = AGENT_DOMAINS[agentDomainIndex % AGENT_DOMAINS.length]!;
+      const query = agentQueryEngineRef.current.generate(domain);
+      const sent = sendMessage(query);
+      if (!sent) return;
+
+      setAgentLastQuery(query);
+      setAgentDomainIndex((prev) => prev + 1);
+    }, AGENT_INTER_TURN_DELAY_MS);
+
+    return () => {
+      if (agentDelayRef.current) {
+        clearTimeout(agentDelayRef.current);
+        agentDelayRef.current = null;
+      }
+    };
+  }, [activeChat.scene.length, agentDomainIndex, agentRunning, clearForAgent, isAgentMode, sendMessage, status]);
+
   useEffect(() => {
     if (typeof window === 'undefined' || !isAgentMode || !activeChat) return;
 
@@ -614,12 +644,16 @@ export function AppShell() {
       getElementCount: () => activeChat.scene.length,
       clearActiveChat: clearForAgent,
       getLastTurnEvents: () => [...lastTurnEventsRef.current],
+      getLastDomain: () => {
+        const idx = Math.max(0, agentDomainIndex - 1);
+        return AGENT_DOMAINS[idx % AGENT_DOMAINS.length]!;
+      },
     };
 
     return () => {
       delete window.__agentAPI;
     };
-  }, [activeChat, clearForAgent, isAgentMode, sendMessage, status]);
+  }, [activeChat, agentDomainIndex, clearForAgent, isAgentMode, sendMessage, status]);
 
   const resizeBy = useCallback((delta: number) => {
     setPanelSizes(([left]) => {
@@ -652,7 +686,7 @@ export function AppShell() {
           ))}
         </div>
       ) : null,
-    [activeChat?.warnings],
+    [activeChat.warnings],
   );
 
   const statusLabel =
@@ -687,8 +721,8 @@ export function AppShell() {
             <p className="text-[11px] text-[var(--color-text-muted)]">Interleaved conversational whiteboard</p>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1.5">
-            <span className={`h-2 w-2 rounded-full ${statusTone}`} />
-            <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">{statusLabel}</span>
+            <span className={`h-2 w-2 rounded-full ${statusTone}`} data-testid="status-dot" />
+            <span className="text-[11px] font-medium text-[var(--color-text-secondary)]" data-testid="status-label">{statusLabel}</span>
           </div>
         </header>
 
@@ -696,7 +730,7 @@ export function AppShell() {
           className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 lg:flex-row"
           style={{ ['--left-width' as string]: `${panelSizes[0]}%` }}
         >
-          <section className={isAgentMode ? 'h-full w-full' : 'h-[56%] w-full lg:h-full lg:w-[var(--left-width)]'}>
+          <section data-testid="whiteboard-canvas" className={isAgentMode ? 'h-full w-full' : 'h-[56%] w-full lg:h-full lg:w-[var(--left-width)]'}>
             <WhiteboardCanvas
               key={activeChat.id}
               batches={activeChat.batches}
@@ -734,7 +768,7 @@ export function AppShell() {
           )}
 
           {!isAgentMode && (
-            <section className="h-[44%] min-h-0 w-full lg:h-full lg:flex-1">
+            <section data-testid="chat-panel" className="h-[44%] min-h-0 w-full lg:h-full lg:flex-1">
               <ChatPanel
                 chats={chatMeta}
                 activeChatId={activeChat.id}
@@ -778,17 +812,18 @@ export function AppShell() {
           )}
 
           {isAgentMode && (
-            <aside className="absolute right-4 top-4 z-20 w-80 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-3 shadow-lg backdrop-blur">
+            <aside data-testid="agent-sidebar" className="absolute right-4 top-4 z-20 w-80 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-3 shadow-lg backdrop-blur">
               <p className="text-sm font-semibold text-[var(--color-text-primary)]">Agent Mode</p>
               <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                Domain: <span className="font-medium">{agentDomain}</span> · Status: {statusLabel}
+                Domain: <span data-testid="agent-domain" className="font-medium">{agentDomain}</span> · Status: {statusLabel}
               </p>
-              <p className="mt-2 line-clamp-3 text-xs text-[var(--color-text-muted)]">
+              <p data-testid="agent-last-query" className="mt-2 line-clamp-3 text-xs text-[var(--color-text-muted)]">
                 Last query: {agentLastQuery || '—'}
               </p>
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
+                  data-testid="agent-toggle"
                   onClick={() => setAgentRunning((prev) => !prev)}
                   className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-soft)]"
                 >
@@ -796,6 +831,7 @@ export function AppShell() {
                 </button>
                 <button
                   type="button"
+                  data-testid="agent-clear"
                   onClick={clearForAgent}
                   className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-soft)]"
                 >

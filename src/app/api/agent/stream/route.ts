@@ -16,6 +16,7 @@ import {
   getModel,
 } from '@/lib/server/openai';
 import { formatSSE, sseHeaders } from '@/lib/server/sse';
+import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
   fromLegacyDrawBatchToSemanticStub,
@@ -277,6 +278,21 @@ function estimateProvisionalAdvance(chunk: { kind: 'latex' | 'text'; value: stri
 }
 
 export async function POST(request: Request): Promise<Response> {
+  // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
+  if (isMockMode()) {
+    let json: unknown;
+    try {
+      json = await request.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    const body = json as { userMessage?: string };
+    return mockAgentStream({ userMessage: body.userMessage ?? '' });
+  }
+
   let json: unknown;
   try {
     json = await request.json();
