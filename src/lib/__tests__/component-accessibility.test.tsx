@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import { WarningOverlay } from '@/components/app/WarningOverlay';
+import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 
 afterEach(cleanup);
 
@@ -55,5 +57,35 @@ describe('accessibility annotations', () => {
     expect(chatBBtn).toBeTruthy();
     expect(chatABtn!.getAttribute('aria-current')).toBe('true');
     expect(chatBBtn!.hasAttribute('aria-current')).toBe(false);
+  });
+
+  it('WarningOverlay has role="status" and aria-live="polite"', () => {
+    render(<WarningOverlay warnings={['Test warning']} />);
+    const container = screen.getByRole('status');
+    expect(container).toBeTruthy();
+    expect(container.getAttribute('aria-live')).toBe('polite');
+    expect(container.getAttribute('aria-label')).toBe('Warnings');
+  });
+
+  it('WarningOverlay renders nothing when no warnings', () => {
+    const { container } = render(<WarningOverlay warnings={[]} />);
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('MobilePanelSwitcher has role="tablist"', () => {
+    render(<MobilePanelSwitcher activePanel="chat" onSwitch={vi.fn()} />);
+    const tablist = screen.getByRole('tablist');
+    expect(tablist).toBeTruthy();
+    expect(tablist.getAttribute('aria-label')).toBe('Panel switcher');
+  });
+
+  it('MobilePanelSwitcher active tab has aria-selected="true"', () => {
+    render(<MobilePanelSwitcher activePanel="chat" onSwitch={vi.fn()} />);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(2);
+    const canvasTab = tabs.find((t) => t.textContent === 'Canvas');
+    const chatTab = tabs.find((t) => t.textContent === 'Chat');
+    expect(canvasTab!.getAttribute('aria-selected')).toBe('false');
+    expect(chatTab!.getAttribute('aria-selected')).toBe('true');
   });
 });

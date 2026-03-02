@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { ButtonHTMLAttributes } from 'react';
 
 const variantStyles = {
@@ -19,7 +20,7 @@ interface PillButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: keyof typeof sizeStyles;
 }
 
-export function PillButton({
+export const PillButton = memo(function PillButton({
   variant = 'default',
   size = 'md',
   className = '',
@@ -35,4 +36,4 @@ export function PillButton({
       {children}
     </button>
   );
-}
+});

@@ -6,7 +6,7 @@ export function WarningOverlay({ warnings }: WarningOverlayProps) {
   if (warnings.length === 0) return null;
 
   return (
-    <div className="absolute bottom-4 left-4 z-20 max-w-md space-y-2">
+    <div role="status" aria-live="polite" aria-label="Warnings" className="absolute bottom-4 left-4 z-20 max-w-md space-y-2">
       {warnings.map((warning, i) => (
         <p
           key={`${warning}-${i}`}

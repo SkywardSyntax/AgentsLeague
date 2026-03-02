@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import type { ChatMessage } from '@/types/agent';
 import { MessageContent } from './MessageContent';
 import { PillButton } from '@/components/ui/PillButton';
@@ -49,6 +49,7 @@ export function ChatPanel({
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
   const canManageChats = status === 'idle';
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
+  const handleSelectChat = useCallback((id: string) => onSelectChat(id), [onSelectChat]);
 
   // Mark all current message IDs as seen after render, animate only new ones
   const currentIds = new Set(messages.map((m) => m.id));
@@ -71,7 +72,7 @@ export function ChatPanel({
               <PillButton
                 key={chat.id}
                 variant={isActive ? 'accent' : 'default'}
-                onClick={() => onSelectChat(chat.id)}
+                onClick={() => handleSelectChat(chat.id)}
                 disabled={!canManageChats || isActive}
                 aria-current={isActive ? 'true' : undefined}
                 className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-white/65 hover:bg-white'} disabled:opacity-65`}

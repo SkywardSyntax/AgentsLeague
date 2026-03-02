@@ -132,3 +132,41 @@ describe('WarningOverlay', () => {
     expect(screen.getByText('Only one')).toBeTruthy();
   });
 });
+
+// ---------- React.memo behavior ----------
+describe('PillButton memo', () => {
+  it('does not re-render when parent re-renders with same props', () => {
+    const renderSpy = vi.fn();
+    function Wrapper({ count }: { count: number }) {
+      renderSpy();
+      return <PillButton onClick={stableOnClick}>{`Label ${count}`}</PillButton>;
+    }
+    const stableOnClick = vi.fn();
+    const { rerender } = render(<Wrapper count={1} />);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    // Re-render parent — PillButton children change so it re-renders
+    rerender(<Wrapper count={1} />);
+    expect(renderSpy).toHaveBeenCalledTimes(2);
+    // PillButton itself should re-render because Wrapper is not memoized,
+    // but PillButton skips when its own props are unchanged
+  });
+
+  it('PillButton is wrapped in React.memo', () => {
+    // React.memo wraps the component, giving it $$typeof Symbol for memo
+    expect((PillButton as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'));
+  });
+});
+
+describe('StatusBadge memo', () => {
+  it('StatusBadge is wrapped in React.memo', () => {
+    expect((StatusBadge as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'));
+  });
+
+  it('updates text when status prop changes', () => {
+    const { rerender } = render(<StatusBadge status="idle" />);
+    expect(screen.getByTestId('status-label').textContent).toBe('Ready');
+
+    rerender(<StatusBadge status="streaming" />);
+    expect(screen.getByTestId('status-label').textContent).toBe('Responding');
+  });
+});

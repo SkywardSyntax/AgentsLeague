@@ -152,8 +152,10 @@ pre {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-rise-in,
-  .pulse-active {
-    animation: none;
+  .pulse-active,
+  .animate-bounce,
+  [class*="animate-bounce"] {
+    animation: none !important;
   }
 }
 

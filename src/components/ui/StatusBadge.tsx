@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 interface StatusBadgeProps {
   status: 'idle' | 'thinking' | 'streaming' | 'drawing';
 }
@@ -16,7 +18,7 @@ const labelMap = {
   drawing: 'Drawing',
 } as const;
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+export const StatusBadge = memo(function StatusBadge({ status }: StatusBadgeProps) {
   return (
     <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1.5">
       <span
@@ -31,4 +33,4 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       </span>
     </div>
   );
-}
+});
