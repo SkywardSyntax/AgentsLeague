@@ -186,4 +186,43 @@ describe('classifyStreamError', () => {
     expect(result.code).toBe('RATE_LIMIT');
     expect(result.retryAfterMs).toBe(10000);
   });
+
+  it('classifies 502 gateway error as retryable STREAM_FAILURE', () => {
+    const err = { status: 502, message: 'Bad Gateway' };
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies 503 service unavailable as retryable STREAM_FAILURE', () => {
+    const err = { status: 503, message: 'Service Unavailable' };
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies error with code ECONNRESET and status 500 via code property', () => {
+    const err = new Error('upstream failure');
+    (err as NodeJS.ErrnoException).code = 'ECONNRESET';
+    Object.assign(err, { status: 500 });
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies error with code EAI_AGAIN as API_CONNECTION_ERROR', () => {
+    const err = new Error('getaddrinfo EAI_AGAIN');
+    (err as NodeJS.ErrnoException).code = 'EAI_AGAIN';
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies error with unrecognized code as STREAM_FAILURE', () => {
+    const err = new Error('pipe broken');
+    (err as NodeJS.ErrnoException).code = 'EPIPE';
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.retryable).toBe(true);
+  });
 });
