@@ -4,6 +4,7 @@ export const MIN_SCREEN_STROKE_PX = 1.25;
 export const MAX_SCREEN_STROKE_PX = 5.5;
 
 export function clamp(value: number, min: number, max: number): number {
+  if (Number.isNaN(value)) return min;
   return Math.min(max, Math.max(min, value));
 }
 

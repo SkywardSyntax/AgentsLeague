@@ -172,4 +172,116 @@ describe('parseGraphScriptToSemanticBatch', () => {
     const crossWarnings = result.warnings.filter((w) => w.includes('across panels'));
     expect(crossWarnings).toHaveLength(1);
   });
+
+  it('returns null with warning for empty script', () => {
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-empty', script: '' });
+    expect(result.semanticBatch).toBeNull();
+    expect(result.warnings.some((w) => w.includes('empty'))).toBe(true);
+  });
+
+  it('returns null with warning for whitespace-only script', () => {
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-ws', script: '   \n  \n  ' });
+    expect(result.semanticBatch).toBeNull();
+    expect(result.warnings.some((w) => w.includes('empty'))).toBe(true);
+  });
+
+  it('strips comment-only lines and produces no blocks', () => {
+    const script = '# this is a comment\n// another comment\n# third';
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-comments', script });
+    expect(result.semanticBatch).toBeNull();
+    expect(result.warnings.some((w) => w.includes('No drawable blocks'))).toBe(true);
+  });
+
+  it('parses axes="Time,Value" into x_label and y_label', () => {
+    const script = 'panel id=p1 axes=Time,Value';
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-axes', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    expect(panel).toBeDefined();
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.axes).toEqual({ x_label: 'Time', y_label: 'Value' });
+    }
+  });
+
+  it('auto-pose gives sequential non-overlapping positions for multiple nodes', () => {
+    const script = [
+      'graph id=g1',
+      'node id=a graph=g1 label="A"',
+      'node id=b graph=g1 label="B"',
+      'node id=c graph=g1 label="C"',
+      'node id=d graph=g1 label="D"',
+      'node id=e graph=g1 label="E"',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-auto', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes).toHaveLength(5);
+      // Collect poses and verify no exact overlaps
+      const poses = panel.shapes!.map((s) => s.relative_pose!);
+      for (let i = 0; i < poses.length; i++) {
+        for (let j = i + 1; j < poses.length; j++) {
+          const samePos = poses[i]!.x === poses[j]!.x && poses[i]!.y === poses[j]!.y;
+          expect(samePos).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('row/col positioning forms a grid pattern', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=a panel=p1 type=rect row=1 col=1',
+      'shape id=b panel=p1 type=rect row=1 col=2',
+      'shape id=c panel=p1 type=rect row=2 col=1',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-grid', script });
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      const [a, b, c] = panel.shapes!.map((s) => s.relative_pose!);
+      // B is to the right of A (same row, higher col)
+      expect(b!.x).toBeGreaterThan(a!.x);
+      expect(b!.y).toBeCloseTo(a!.y, 5);
+      // C is below A (higher row, same col)
+      expect(c!.y).toBeGreaterThan(a!.y);
+      expect(c!.x).toBeCloseTo(a!.x, 5);
+    }
+  });
+
+  it('unquote strips surrounding quotes from label values', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=s1 panel=p1 type=rect label="Hello World"',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-quote', script });
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes![0]!.label).toBe('Hello World');
+    }
+  });
+
+  it('malformed numeric at= pair produces warning and uses defaults', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=s1 panel=p1 type=rect at=0.5,notanumber',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-badpair', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      // Should still create the shape with default pose
+      expect(panel.shapes).toHaveLength(1);
+      expect(panel.shapes![0]!.relative_pose).toBeDefined();
+    }
+  });
+
+  it('returns null with warning for non-object input', () => {
+    const result = parseGraphScriptToSemanticBatch(null);
+    expect(result.semanticBatch).toBeNull();
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
 });

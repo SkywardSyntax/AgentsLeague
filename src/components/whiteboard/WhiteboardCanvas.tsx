@@ -6,10 +6,9 @@ import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
 import { createActiveBatch, easeOutCubic, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
-  catmullRomToBezier,
   partialPolylineByLength,
-  screenStrokePx,
 } from '@/lib/whiteboard/geometry';
+import { drawStroke, drawSmoothStroke } from '@/lib/whiteboard/canvas-draw';
 
 interface Camera {
   x: number;
@@ -26,69 +25,6 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 
 import { clamp } from '@/lib/whiteboard/geometry';
-
-function drawSmoothStroke(
-  ctx: CanvasRenderingContext2D,
-  points: StrokeTrajectory['points'],
-  color: string,
-  baseWidth: number,
-  camera: Camera,
-  dpr: number,
-) {
-  if (points.length < 2) return;
-  if (points.length < 4) {
-    drawStroke(ctx, points, color, baseWidth, camera, dpr);
-    return;
-  }
-
-  const segs = catmullRomToBezier(points);
-  const px = screenStrokePx(baseWidth, camera.zoom, dpr);
-  const worldLineWidth = px / (camera.zoom * dpr);
-
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = worldLineWidth;
-
-  ctx.beginPath();
-  ctx.moveTo(points[0]!.x, points[0]!.y);
-  for (const seg of segs) {
-    ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
-  }
-  ctx.stroke();
-}
-
-function drawStroke(
-  ctx: CanvasRenderingContext2D,
-  points: StrokeTrajectory['points'],
-  color: string,
-  baseWidth: number,
-  camera: Camera,
-  dpr: number,
-) {
-  if (points.length < 2) return;
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  const n = points.length - 1;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1]!;
-    const b = points[i]!;
-    const t = i / n;
-
-    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
-    const worldWidth = baseWidth * widthMod;
-    const px = screenStrokePx(worldWidth, camera.zoom, dpr);
-    const worldLineWidth = px / (camera.zoom * dpr);
-
-    ctx.lineWidth = worldLineWidth;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-}
 
 export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);

@@ -522,6 +522,67 @@ describe('bezierPointAtArcLength', () => {
   });
 });
 
+describe('NaN/Infinity robustness', () => {
+  it('clamp with NaN returns min', () => {
+    expect(clamp(NaN, 0.01, 1)).toBe(0.01);
+  });
+
+  it('clamp with Infinity returns max', () => {
+    expect(clamp(Infinity, 0, 10)).toBe(10);
+  });
+
+  it('clamp with -Infinity returns min', () => {
+    expect(clamp(-Infinity, 0, 10)).toBe(0);
+  });
+
+  it('distance with NaN coordinate returns NaN', () => {
+    expect(Number.isNaN(distance({ x: NaN, y: 0 }, { x: 1, y: 1 }))).toBe(true);
+  });
+
+  it('cumulativeLengths with NaN point propagates NaN', () => {
+    const result = cumulativeLengths([{ x: 0, y: 0 }, { x: NaN, y: 1 }]);
+    expect(result[0]).toBe(0);
+    expect(Number.isNaN(result[1])).toBe(true);
+  });
+
+  it('totalLength of empty returns 0', () => {
+    expect(totalLength([])).toBe(0);
+  });
+
+  it('resamplePolyline with Infinity coordinate does not infinite-loop', () => {
+    const pts = [{ x: 0, y: 0 }, { x: Infinity, y: 0 }];
+    const result = resamplePolyline(pts, 10);
+    // Should return quickly (not hang); result may be degenerate
+    expect(result.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('partialPolylineByLength with NaN target returns first point plus NaN-interpolated point', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const result = partialPolylineByLength(pts, [0, 10], NaN);
+    // NaN doesn't satisfy <= 0 or >= total, so loop runs with NaN interpolation
+    expect(result.length).toBe(2);
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(Number.isNaN(result[1]!.x)).toBe(true);
+  });
+
+  it('catmullRomToBezier with tension=NaN clamps to 0.01', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    const segsNaN = catmullRomToBezier(pts, NaN);
+    const segsClamped = catmullRomToBezier(pts, 0.01);
+    expect(segsNaN).toHaveLength(2);
+    // NaN tension should fall back to 0.01 via clamp guard
+    expect(segsNaN).toEqual(segsClamped);
+  });
+
+  it('screenStrokePx with zoom=0 returns minPx', () => {
+    expect(screenStrokePx(2, 0, 1)).toBe(1.25);
+  });
+
+  it('screenStrokePx with NaN baseWidth returns minPx', () => {
+    expect(screenStrokePx(NaN, 1, 1)).toBe(1.25);
+  });
+});
+
 describe('strokesBoundingBox with padding', () => {
   it('with padding expands bounds', () => {
     const strokes = [{ points: [{ x: 10, y: 20 }, { x: 50, y: 60 }] }];
