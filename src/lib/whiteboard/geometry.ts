@@ -8,6 +8,23 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * Dev-only guard: warn if any point has non-finite coordinates.
+ * No-op in production builds.
+ */
+export function assertFinitePoints(points: Point[], caller: string): void {
+  if (process.env.NODE_ENV === 'production') return;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+      console.warn(
+        `[${caller}] Non-finite coordinate at index ${i}: (${p.x}, ${p.y})`,
+      );
+      return;
+    }
+  }
+}
+
 export function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
@@ -32,6 +49,7 @@ export function partialPolylineByLength(
   targetLength: number,
 ): Point[] {
   if (points.length <= 1) return points;
+  assertFinitePoints(points, 'partialPolylineByLength');
   const total = cumulative[cumulative.length - 1] ?? 0;
   if (targetLength <= 0) return [points[0]!];
   if (targetLength >= total) return points;
@@ -62,6 +80,7 @@ export function partialPolylineByLength(
 
 export function resamplePolyline(points: Point[], spacing: number): Point[] {
   if (points.length <= 1 || spacing <= 0) return points;
+  assertFinitePoints(points, 'resamplePolyline');
   const sampled: Point[] = [points[0]!];
 
   let carry = 0;

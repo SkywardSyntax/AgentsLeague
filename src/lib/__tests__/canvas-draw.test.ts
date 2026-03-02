@@ -102,7 +102,8 @@ describe('drawStroke — NaN/Infinity defense', () => {
     const ctx = mockCtx();
     const points = [{ x: 0, y: 0 }, { x: NaN, y: 10 }];
     expect(() => drawStroke(ctx, points, '#000', 1, camera, 1)).not.toThrow();
-    expect(ctx.beginPath).toHaveBeenCalled();
+    // NaN segment is skipped by the finite-coordinate guard
+    expect(ctx.lineTo).not.toHaveBeenCalled();
   });
 
   it('does not throw with Infinity coordinates', () => {

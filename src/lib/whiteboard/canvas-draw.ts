@@ -28,6 +28,8 @@ export function drawStroke(
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!;
     const b = points[i]!;
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y) ||
+        !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
     const t = i / n;
 
     const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
@@ -71,8 +73,13 @@ export function drawSmoothStroke(
   ctx.lineWidth = worldLineWidth;
 
   ctx.beginPath();
-  ctx.moveTo(points[0]!.x, points[0]!.y);
+  const start = points[0]!;
+  if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) return;
+  ctx.moveTo(start.x, start.y);
   for (const seg of segs) {
+    if (!Number.isFinite(seg.cp1.x) || !Number.isFinite(seg.cp1.y) ||
+        !Number.isFinite(seg.cp2.x) || !Number.isFinite(seg.cp2.y) ||
+        !Number.isFinite(seg.p3.x) || !Number.isFinite(seg.p3.y)) continue;
     ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
   }
   ctx.stroke();

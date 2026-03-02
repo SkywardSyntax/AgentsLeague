@@ -146,6 +146,11 @@ export function weightedVisibleLength(
   const totalLen = cumulativeLens[cumulativeLens.length - 1] ?? 0;
   if (t >= 1) return totalLen;
 
+  // Guard: factors array must match cumulative lengths array (one per point)
+  if (speedFactors.length !== cumulativeLens.length) {
+    return totalLen * t;
+  }
+
   // Build weighted cumulative array: time spent = segLen / speedFactor
   const n = cumulativeLens.length;
   const weightedCum: number[] = [0];
@@ -177,5 +182,5 @@ export function weightedVisibleLength(
   const frac = segWeighted > 0 ? (targetWeighted - wLo) / segWeighted : 0;
   const realLo = cumulativeLens[lo] ?? 0;
   const realHi = cumulativeLens[hi] ?? 0;
-  return realLo + (realHi - realLo) * frac;
+  return Math.min(realLo + (realHi - realLo) * frac, totalLen);
 }
