@@ -1,5 +1,19 @@
 import OpenAI from 'openai';
 import { getServerEnv } from './env';
+import {
+  STYLE_PRESETS,
+  TEMPLATES,
+  INTENTS,
+  DRAW_ELEMENT_TYPES,
+  LATEX_ALIGN,
+  EQUATION_ROLES,
+  BLOCK_KINDS,
+  REGION_HINTS,
+  EQUATION_ALIGN,
+  PANEL_SHAPE_TYPES,
+  CAPTION_ANCHORS,
+  RELATION_TYPES,
+} from '../schema';
 
 export function createOpenAIClient() {
   const env = getServerEnv();
@@ -29,7 +43,7 @@ export const DRAW_TOOL_DEFINITION = {
       batch_id: { type: 'string' },
       style_preset: {
         type: 'string',
-        enum: ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat'],
+        enum: [...STYLE_PRESETS],
       },
       elements: {
         type: 'array',
@@ -38,7 +52,7 @@ export const DRAW_TOOL_DEFINITION = {
           additionalProperties: false,
           properties: {
             id: { type: 'string' },
-            type: { type: 'string', enum: ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear'] },
+            type: { type: 'string', enum: [...DRAW_ELEMENT_TYPES] },
             x: { type: 'number' },
             y: { type: 'number' },
             w: { type: 'number' },
@@ -74,7 +88,7 @@ export const DRAW_TOOL_DEFINITION = {
             color: { type: 'string' },
             stroke_width: { type: 'number' },
             displayMode: { type: 'boolean' },
-            align: { type: 'string', enum: ['left', 'center', 'right'] },
+            align: { type: 'string', enum: [...LATEX_ALIGN] },
           },
           required: ['id', 'type'],
         },
@@ -99,15 +113,15 @@ export const SEMANTIC_DRAW_TOOL_DEFINITION = {
       batch_id: { type: 'string' },
       style_preset: {
         type: 'string',
-        enum: ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat'],
+        enum: [...STYLE_PRESETS],
       },
       template: {
         type: 'string',
-        enum: ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic'],
+        enum: [...TEMPLATES],
       },
       intent: {
         type: 'string',
-        enum: ['teach', 'derive', 'compare', 'summarize'],
+        enum: [...INTENTS],
       },
       blocks: {
         type: 'array',
@@ -116,13 +130,13 @@ export const SEMANTIC_DRAW_TOOL_DEFINITION = {
           additionalProperties: false,
           properties: {
             id: { type: 'string' },
-            kind: { type: 'string', enum: ['equation_stack', 'diagram_panel', 'caption'] },
+            kind: { type: 'string', enum: [...BLOCK_KINDS] },
             region_hint: {
               type: 'string',
-              enum: ['left', 'right', 'center', 'bottom', 'auto'],
+              enum: [...REGION_HINTS],
             },
             title: { type: 'string' },
-            align: { type: 'string', enum: ['left', 'center'] },
+            align: { type: 'string', enum: [...EQUATION_ALIGN] },
             text: { type: 'string' },
             lines: {
               type: 'array',
@@ -133,7 +147,7 @@ export const SEMANTIC_DRAW_TOOL_DEFINITION = {
                   id: { type: 'string' },
                   tex: { type: 'string' },
                   displayMode: { type: 'boolean' },
-                  role: { type: 'string', enum: ['step', 'result', 'note'] },
+                  role: { type: 'string', enum: [...EQUATION_ROLES] },
                 },
                 required: ['id', 'tex'],
               },
@@ -151,7 +165,7 @@ export const SEMANTIC_DRAW_TOOL_DEFINITION = {
                 additionalProperties: false,
                 properties: {
                   id: { type: 'string' },
-                  type: { type: 'string', enum: ['rect', 'parallelogram', 'line', 'arrow'] },
+                  type: { type: 'string', enum: [...PANEL_SHAPE_TYPES] },
                   label: { type: 'string' },
                   relative_pose: {
                     type: 'object',
@@ -177,7 +191,7 @@ export const SEMANTIC_DRAW_TOOL_DEFINITION = {
                 properties: {
                   id: { type: 'string' },
                   text: { type: 'string' },
-                  anchor: { type: 'string', enum: ['top', 'bottom', 'left', 'right', 'center'] },
+                  anchor: { type: 'string', enum: [...CAPTION_ANCHORS] },
                 },
                 required: ['id', 'text', 'anchor'],
               },
@@ -193,7 +207,7 @@ export const SEMANTIC_DRAW_TOOL_DEFINITION = {
           additionalProperties: false,
           properties: {
             id: { type: 'string' },
-            type: { type: 'string', enum: ['maps_to', 'explains', 'derived_from', 'points_to'] },
+            type: { type: 'string', enum: [...RELATION_TYPES] },
             from_block_id: { type: 'string' },
             to_block_id: { type: 'string' },
             from_anchor: { type: 'string' },
@@ -221,15 +235,15 @@ export const GRAPH_SCRIPT_TOOL_DEFINITION = {
       batch_id: { type: 'string' },
       style_preset: {
         type: 'string',
-        enum: ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat'],
+        enum: [...STYLE_PRESETS],
       },
       template: {
         type: 'string',
-        enum: ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic'],
+        enum: [...TEMPLATES],
       },
       intent: {
         type: 'string',
-        enum: ['teach', 'derive', 'compare', 'summarize'],
+        enum: [...INTENTS],
       },
       script: { type: 'string' },
     },

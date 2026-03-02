@@ -8,6 +8,7 @@ import type {
   StructuredWhiteboardContext,
   WhiteboardContext,
 } from '@/types/agent';
+import { validateSSEEvent } from '@/lib/schema';
 
 export interface StreamHandlers {
   onEvent: (event: AgentSSEEvent) => void;
@@ -83,8 +84,13 @@ export function useAgentStream() {
               const json = line.slice(5).trim();
               if (!json) continue;
               try {
-                const event = JSON.parse(json) as AgentSSEEvent;
-                args.handlers.onEvent(event);
+                const parsed = JSON.parse(json);
+                const event = validateSSEEvent(parsed);
+                if (event) {
+                  args.handlers.onEvent(event as AgentSSEEvent);
+                } else {
+                  args.handlers.onError('SSE event failed schema validation');
+                }
               } catch {
                 args.handlers.onError('Invalid SSE JSON payload received');
               }
@@ -97,7 +103,13 @@ export function useAgentStream() {
           const json = trailing.slice(5).trim();
           if (json) {
             try {
-              args.handlers.onEvent(JSON.parse(json) as AgentSSEEvent);
+              const parsed = JSON.parse(json);
+              const event = validateSSEEvent(parsed);
+              if (event) {
+                args.handlers.onEvent(event as AgentSSEEvent);
+              } else {
+                args.handlers.onError('Trailing SSE event failed schema validation');
+              }
             } catch {
               args.handlers.onError('Invalid trailing SSE JSON payload received');
             }
