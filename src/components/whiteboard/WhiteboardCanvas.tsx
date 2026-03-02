@@ -183,7 +183,11 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       }
     };
 
-    void process();
+    void process().catch((err: unknown) => {
+      if (!cancelled) {
+        onWarningRef.current(`Batch compilation failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
+    });
 
     return () => {
       cancelled = true;
