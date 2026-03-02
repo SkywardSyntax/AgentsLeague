@@ -195,4 +195,47 @@ describe('parseStreamingLatex', () => {
     const latexSegments = parsed.filter((s) => s.kind === 'latex');
     expect(latexSegments.length).toBeGreaterThanOrEqual(1);
   });
+
+  // --- Iteration 6 tests: delimiter edge cases ---
+
+  it('treats double-escaped backslash before $ as non-escaping', () => {
+    // In the string "a \\$x$ b", the \\\\ is an escaped backslash, so $ opens math
+    const parsed = parseStreamingLatex('a \\\\$x$ b');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(1);
+    expect(latexSegments[0]).toMatchObject({ kind: 'latex', value: 'x', display: false });
+  });
+
+  it('parses $ delimiters adjacent to CJK characters', () => {
+    const parsed = parseStreamingLatex('设 $x=1$ 则');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(1);
+    expect(latexSegments[0]).toMatchObject({ kind: 'latex', value: 'x=1', display: false });
+    const textSegments = parsed.filter((s) => s.kind === 'text');
+    expect(textSegments.some((s) => s.value.includes('设'))).toBe(true);
+    expect(textSegments.some((s) => s.value.includes('则'))).toBe(true);
+  });
+
+  it('parses space-separated adjacent display blocks as two segments', () => {
+    const parsed = parseStreamingLatex('$$a$$ $$b$$');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(2);
+    expect(latexSegments[0]).toMatchObject({ kind: 'latex', display: true });
+    expect(latexSegments[1]).toMatchObject({ kind: 'latex', display: true });
+  });
+
+  it('handles deep brace nesting in \\frac', () => {
+    const parsed = parseStreamingLatex('$\\frac{a{b{c{d{e}}}}}{f}$');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(1);
+    expect(latexSegments[0]!.value).toContain('\\frac');
+    expect(latexSegments[0]!.value).toContain('e');
+    expect(latexSegments[0]!.value).toContain('f');
+  });
+
+  it('detects implicit math with superscript chains', () => {
+    const parsed = parseStreamingLatex('x^2 + y^{2n} = z^3');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments.length).toBeGreaterThanOrEqual(1);
+  });
 });
