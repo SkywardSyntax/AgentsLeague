@@ -326,4 +326,58 @@ describe('normalizeDrawBatchPayload', () => {
     });
     expect(normalized!.elements[0]).toMatchObject({ x: 10, y: 20, w: 100, h: 50 });
   });
+
+  it('rejects Infinity stroke_width via asNumber and uses default', () => {
+    const { normalized } = normalizeDrawBatchPayload({
+      batch_id: 'b1',
+      elements: [{ id: 'r1', type: 'rect', x: 0, y: 0, w: 10, h: 10, stroke_width: Infinity }],
+    });
+    expect(normalized!.elements).toHaveLength(1);
+    expect(normalized!.elements[0]).not.toHaveProperty('stroke_width');
+  });
+
+  it('rejects NaN stroke_width via asNumber and uses default', () => {
+    const { normalized } = normalizeDrawBatchPayload({
+      batch_id: 'b1',
+      elements: [{ id: 'r1', type: 'rect', x: 0, y: 0, w: 10, h: 10, stroke_width: NaN }],
+    });
+    expect(normalized!.elements).toHaveLength(1);
+    expect(normalized!.elements[0]).not.toHaveProperty('stroke_width');
+  });
+
+  it('accepts empty string color via asString but omits falsy value from output', () => {
+    const { normalized } = normalizeDrawBatchPayload({
+      batch_id: 'b1',
+      elements: [{ id: 'r1', type: 'rect', x: 0, y: 0, w: 10, h: 10, color: '' }],
+    });
+    expect(normalized!.elements).toHaveLength(1);
+    expect(normalized!.elements[0]).not.toHaveProperty('color');
+  });
+
+  it('rejects element when point is missing y coordinate via pointFrom', () => {
+    const { normalized, warnings } = normalizeDrawBatchPayload({
+      batch_id: 'b1',
+      elements: [{ id: 'l1', type: 'line', from: { x: 10 }, to: { x: 20, y: 30 } }],
+    });
+    expect(normalized!.elements).toHaveLength(0);
+    expect(warnings.some((w) => w.includes('line'))).toBe(true);
+  });
+
+  it('rejects Infinity in rect coordinates via asNumber', () => {
+    const { normalized, warnings } = normalizeDrawBatchPayload({
+      batch_id: 'b1',
+      elements: [{ id: 'r1', type: 'rect', x: Infinity, y: 0, w: 10, h: 10 }],
+    });
+    expect(normalized!.elements).toHaveLength(0);
+    expect(warnings.some((w) => w.includes('Rect'))).toBe(true);
+  });
+
+  it('rejects NaN in ellipse coordinates via asNumber', () => {
+    const { normalized, warnings } = normalizeDrawBatchPayload({
+      batch_id: 'b1',
+      elements: [{ id: 'e1', type: 'ellipse', cx: NaN, cy: 0, rx: 10, ry: 10 }],
+    });
+    expect(normalized!.elements).toHaveLength(0);
+    expect(warnings.some((w) => w.includes('Ellipse'))).toBe(true);
+  });
 });

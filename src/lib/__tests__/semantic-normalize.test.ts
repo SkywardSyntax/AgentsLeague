@@ -2,6 +2,83 @@ import { describe, expect, it } from 'vitest';
 import { normalizeSemanticBatchPayload, SemanticBatchSchema } from '@/lib/schema';
 
 describe('normalizeSemanticBatchPayload', () => {
+  it('defaults to freeform_semantic for invalid template', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'sem-t1',
+      template: 'nonexistent_template',
+      blocks: [{ id: 'eq-1', kind: 'equation_stack', lines: [{ id: 'l1', tex: 'x=1' }] }],
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.template).toBe('freeform_semantic');
+    expect(warnings.some((w) => w.includes('template'))).toBe(true);
+  });
+
+  it('drops invalid region_hint for caption block', () => {
+    const { normalized } = normalizeSemanticBatchPayload({
+      batch_id: 'sem-t2',
+      template: 'freeform_semantic',
+      blocks: [{ id: 'cap-1', kind: 'caption', text: 'Some caption', region_hint: 'left' }],
+    });
+    expect(normalized).not.toBeNull();
+    const block = normalized!.blocks[0];
+    expect(block.kind).toBe('caption');
+    if (block.kind === 'caption') {
+      expect(block.region_hint).toBeUndefined();
+    }
+  });
+
+  it('returns null when blocks array is empty', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'sem-t3',
+      template: 'freeform_semantic',
+      blocks: [],
+    });
+    expect(normalized).toBeNull();
+    expect(warnings.some((w) => w.includes('No valid semantic blocks'))).toBe(true);
+  });
+
+  it('drops relations with invalid type while keeping valid ones', () => {
+    const { normalized } = normalizeSemanticBatchPayload({
+      batch_id: 'sem-t4',
+      template: 'freeform_semantic',
+      blocks: [
+        { id: 'eq-1', kind: 'equation_stack', lines: [{ id: 'l1', tex: 'x=1' }] },
+        { id: 'eq-2', kind: 'equation_stack', lines: [{ id: 'l2', tex: 'y=2' }] },
+      ],
+      relations: [
+        { id: 'r1', type: 'invalid_type', from_block_id: 'eq-1', to_block_id: 'eq-2' },
+        { id: 'r2', type: 'maps_to', from_block_id: 'eq-1', to_block_id: 'eq-2' },
+      ],
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.relations).toHaveLength(1);
+    expect(normalized!.relations![0].type).toBe('maps_to');
+  });
+
+  it('drops invalid style_preset with warning', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'sem-t5',
+      template: 'freeform_semantic',
+      style_preset: 'invalid_preset',
+      blocks: [{ id: 'eq-1', kind: 'equation_stack', lines: [{ id: 'l1', tex: 'x=1' }] }],
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.style_preset).toBeUndefined();
+    expect(warnings.some((w) => w.includes('style_preset'))).toBe(true);
+  });
+
+  it('drops invalid intent with warning', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'sem-t6',
+      template: 'freeform_semantic',
+      intent: 'invalid_intent',
+      blocks: [{ id: 'eq-1', kind: 'equation_stack', lines: [{ id: 'l1', tex: 'x=1' }] }],
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.intent).toBeUndefined();
+    expect(warnings.some((w) => w.includes('intent'))).toBe(true);
+  });
+
   it('repairs out-of-range relative_pose values to pass semantic schema', () => {
     const raw = {
       batch_id: 'sem-norm-1',
