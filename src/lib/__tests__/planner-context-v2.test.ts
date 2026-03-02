@@ -62,4 +62,39 @@ describe('structured whiteboard context v2', () => {
     expect(next3.scene_summary.type_counts.latex ?? 0).toBe(0);
     expect(next3.scene_summary.type_counts.text ?? 0).toBe(1);
   });
+
+  it('output always includes token_budget_hint and non-empty suggested_next_regions', () => {
+    // Empty scene — baseline
+    const empty = buildStructuredWhiteboardContext([], []);
+    expect(empty.token_budget_hint).toBeDefined();
+    expect(typeof empty.token_budget_hint.max_chars).toBe('number');
+    expect(empty.token_budget_hint.max_chars).toBeGreaterThan(0);
+    expect(empty.suggested_next_regions.length).toBeGreaterThanOrEqual(1);
+    expect(empty.suggested_next_regions[0]!.score).toBeGreaterThan(0);
+
+    // Non-empty scene
+    const scene: DrawElement[] = [
+      { id: 'r1', type: 'rect', x: 50, y: 50, w: 200, h: 100 },
+    ];
+    const populated = buildStructuredWhiteboardContext(scene, []);
+    expect(populated.token_budget_hint.max_chars).toBeGreaterThan(0);
+    expect(populated.suggested_next_regions.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('regression: clear batch resets suggested_next_regions to valid positive coordinates', () => {
+    const base = buildStructuredWhiteboardContext([], []);
+    const batch: DrawBatch = {
+      batch_id: 'b-clear',
+      elements: [
+        { id: 'clear-1', type: 'clear' },
+      ],
+    };
+    const afterClear = extendStructuredWhiteboardContext(base, batch);
+    for (const region of afterClear.suggested_next_regions) {
+      expect(region.y).toBeGreaterThan(0);
+      expect(region.x).toBeGreaterThan(0);
+      expect(region.w).toBeGreaterThan(0);
+      expect(region.h).toBeGreaterThan(0);
+    }
+  });
 });
