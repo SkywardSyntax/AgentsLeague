@@ -130,9 +130,18 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   useEffect(() => {
     const raf = requestAnimationFrame(() => resizeCanvases());
     window.addEventListener('resize', resizeCanvases);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        committedDirtyRef.current = true;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resizeCanvases);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [resizeCanvases]);
 

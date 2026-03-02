@@ -117,6 +117,7 @@ export interface StrokeBounds {
 
 export function strokesBoundingBox(
   strokes: { points: Point[] }[],
+  padding = 0,
 ): StrokeBounds | null {
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
@@ -136,13 +137,14 @@ export function strokesBoundingBox(
     return null;
   }
 
+  const pad = Math.max(0, padding);
   return {
-    minX,
-    maxX,
-    minY,
-    maxY,
-    width: Math.max(0, maxX - minX),
-    height: Math.max(0, maxY - minY),
+    minX: minX - pad,
+    maxX: maxX + pad,
+    minY: minY - pad,
+    maxY: maxY + pad,
+    width: Math.max(0, maxX - minX + pad * 2),
+    height: Math.max(0, maxY - minY + pad * 2),
   };
 }
 
@@ -178,6 +180,36 @@ export function bezierLength(seg: BezierSegment, subdivisions = 16): number {
   return len;
 }
 
+export function bezierPointAtArcLength(
+  seg: BezierSegment,
+  targetLen: number,
+  totalLen?: number,
+  subdivisions = 32,
+): Point {
+  if (targetLen <= 0) return { x: seg.p0.x, y: seg.p0.y };
+  const total = totalLen ?? bezierLength(seg, subdivisions);
+  if (total <= 0 || targetLen >= total) return { x: seg.p3.x, y: seg.p3.y };
+
+  let accumulated = 0;
+  let prev = seg.p0;
+  for (let i = 1; i <= subdivisions; i++) {
+    const t = i / subdivisions;
+    const pt = bezierPointAt(seg, t);
+    const segLen = distance(prev, pt);
+    if (accumulated + segLen >= targetLen) {
+      const overshoot = targetLen - accumulated;
+      const frac = segLen > 0 ? overshoot / segLen : 0;
+      return {
+        x: prev.x + (pt.x - prev.x) * frac,
+        y: prev.y + (pt.y - prev.y) * frac,
+      };
+    }
+    accumulated += segLen;
+    prev = pt;
+  }
+  return { x: seg.p3.x, y: seg.p3.y };
+}
+
 export function bezierChainLength(segs: BezierSegment[]): number {
   let total = 0;
   for (const seg of segs) {
@@ -188,7 +220,7 @@ export function bezierChainLength(segs: BezierSegment[]): number {
 
 export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegment[] {
   if (points.length < 2) return [];
-  const alpha = tension;
+  const alpha = clamp(tension, 0.01, 1);
   const segs: BezierSegment[] = [];
 
   for (let i = 0; i < points.length - 1; i++) {

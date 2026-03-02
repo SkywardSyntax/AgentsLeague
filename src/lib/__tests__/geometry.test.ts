@@ -11,6 +11,7 @@ import {
   bezierPointAt,
   bezierLength,
   bezierChainLength,
+  bezierPointAtArcLength,
   catmullRomToBezier,
 } from '@/lib/whiteboard/geometry';
 import type { BezierSegment } from '@/lib/whiteboard/geometry';
@@ -421,5 +422,131 @@ describe('catmullRomToBezier', () => {
       expect(mid.x).toBeCloseTo(5);
       expect(mid.y).toBeCloseTo(5);
     }
+  });
+
+  it('clamps negative tension to 0.01', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    const segs = catmullRomToBezier(pts, -5);
+    expect(segs).toHaveLength(2);
+    // Should not throw or produce NaN/Infinity
+    for (const seg of segs) {
+      const mid = bezierPointAt(seg, 0.5);
+      expect(Number.isFinite(mid.x)).toBe(true);
+      expect(Number.isFinite(mid.y)).toBe(true);
+    }
+  });
+
+  it('clamps tension > 1 to 1', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    const segsHigh = catmullRomToBezier(pts, 100);
+    const segsClamped = catmullRomToBezier(pts, 1);
+    expect(segsHigh).toEqual(segsClamped);
+  });
+
+  it('tension=0.01 produces nearly straight segments for collinear points', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    const segs = catmullRomToBezier(pts, 0);
+    for (const seg of segs) {
+      const mid = bezierPointAt(seg, 0.5);
+      expect(mid.y).toBeCloseTo(0, 1);
+    }
+  });
+});
+
+describe('bezierPointAtArcLength', () => {
+  const straight: BezierSegment = {
+    p0: { x: 0, y: 0 },
+    cp1: { x: 33.33, y: 0 },
+    cp2: { x: 66.67, y: 0 },
+    p3: { x: 100, y: 0 },
+  };
+  const straightLen = bezierLength(straight, 64);
+
+  it('at 0 returns p0', () => {
+    const p = bezierPointAtArcLength(straight, 0);
+    expect(p.x).toBeCloseTo(0);
+    expect(p.y).toBeCloseTo(0);
+  });
+
+  it('at totalLen returns p3', () => {
+    const p = bezierPointAtArcLength(straight, straightLen, straightLen);
+    expect(p.x).toBeCloseTo(100);
+    expect(p.y).toBeCloseTo(0);
+  });
+
+  it('at half-length of straight segment returns midpoint', () => {
+    const p = bezierPointAtArcLength(straight, straightLen / 2, straightLen);
+    expect(p.x).toBeCloseTo(50, 0);
+    expect(p.y).toBeCloseTo(0, 5);
+  });
+
+  it('on quarter-circle returns point near 45 degrees', () => {
+    const r = 100;
+    const k = 0.5522847498;
+    const arc: BezierSegment = {
+      p0: { x: r, y: 0 },
+      cp1: { x: r, y: r * k },
+      cp2: { x: r * k, y: r },
+      p3: { x: 0, y: r },
+    };
+    const arcLen = bezierLength(arc, 64);
+    const p = bezierPointAtArcLength(arc, arcLen / 2, arcLen, 64);
+    // At half the arc, expect roughly 45 degrees: (r*cos45, r*sin45)
+    const expected = r * Math.SQRT1_2;
+    expect(p.x).toBeCloseTo(expected, -1);
+    expect(p.y).toBeCloseTo(expected, -1);
+  });
+
+  it('negative targetLen returns p0', () => {
+    const p = bezierPointAtArcLength(straight, -10);
+    expect(p.x).toBeCloseTo(0);
+    expect(p.y).toBeCloseTo(0);
+  });
+
+  it('targetLen exceeding total returns p3', () => {
+    const p = bezierPointAtArcLength(straight, 9999);
+    expect(p.x).toBeCloseTo(100);
+    expect(p.y).toBeCloseTo(0);
+  });
+
+  it('zero-length segment returns p0/p3', () => {
+    const degenerate: BezierSegment = {
+      p0: { x: 5, y: 5 },
+      cp1: { x: 5, y: 5 },
+      cp2: { x: 5, y: 5 },
+      p3: { x: 5, y: 5 },
+    };
+    const p = bezierPointAtArcLength(degenerate, 1);
+    expect(p.x).toBeCloseTo(5);
+    expect(p.y).toBeCloseTo(5);
+  });
+});
+
+describe('strokesBoundingBox with padding', () => {
+  it('with padding expands bounds', () => {
+    const strokes = [{ points: [{ x: 10, y: 20 }, { x: 50, y: 60 }] }];
+    const bounds = strokesBoundingBox(strokes, 5);
+    expect(bounds).toEqual({ minX: 5, maxX: 55, minY: 15, maxY: 65, width: 50, height: 50 });
+  });
+
+  it('with padding=0 is unchanged', () => {
+    const strokes = [{ points: [{ x: 10, y: 20 }, { x: 50, y: 60 }] }];
+    const bounds = strokesBoundingBox(strokes, 0);
+    expect(bounds).toEqual({ minX: 10, maxX: 50, minY: 20, maxY: 60, width: 40, height: 40 });
+  });
+
+  it('with padding on single point gives non-zero width/height', () => {
+    const bounds = strokesBoundingBox([{ points: [{ x: 5, y: 5 }] }], 10);
+    expect(bounds).toEqual({ minX: -5, maxX: 15, minY: -5, maxY: 15, width: 20, height: 20 });
+  });
+
+  it('negative padding is clamped to 0', () => {
+    const strokes = [{ points: [{ x: 10, y: 20 }, { x: 50, y: 60 }] }];
+    const bounds = strokesBoundingBox(strokes, -5);
+    expect(bounds).toEqual({ minX: 10, maxX: 50, minY: 20, maxY: 60, width: 40, height: 40 });
+  });
+
+  it('empty strokes still return null regardless of padding', () => {
+    expect(strokesBoundingBox([], 10)).toBeNull();
   });
 });

@@ -134,4 +134,42 @@ describe('parseGraphScriptToSemanticBatch', () => {
     const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-unk', script });
     expect(result.warnings.some((w) => w.includes('valid type'))).toBe(true);
   });
+
+  it('duplicate shape IDs in same panel are renamed with warning', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=box1 panel=p1 type=rect label="First"',
+      'shape id=box1 panel=p1 type=rect label="Second"',
+      'shape id=box1 panel=p1 type=rect label="Third"',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-dup', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes).toHaveLength(3);
+      expect(panel.shapes![0]!.id).toBe('box1');
+      expect(panel.shapes![1]!.id).toBe('box1-2');
+      expect(panel.shapes![2]!.id).toBe('box1-3');
+    }
+    const dupWarnings = result.warnings.filter((w) => w.includes('duplicate shape id'));
+    expect(dupWarnings).toHaveLength(2);
+    expect(dupWarnings[0]).toContain('renamed to "box1-2"');
+    expect(dupWarnings[1]).toContain('renamed to "box1-3"');
+  });
+
+  it('duplicate shape IDs across different panels are allowed with warning', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=shared panel=p1 type=rect',
+      'panel id=p2',
+      'shape id=shared panel=p2 type=rect',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-cross', script });
+    expect(result.semanticBatch).not.toBeNull();
+    // Cross-panel duplicates get the existing warning but both keep their original IDs
+    const crossWarnings = result.warnings.filter((w) => w.includes('across panels'));
+    expect(crossWarnings).toHaveLength(1);
+  });
 });

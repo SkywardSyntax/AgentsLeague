@@ -413,6 +413,7 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
   const relations: SemanticRelation[] = [];
   const panelNodeCounts = new Map<string, number>();
   const shapeToPanel = new Map<string, string>();
+  const shapeIdCounts = new Map<string, number>();
 
   const lines = script.split(/\r?\n/);
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
@@ -483,7 +484,7 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
 
     if (COMMAND_SHAPE_SET.has(command)) {
       const panelId = kv.panel ?? kv.graph ?? positional[0];
-      const shapeId = kv.id ?? positional[1] ?? `${command}-${lineIdx + 1}`;
+      let shapeId = kv.id ?? positional[1] ?? `${command}-${lineIdx + 1}`;
       const rawType = kv.type ?? kv.shape ?? positional[2] ?? (command === 'node' ? 'rect' : '');
       const shapeType = parseShapeType(rawType);
       if (!panelId || !shapeType) {
@@ -492,6 +493,19 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
       }
 
       const panel = ensurePanel(panels, panelOrder, panelId);
+
+      // Deterministic rename for duplicate shape IDs within the same panel
+      const existingPanel = shapeToPanel.get(shapeId);
+      if (existingPanel === panelId) {
+        const count = (shapeIdCounts.get(shapeId) ?? 1) + 1;
+        shapeIdCounts.set(shapeId, count);
+        const newId = `${shapeId}-${count}`;
+        warnings.push(`line ${lineIdx + 1}: duplicate shape id "${shapeId}" in panel "${panelId}"; renamed to "${newId}"`);
+        shapeId = newId;
+      } else if (existingPanel && existingPanel !== panelId) {
+        warnings.push(`line ${lineIdx + 1}: duplicate shape id '${shapeId}' across panels; latest one wins`);
+      }
+
       const autoIndex = panelNodeCounts.get(panelId) ?? 0;
       panelNodeCounts.set(panelId, autoIndex + 1);
       const autoPose = command === 'node' ? autoNodePose(autoIndex) : null;
@@ -504,9 +518,6 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
         ...(kv.label ?? kv.text ? { label: kv.label ?? kv.text } : {}),
         ...(pose ? { relative_pose: pose } : {}),
       });
-      if (shapeToPanel.has(shapeId) && shapeToPanel.get(shapeId) !== panelId) {
-        warnings.push(`line ${lineIdx + 1}: duplicate shape id '${shapeId}' across panels; latest one wins`);
-      }
       shapeToPanel.set(shapeId, panelId);
       continue;
     }
