@@ -3,6 +3,7 @@ import {
   partialPolylineByLength,
   screenStrokePx,
   computeFitCamera,
+  resamplePolyline,
 } from '@/lib/whiteboard/geometry';
 import { rectPoints, withJitter } from '@/lib/whiteboard/semantic-to-strokes';
 
@@ -83,5 +84,79 @@ describe('computeFitCamera', () => {
     );
     expect(result).not.toBeNull();
     expect(result!.zoom).toBe(0.25);
+  });
+
+  it('applies explicit padding parameter', () => {
+    const half = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      0.5,
+    );
+    const full = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      1.0,
+    );
+    expect(half).not.toBeNull();
+    expect(full).not.toBeNull();
+    // zoom scales proportionally with padding
+    expect(half!.zoom / full!.zoom).toBeCloseTo(0.5);
+  });
+
+  it('clamps padding below 0.1', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      0,
+    );
+    const baseline = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 200, maxY: 200 },
+      1000, 800, 0.1, 100,
+      0.1,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.zoom).toBe(baseline!.zoom);
+  });
+
+  it('uses default 0.9 padding when not specified', () => {
+    const withDefault = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 2000, maxY: 200 },
+      1000, 800, 0.25, 4,
+    );
+    const explicit = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 2000, maxY: 200 },
+      1000, 800, 0.25, 4,
+      0.9,
+    );
+    expect(withDefault).toEqual(explicit);
+  });
+});
+
+describe('resamplePolyline robustness', () => {
+  it('returns copy for spacing = 0', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    const result = resamplePolyline(pts, 0);
+    expect(result).toEqual(pts);
+    expect(result).not.toBe(pts);
+  });
+
+  it('returns copy for spacing = -1', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const result = resamplePolyline(pts, -1);
+    expect(result).toEqual(pts);
+    expect(result).not.toBe(pts);
+  });
+
+  it('returns copy for spacing = NaN', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const result = resamplePolyline(pts, NaN);
+    expect(result).toEqual(pts);
+    expect(result).not.toBe(pts);
+  });
+
+  it('returns single point for all-coincident input', () => {
+    const pts = [{ x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }];
+    const result = resamplePolyline(pts, 2);
+    expect(result).toEqual([{ x: 5, y: 5 }]);
   });
 });

@@ -61,6 +61,7 @@ export function partialPolylineByLength(
 
 export function resamplePolyline(points: Point[], spacing: number): Point[] {
   if (points.length <= 1) return points;
+  if (!Number.isFinite(spacing) || spacing <= 0) return points.slice();
   const sampled: Point[] = [points[0]!];
 
   let carry = 0;
@@ -111,7 +112,8 @@ export interface BBox {
 
 /**
  * Compute camera position & zoom to fit a world-space bounding box inside a
- * viewport of the given pixel dimensions, with 10 % margin.
+ * viewport of the given pixel dimensions.
+ * @param padding fraction of viewport used (default 0.9 = 10% margin), clamped to [0.1, 1.0].
  */
 export function computeFitCamera(
   bbox: BBox,
@@ -119,12 +121,14 @@ export function computeFitCamera(
   viewportHeight: number,
   minZoom: number,
   maxZoom: number,
+  padding?: number,
 ): { x: number; y: number; zoom: number } | null {
   const bboxW = bbox.maxX - bbox.minX;
   const bboxH = bbox.maxY - bbox.minY;
   if (bboxW <= 0 || bboxH <= 0) return null;
+  const p = Number.isFinite(padding as number) ? clamp(padding!, 0.1, 1.0) : 0.9;
   const zoom = clamp(
-    Math.min(viewportWidth / bboxW, viewportHeight / bboxH) * 0.9,
+    Math.min(viewportWidth / bboxW, viewportHeight / bboxH) * p,
     minZoom,
     maxZoom,
   );
