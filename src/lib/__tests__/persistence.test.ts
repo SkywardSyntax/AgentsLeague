@@ -260,6 +260,147 @@ describe('loadSession migration edge cases', () => {
   });
 });
 
+describe('loadSession with corrupted inner data (typed array validation)', () => {
+  it('returns session with empty semanticScene when it contains non-objects', () => {
+    const data = {
+      version: 3,
+      updatedAt: 1000,
+      activeChatId: 'c1',
+      chats: [
+        {
+          id: 'c1',
+          title: 'Test',
+          createdAt: 1000,
+          updatedAt: 1000,
+          messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1000 }],
+          semanticScene: [42, 'hello', null],
+          scene: [],
+          plannerMeta: [],
+        },
+      ],
+      prefs: { panelSizes: [40, 60] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(data);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    // .catch([]) fallback triggers for invalid array items
+    expect(loaded!.chats[0].semanticScene).toEqual([]);
+  });
+
+  it('returns session with empty scene when elements lack required id/type', () => {
+    const data = {
+      version: 3,
+      updatedAt: 1000,
+      activeChatId: 'c1',
+      chats: [
+        {
+          id: 'c1',
+          title: 'Test',
+          createdAt: 1000,
+          updatedAt: 1000,
+          messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1000 }],
+          semanticScene: [],
+          scene: [{ color: 'red' }],
+          plannerMeta: [],
+        },
+      ],
+      prefs: { panelSizes: [40, 60] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(data);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].scene).toEqual([]);
+  });
+
+  it('returns null for completely invalid JSON in localStorage', () => {
+    store[STORAGE_KEY] = '!!!not-json{{{';
+    const loaded = loadSession();
+    expect(loaded).toBeNull();
+  });
+
+  it('preserves valid semanticScene with extra fields (passthrough)', () => {
+    const data = {
+      version: 3,
+      updatedAt: 1000,
+      activeChatId: 'c1',
+      chats: [
+        {
+          id: 'c1',
+          title: 'Test',
+          createdAt: 1000,
+          updatedAt: 1000,
+          messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1000 }],
+          semanticScene: [{ batch_id: 'b1', template: 'freeform', extra_field: true }],
+          scene: [{ id: 'e1', type: 'rect', x: 0, y: 0, custom: 'data' }],
+          plannerMeta: [{ batchId: 'b1', rows: 3 }],
+        },
+      ],
+      prefs: { panelSizes: [40, 60] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(data);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].semanticScene).toHaveLength(1);
+    expect(loaded!.chats[0].semanticScene[0]).toHaveProperty('batch_id', 'b1');
+    expect(loaded!.chats[0].semanticScene[0]).toHaveProperty('extra_field', true);
+    expect(loaded!.chats[0].scene).toHaveLength(1);
+    expect(loaded!.chats[0].scene[0]).toHaveProperty('custom', 'data');
+    expect(loaded!.chats[0].plannerMeta).toHaveLength(1);
+    expect(loaded!.chats[0].plannerMeta[0]).toHaveProperty('rows', 3);
+  });
+
+  it('returns session with empty plannerMeta when it contains null entries', () => {
+    const data = {
+      version: 3,
+      updatedAt: 1000,
+      activeChatId: 'c1',
+      chats: [
+        {
+          id: 'c1',
+          title: 'Test',
+          createdAt: 1000,
+          updatedAt: 1000,
+          messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1000 }],
+          semanticScene: [],
+          scene: [],
+          plannerMeta: [null, undefined, 123],
+        },
+      ],
+      prefs: { panelSizes: [40, 60] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(data);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].plannerMeta).toEqual([]);
+  });
+
+  it('V2 migration produces valid V3 with typed arrays', () => {
+    const v2 = {
+      version: 2,
+      updatedAt: 700,
+      activeChatId: 'v2c',
+      chats: [
+        {
+          id: 'v2c',
+          title: 'V2 Chat',
+          createdAt: 700,
+          updatedAt: 700,
+          messages: [{ id: 'm1', role: 'user', content: 'msg', createdAt: 700 }],
+          scene: [{ id: 'e1', type: 'rect', x: 0, y: 0 }],
+        },
+      ],
+      prefs: { panelSizes: [50, 50] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(v2);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(3);
+    expect(loaded!.chats[0].semanticScene).toHaveLength(1);
+    expect(loaded!.chats[0].semanticScene[0].batch_id).toContain('imported-');
+    expect(loaded!.chats[0].plannerMeta).toEqual([]);
+  });
+});
+
 describe('persistence resilience', () => {
   it('saveSession does not throw when localStorage.setItem throws QuotaExceededError', () => {
     const origSetItem = localStorageMock.setItem;

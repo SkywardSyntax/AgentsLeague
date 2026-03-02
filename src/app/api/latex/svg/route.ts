@@ -4,7 +4,7 @@ import { renderTexToSvgServer } from '@/lib/server/mathjax';
 export const runtime = 'nodejs';
 
 const LatexSvgRequestSchema = z.object({
-  tex: z.string().min(1),
+  tex: z.string().min(1).max(10_000, 'TeX input exceeds maximum length of 10,000 characters'),
   displayMode: z.boolean().optional(),
 });
 

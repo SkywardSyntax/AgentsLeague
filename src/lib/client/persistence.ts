@@ -47,9 +47,9 @@ const PersistedSessionV3Schema = z.object({
       createdAt: z.number(),
       updatedAt: z.number(),
       messages: z.array(MessageSchema),
-      semanticScene: z.array(z.any()),
-      scene: z.array(z.any()),
-      plannerMeta: z.array(z.any()),
+      semanticScene: z.array(z.object({ batch_id: z.string() }).passthrough()).catch([]),
+      scene: z.array(z.object({ id: z.string(), type: z.string() }).passthrough()).catch([]),
+      plannerMeta: z.array(z.object({ batchId: z.string() }).passthrough()).catch([]),
     }),
   ),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
@@ -148,7 +148,7 @@ export function loadSession(): PersistedSessionV3 | null {
 
     const v3 = PersistedSessionV3Schema.safeParse(parsed);
     if (v3.success) {
-      return v3.data as PersistedSessionV3;
+      return v3.data as unknown as PersistedSessionV3;
     }
 
     const v2 = PersistedSessionV2Schema.safeParse(parsed);

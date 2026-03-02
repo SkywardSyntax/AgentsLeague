@@ -44,7 +44,12 @@ async function getMathJaxContext(): Promise<MathJaxContext> {
   return mathJaxContextPromise;
 }
 
+const MAX_TEX_LENGTH = 10_000;
+
 export async function renderTexToSvgServer(texInput: string, displayModeInput: boolean): Promise<string> {
+  if (texInput.length > MAX_TEX_LENGTH) {
+    throw new Error('TeX input too long');
+  }
   const prepared = prepareTexForMathJax(texInput, displayModeInput);
   const cacheKey = `${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
 
