@@ -258,6 +258,11 @@ function enforceArrowLegibility(
   });
 }
 
+/**
+ * Applies layout constraints to a draw batch: canvas bounds, text spacing,
+ * label-shape spacing, and arrow legibility. Falls back to vertical reflow
+ * if overlaps persist after {@link PlannerConfig.maxRepairIterations} passes.
+ */
 export function enforceDrawBatchConstraints(
   batch: DrawBatch,
   partialConfig?: Partial<PlannerConfig>,

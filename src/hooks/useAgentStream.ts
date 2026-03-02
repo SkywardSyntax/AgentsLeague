@@ -15,6 +15,11 @@ export interface StreamHandlers {
   onError: (message: string) => void;
 }
 
+/**
+ * React hook for streaming agent responses via SSE.
+ * Returns `run` to start a stream and `cancel` to abort it.
+ * Manages an internal AbortController ref for cancellation.
+ */
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
 

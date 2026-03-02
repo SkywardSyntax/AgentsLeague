@@ -380,11 +380,9 @@ function pointFrom(input: unknown): { x: number; y: number } | null {
 }
 
 /**
- * Coerce a raw `unknown` payload (typically from LLM JSON output) into a
- * valid `DrawBatchInput`. String-typed numbers are parsed, coordinates are
- * clamped to finite ranges, and unknown element types are dropped. Returns
- * `{ normalized, warnings }` — `normalized` is `null` if the payload is
- * not recoverable.
+ * Normalizes raw LLM output into a valid {@link DrawBatchInput}.
+ * Handles missing fields, type coercion, and alternate key names (e.g. `width` → `w`).
+ * Returns warnings for each element that could not be salvaged.
  */
 export function normalizeDrawBatchPayload(payload: unknown): {
   normalized: DrawBatchInput | null;
@@ -542,10 +540,9 @@ function asBoolean(input: unknown): boolean | null {
 }
 
 /**
- * Coerce a raw `unknown` payload into a valid `SemanticBatchInput`.
- * Repairs out-of-range `relative_pose` values (clamped to 0–1),
- * normalizes enum fields (`template`, `style_preset`, `intent`), and
- * strips unrecognized block kinds. Returns `{ normalized, warnings }`.
+ * Normalizes raw LLM output into a valid {@link SemanticBatchInput}.
+ * Applies defaults for missing templates/intents and validates all nested blocks.
+ * Returns warnings for each block or field that could not be salvaged.
  */
 export function normalizeSemanticBatchPayload(payload: unknown): {
   normalized: SemanticBatchInput | null;

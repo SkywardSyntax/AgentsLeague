@@ -25,6 +25,10 @@ export function totalLength(points: Point[]): number {
   return lengths[lengths.length - 1] ?? 0;
 }
 
+/**
+ * Returns a prefix of the polyline truncated to exactly {@link targetLength} world units.
+ * Used by the stroke animation system to progressively reveal strokes.
+ */
 export function partialPolylineByLength(
   points: Point[],
   cumulative: number[],
