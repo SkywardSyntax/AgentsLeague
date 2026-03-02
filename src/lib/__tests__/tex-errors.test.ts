@@ -28,15 +28,15 @@ describe('formatTexError', () => {
     expect(formatTexError(err, 'x')).toBe("'&' used outside of table/alignment environment");
   });
 
-  it('falls back to original message for unrecognized errors', () => {
+  it('falls back to original message with tex preview for unrecognized errors', () => {
     const err = new Error('Something unexpected');
-    expect(formatTexError(err, 'x')).toBe('Something unexpected');
+    expect(formatTexError(err, 'x')).toBe('Something unexpected (input: x)');
   });
 
   it('handles non-Error values', () => {
-    expect(formatTexError('string error', 'x')).toBe('string error');
-    expect(formatTexError(42, 'x')).toBe('Rendering failed');
-    expect(formatTexError(null, 'x')).toBe('Rendering failed');
+    expect(formatTexError('string error', 'x')).toBe('string error (input: x)');
+    expect(formatTexError(42, 'x')).toBe('Rendering failed for: x');
+    expect(formatTexError(null, 'x')).toBe('Rendering failed for: x');
   });
 
   it('maps timeout errors', () => {
@@ -78,12 +78,25 @@ describe('formatTexError', () => {
     expect(formatTexError(err, 'x')).toBe('Unknown command: (unknown)');
   });
 
-  it('returns Rendering failed for non-Error non-string input', () => {
-    expect(formatTexError(undefined, 'x')).toBe('Rendering failed');
+  it('returns Rendering failed with tex preview for non-Error non-string input', () => {
+    expect(formatTexError(undefined, 'x')).toBe('Rendering failed for: x');
   });
 
-  it('returns Rendering failed for empty Error message', () => {
-    expect(formatTexError(new Error(''), 'x')).toBe('Rendering failed');
+  it('returns Rendering failed with tex preview for empty Error message', () => {
+    expect(formatTexError(new Error(''), 'x')).toBe('Rendering failed for: x');
+  });
+
+  it('truncates long tex input to 40 chars in fallback preview', () => {
+    const longTex = 'a'.repeat(60);
+    const result = formatTexError(42, longTex);
+    expect(result).toBe(`Rendering failed for: ${'a'.repeat(40)}…`);
+  });
+
+  it('includes tex preview in fallback when error has unrecognized message', () => {
+    const err = new Error('weird MathJax glitch');
+    const result = formatTexError(err, '\\int_0^1 f(x) dx');
+    expect(result).toContain('\\int_0^1 f(x) dx');
+    expect(result).toBe('weird MathJax glitch (input: \\int_0^1 f(x) dx)');
   });
 });
 

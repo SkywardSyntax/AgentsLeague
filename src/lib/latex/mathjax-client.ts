@@ -223,14 +223,12 @@ export class TexRenderError extends Error {
 const TEX_PARSE_ERROR_PATTERN =
   /TeX parse error|Unknown command|Undefined control sequence|Missing close brace|Missing open brace|Extra close brace|Extra open brace|Double superscript|Double subscript|Misplaced &|Missing \$ inserted|Missing \\right|Missing \\left/i;
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new RenderTimeoutError(ms)), ms);
-    promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
-    );
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new RenderTimeoutError(ms)), ms);
   });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 export function getCachedSvg(tex: string, displayMode: boolean): string | undefined {

@@ -5,6 +5,7 @@ import {
   TexRenderError,
   renderTexToSvg,
   clearRenderCache,
+  withTimeout,
 } from '@/lib/latex/mathjax-client';
 
 describe('RenderTimeoutError', () => {
@@ -78,6 +79,30 @@ describe('renderTexToSvg timeout', () => {
 
     const result = await Promise.race([fast, timeoutPromise]);
     expect(result).toBe('done');
+  });
+});
+
+describe('withTimeout timer cleanup', () => {
+  it('clears timer when promise resolves before timeout', async () => {
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const fast = Promise.resolve('ok');
+    const result = await withTimeout(fast, 5000);
+    expect(result).toBe('ok');
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
+
+  it('clears timer when promise rejects before timeout', async () => {
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const failing = Promise.reject(new Error('boom'));
+    await expect(withTimeout(failing, 5000)).rejects.toThrow('boom');
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
+
+  it('rejects with RenderTimeoutError when promise never settles', async () => {
+    const never = new Promise<string>(() => {});
+    await expect(withTimeout(never, 50)).rejects.toThrow(RenderTimeoutError);
   });
 });
 

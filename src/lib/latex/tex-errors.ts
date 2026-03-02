@@ -20,7 +20,7 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; format: (match: RegExpMatchArray)
   { pattern: /exceeds maximum length/, format: () => 'Expression too long to render' },
 ];
 
-export function formatTexError(error: unknown, _tex: string): string {
+export function formatTexError(error: unknown, tex: string): string {
   const message =
     error instanceof Error ? error.message : typeof error === 'string' ? error : '';
 
@@ -29,7 +29,8 @@ export function formatTexError(error: unknown, _tex: string): string {
     if (match) return format(match);
   }
 
-  return message || 'Rendering failed';
+  const preview = tex.length > 40 ? tex.slice(0, 40) + '…' : tex;
+  return message ? `${message} (input: ${preview})` : `Rendering failed for: ${preview}`;
 }
 
 export function isTimeoutError(error: unknown): boolean {
