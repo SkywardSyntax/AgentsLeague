@@ -22,6 +22,7 @@ import type {
   WhiteboardLayoutDiagnostics,
 } from '@/types/agent';
 import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
+import { ErrorBoundary } from '@/components/app/ErrorBoundary';
 import { AppHeader } from '@/components/app/AppHeader';
 import { AgentSidebar } from '@/components/app/AgentSidebar';
 import { WarningOverlay } from '@/components/app/WarningOverlay';
@@ -587,23 +588,36 @@ export function AppShell() {
     ),
   );
 
+  const dismissWarnings = useCallback(() => {
+    if (!activeChat) return;
+    setChatSessions((prev) =>
+      prev.map((chat) =>
+        chat.id === activeChat.id ? { ...chat, warnings: [] } : chat,
+      ),
+    );
+  }, [activeChat, setChatSessions]);
+
   if (!didRestoreSession) {
     return (
-      <main className="relative h-screen w-screen overflow-hidden p-2 sm:p-4" style={{ height: '100dvh' }}>
-        <div className="app-card glass-panel flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
-          <div className="h-14 border-b border-[var(--color-border)]" />
-          <div className="flex flex-1 items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+      <ErrorBoundary>
+        <main className="relative h-screen w-screen overflow-hidden p-2 sm:p-4" style={{ height: '100dvh' }}>
+          <div className="app-card glass-panel flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
+            <div className="h-14 border-b border-[var(--color-border)]" />
+            <div className="flex flex-1 items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </ErrorBoundary>
     );
   }
 
   if (!activeChat) return null;
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
+    <ErrorBoundary>
+    <main id="main-content" className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:text-[var(--color-text-primary)] focus:shadow-lg">Skip to main content</a>
       <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
         <AppHeader status={status} />
 
@@ -613,6 +627,7 @@ export function AppShell() {
         >
           <section
             data-testid="whiteboard-canvas"
+            tabIndex={-1}
             className={isAgentMode ? 'h-full w-full' : `w-full md:h-full md:w-[var(--left-width)] ${mobileActivePanel === 'whiteboard' ? 'h-full' : 'hidden'} md:!block`}
             {...(mobileActivePanel !== 'whiteboard' && !isAgentMode ? { inert: true, 'aria-hidden': true } : {})}
           >
@@ -656,6 +671,7 @@ export function AppShell() {
           {!isAgentMode && (
             <section
               data-testid="chat-panel"
+              tabIndex={-1}
               className={`min-h-0 w-full md:h-full md:flex-1 ${mobileActivePanel === 'chat' ? 'h-full' : 'hidden'} md:!block`}
               {...(mobileActivePanel !== 'chat' ? { inert: true, 'aria-hidden': true } : {})}
             >
@@ -709,7 +725,7 @@ export function AppShell() {
             />
           )}
 
-          <WarningOverlay warnings={activeChat.warnings} />
+          <WarningOverlay warnings={activeChat.warnings} onDismiss={dismissWarnings} />
         </div>
       </div>
       {!isAgentMode && (
@@ -719,5 +735,6 @@ export function AppShell() {
         />
       )}
     </main>
+    </ErrorBoundary>
   );
 }

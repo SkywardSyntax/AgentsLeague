@@ -373,7 +373,8 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <button
           type="button"
           onClick={resetCamera}
-          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          aria-label="Reset view"
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
           title="Reset view (Ctrl+0)"
         >
           ⌂
@@ -381,7 +382,8 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <button
           type="button"
           onClick={zoomOut}
-          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          aria-label="Zoom out"
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
           title="Zoom out"
         >
           −
@@ -389,13 +391,16 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <span
           className="glass-panel rounded-lg px-2 py-1.5 text-xs tabular-nums text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"
           data-testid="zoom-level"
+          aria-live="polite"
+          aria-atomic="true"
         >
           {(camera.zoom * 100).toFixed(0)}%
         </span>
         <button
           type="button"
           onClick={zoomIn}
-          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          aria-label="Zoom in"
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
           title="Zoom in"
         >
           +
@@ -403,7 +408,8 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <button
           type="button"
           onClick={() => setShowDebug((v) => !v)}
-          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          aria-label="Debug options"
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
           title="Toggle debug info"
         >
           ···
