@@ -39,6 +39,20 @@ import type {
 
 export const runtime = 'nodejs';
 
+export async function parseRequestJson(
+  request: Request,
+  requestId: string,
+): Promise<{ json: unknown } | Response> {
+  try {
+    return { json: await request.json() };
+  } catch {
+    return new Response(
+      JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
+      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
+    );
+  }
+}
+
 async function handlePost(request: Request, ctx: HandlerContext): Promise<Response> {
   const requestId = ctx.requestId;
   const startTime = Date.now();
@@ -46,29 +60,16 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
 
   // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
   if (isMockMode()) {
-    let json: unknown;
-    try {
-      json = await request.json();
-    } catch {
-      return new Response(
-        JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
-      );
-    }
-    const body = json as { userMessage?: string };
+    const result = await parseRequestJson(request, requestId);
+    if (result instanceof Response) return result;
+    const body = result.json as { userMessage?: string };
     log.info('mock_stream_request');
     return mockAgentStream({ userMessage: body.userMessage ?? '' });
   }
 
-  let json: unknown;
-  try {
-    json = await request.json();
-  } catch {
-    return new Response(
-      JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
-      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
-    );
-  }
+  const result = await parseRequestJson(request, requestId);
+  if (result instanceof Response) return result;
+  const json = result.json;
 
   const parsed = AgentStreamRequestSchema.safeParse(json);
   if (!parsed.success) {
