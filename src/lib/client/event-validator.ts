@@ -33,6 +33,8 @@ export function isValidAgentSSEEvent(data: unknown): data is AgentSSEEvent {
       if (!Array.isArray(batch.elements)) return false;
       for (const el of batch.elements) {
         if (el == null || typeof el !== 'object' || Array.isArray(el)) return false;
+        const elem = el as Record<string, unknown>;
+        if (typeof elem.id !== 'string' || typeof elem.type !== 'string') return false;
       }
       return true;
     }

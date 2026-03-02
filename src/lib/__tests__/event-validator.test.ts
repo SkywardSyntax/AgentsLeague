@@ -105,6 +105,26 @@ describe('isValidAgentSSEEvent', () => {
     expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ type: 'rect', id: 'r1' }] } })).toBe(true);
   });
 
+  it('rejects whiteboard.batch element missing id', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ type: 'rect' }] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch element missing type', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ id: 'r1' }] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch element with numeric id', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ id: 123, type: 'rect' }] } })).toBe(false);
+  });
+
+  it('accepts whiteboard.batch elements with extra fields', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ id: 'r1', type: 'rect', x: 10, y: 20, custom: true }] } })).toBe(true);
+  });
+
+  it('accepts whiteboard.batch with empty elements array', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [] } })).toBe(true);
+  });
+
   it('rejects diagnostics without violationsFixed array', () => {
     expect(isValidAgentSSEEvent({
       type: 'whiteboard.layout.diagnostics', turnId: 't1', batchId: 'b1',
