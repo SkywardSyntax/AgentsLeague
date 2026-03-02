@@ -231,12 +231,12 @@ export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegmen
     const p3 = i + 2 < points.length ? points[i + 2]! : { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y };
 
     const cp1: Point = {
-      x: p1.x + (p2.x - p0.x) / (6 / alpha),
-      y: p1.y + (p2.y - p0.y) / (6 / alpha),
+      x: p1.x + (p2.x - p0.x) * alpha / 6,
+      y: p1.y + (p2.y - p0.y) * alpha / 6,
     };
     const cp2: Point = {
-      x: p2.x - (p3.x - p1.x) / (6 / alpha),
-      y: p2.y - (p3.y - p1.y) / (6 / alpha),
+      x: p2.x - (p3.x - p1.x) * alpha / 6,
+      y: p2.y - (p3.y - p1.y) * alpha / 6,
     };
 
     segs.push({ p0: p1, cp1, cp2, p3: p2 });

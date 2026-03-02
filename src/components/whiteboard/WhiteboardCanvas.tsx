@@ -23,6 +23,7 @@ interface WhiteboardCanvasProps {
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
+const MAX_COMMITTED = 2000;
 
 import { clamp } from '@/lib/whiteboard/geometry';
 
@@ -217,6 +218,9 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
       if (completed.length > 0) {
         committedStrokesRef.current = committedStrokesRef.current.concat(completed);
+        if (committedStrokesRef.current.length > MAX_COMMITTED) {
+          committedStrokesRef.current = committedStrokesRef.current.slice(-MAX_COMMITTED);
+        }
         committedDirtyRef.current = true;
       }
       activeStrokesRef.current = nextActive;

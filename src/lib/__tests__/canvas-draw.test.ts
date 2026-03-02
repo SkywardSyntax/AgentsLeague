@@ -82,4 +82,17 @@ describe('drawSmoothStroke', () => {
     expect(ctx.bezierCurveTo).toHaveBeenCalled();
     expect(ctx.stroke).toHaveBeenCalledTimes(1);
   });
+
+  it('handles coincident (identical) points without error', () => {
+    const ctx = mockCtx();
+    const points = [{ x: 5, y: 5 }, { x: 5, y: 5 }];
+    expect(() => drawSmoothStroke(ctx, points, '#000', 1, camera, 1)).not.toThrow();
+  });
+
+  it('handles coincident points in drawStroke without error', () => {
+    const ctx = mockCtx();
+    const points = [{ x: 5, y: 5 }, { x: 5, y: 5 }];
+    expect(() => drawStroke(ctx, points, '#000', 1, camera, 1)).not.toThrow();
+    expect(ctx.beginPath).toHaveBeenCalled();
+  });
 });

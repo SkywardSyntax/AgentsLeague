@@ -151,9 +151,11 @@ export function weightedVisibleLength(
   const weightedCum: number[] = [0];
   for (let i = 1; i < n; i++) {
     const segLen = (cumulativeLens[i] ?? 0) - (cumulativeLens[i - 1] ?? 0);
-    const factor = speedFactors[i] ?? 1;
-    // Lower factor → more weighted time → pen lingers
-    weightedCum.push((weightedCum[i - 1] ?? 0) + segLen / factor);
+    const rawFactor = speedFactors[i] ?? 1;
+    // Guard ÷0 / NaN: fall back to uniform weighting for non-finite or non-positive factors
+    const safeWeight =
+      Number.isFinite(rawFactor) && rawFactor > 0 ? segLen / rawFactor : segLen;
+    weightedCum.push((weightedCum[i - 1] ?? 0) + safeWeight);
   }
   const totalWeighted = weightedCum[n - 1] ?? 0;
   if (totalWeighted <= 0) return totalLen * t;

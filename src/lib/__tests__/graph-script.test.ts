@@ -284,4 +284,94 @@ describe('parseGraphScriptToSemanticBatch', () => {
     expect(result.semanticBatch).toBeNull();
     expect(result.warnings.length).toBeGreaterThan(0);
   });
+
+  it('single-axis axes="X" is ignored (requires two labels)', () => {
+    const script = 'panel id=p1 axes=X';
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-1axis', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.axes).toBeUndefined();
+    }
+  });
+
+  it('panel with no axes attribute has no axes set', () => {
+    const script = 'panel id=p1\nshape id=s1 panel=p1 type=rect';
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-noax', script });
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.axes).toBeUndefined();
+    }
+  });
+
+  it('edge from=A.right to=B.left resolves directional anchors', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=A panel=p1 type=rect',
+      'shape id=B panel=p1 type=rect',
+      'edge id=e1 from=A.right to=B.left',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-anchdir', script });
+    expect(result.semanticBatch).not.toBeNull();
+    expect(result.semanticBatch!.relations).toHaveLength(1);
+    const rel = result.semanticBatch!.relations![0]!;
+    expect(rel.from_anchor).toBe('p1-A-right');
+    expect(rel.to_anchor).toBe('p1-B-left');
+  });
+
+  it('edge from=A to=B (no dot) resolves to center anchors', () => {
+    const script = [
+      'panel id=p1',
+      'shape id=A panel=p1 type=rect',
+      'shape id=B panel=p1 type=rect',
+      'edge id=e1 from=A to=B',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-anchctr', script });
+    expect(result.semanticBatch).not.toBeNull();
+    expect(result.semanticBatch!.relations).toHaveLength(1);
+    const rel = result.semanticBatch!.relations![0]!;
+    expect(rel.from_anchor).toBe('p1-A-center');
+    expect(rel.to_anchor).toBe('p1-B-center');
+  });
+
+  it('blank lines between commands are ignored', () => {
+    const script = 'panel id=p1\n\n\nshape id=s1 panel=p1 type=rect\n\n';
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-blanks', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes).toHaveLength(1);
+    }
+  });
+
+  it('trailing whitespace on commands parses correctly', () => {
+    const script = 'panel id=p1   \nshape id=s1 panel=p1 type=rect   ';
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-trail', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes).toHaveLength(1);
+    }
+  });
+
+  it('10 auto-posed nodes form a reasonable grid spread', () => {
+    const nodes = Array.from({ length: 10 }, (_, i) =>
+      `node id=n${i} graph=g1 label="N${i}"`,
+    );
+    const script = ['graph id=g1', ...nodes].join('\n');
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-10nodes', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes).toHaveLength(10);
+      const poses = panel.shapes!.map((s) => s.relative_pose!);
+      // Not all at origin
+      const uniqueX = new Set(poses.map((p) => p.x));
+      const uniqueY = new Set(poses.map((p) => p.y));
+      expect(uniqueX.size).toBeGreaterThan(1);
+      expect(uniqueY.size).toBeGreaterThan(1);
+    }
+  });
 });

@@ -232,11 +232,44 @@ describe('weightedVisibleLength', () => {
     expect(Number.isFinite(result)).toBe(true);
   });
 
-  it('NaN speed factors fall back to linear mapping', () => {
+  it('NaN speed factors fall back to uniform weighting', () => {
     const cum = [0, 10, 20];
     const factors = [NaN, NaN, NaN];
     const result = weightedVisibleLength(cum, factors, 0.5);
-    // factor defaults to 1 via ?? 1, so still finite
+    expect(Number.isFinite(result)).toBe(true);
+    // NaN factors → uniform weighting (segLen/1 equivalent), so midpoint ≈ 10
+    expect(result).toBeCloseTo(10, 5);
+  });
+
+  it('zero speed factor produces finite result', () => {
+    const cum = [0, 10, 20];
+    const factors = [1, 0, 1];
+    const result = weightedVisibleLength(cum, factors, 0.5);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(20);
+  });
+
+  it('negative speed factor produces finite result', () => {
+    const cum = [0, 10, 20];
+    const factors = [1, -0.5, 1];
+    const result = weightedVisibleLength(cum, factors, 0.5);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(20);
+  });
+
+  it('mixed NaN and valid factors produce finite result', () => {
+    const cum = [0, 10, 20];
+    const factors = [1, NaN, 1];
+    const result = weightedVisibleLength(cum, factors, 0.5);
+    expect(Number.isFinite(result)).toBe(true);
+  });
+
+  it('Infinity speed factor falls back to uniform', () => {
+    const cum = [0, 10, 20];
+    const factors = [1, Infinity, 1];
+    const result = weightedVisibleLength(cum, factors, 0.5);
     expect(Number.isFinite(result)).toBe(true);
   });
 });
