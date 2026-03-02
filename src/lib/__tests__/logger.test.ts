@@ -59,13 +59,13 @@ describe('logStreamEvent', () => {
     expect(parsed.eventCount).toBe(42);
   });
 
-  it('redacts userMessage to length only', () => {
+  it('redacts userMessage', () => {
     logStreamEvent('info', 'stream start', {
       requestId: 'r1',
       userMessage: 'This is my private question about finances',
     });
     const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
-    expect(parsed.userMessage).toBe('[REDACTED length=42]');
+    expect(parsed.userMessage).toBe('[REDACTED]');
     expect(parsed.userMessage).not.toContain('private');
   });
 
@@ -99,5 +99,55 @@ describe('logStreamEvent', () => {
     expect(parsed.requestId).toBe('r1');
     expect(parsed.sessionId).toBe('s1');
     expect(parsed.durationMs).toBe(100);
+  });
+
+  it('redacts nested sensitive fields', () => {
+    logStreamEvent('info', 'test', {
+      context: { userMessage: 'secret prompt' },
+    });
+    const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(parsed.context.userMessage).toBe('[REDACTED]');
+  });
+
+  it('redacts deeply nested api_key', () => {
+    logStreamEvent('info', 'test', {
+      data: { nested: { api_key: 'sk-xxx' } },
+    });
+    const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(parsed.data.nested.api_key).toBe('[REDACTED]');
+  });
+
+  it('handles circular references without throwing', () => {
+    const obj: Record<string, unknown> = { safe: 'value' };
+    obj.self = obj;
+    expect(() => logStreamEvent('info', 'test', obj)).not.toThrow();
+    const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(parsed.self).toBe('[Circular]');
+  });
+
+  it('does not leak sensitive values anywhere in JSON output', () => {
+    logStreamEvent('info', 'test', {
+      context: { userMessage: 'super-secret-value' },
+      token: 'tok-hidden',
+    });
+    const raw = consoleSpy.mock.calls[0][0] as string;
+    expect(raw).not.toContain('super-secret-value');
+    expect(raw).not.toContain('tok-hidden');
+  });
+
+  it('redacts case-insensitively (Bearer, Authorization)', () => {
+    logStreamEvent('info', 'test', { Bearer: 'xyz', Authorization: 'Basic abc' });
+    const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(parsed.Bearer).toBe('[REDACTED]');
+    expect(parsed.Authorization).toBe('[REDACTED]');
+  });
+
+  it('handles arrays of objects with sensitive fields', () => {
+    logStreamEvent('info', 'test', {
+      items: [{ apiKey: 'sk-1' }, { safe: 'ok' }],
+    });
+    const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(parsed.items[0].apiKey).toBe('[REDACTED]');
+    expect(parsed.items[1].safe).toBe('ok');
   });
 });

@@ -46,28 +46,36 @@ export function logStreamEvent(
   }
 }
 
-const REDACTED_KEYS = new Set([
-  'userMessage',
-  'user_message',
-  'password',
-  'token',
-  'secret',
-  'apiKey',
-  'api_key',
-  'authorization',
-]);
+const SENSITIVE_KEY_PATTERN = /^(user_?message|password|token|secret|api_?key|authorization|bearer)$/i;
+
+const MAX_REDACT_DEPTH = 5;
+
+function redactDeep(obj: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+
+  if (seen.has(obj as object)) return '[Circular]';
+  seen.add(obj as object);
+
+  if (depth > MAX_REDACT_DEPTH) return '[MAX_DEPTH]';
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => redactDeep(item, depth + 1, seen));
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      result[key] = '[REDACTED]';
+    } else {
+      result[key] = redactDeep(value, depth + 1, seen);
+    }
+  }
+  return result;
+}
 
 function redactSensitiveFields(
   data: Record<string, unknown>,
 ): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (REDACTED_KEYS.has(key)) {
-      result[key] =
-        typeof value === 'string' ? `[REDACTED length=${value.length}]` : '[REDACTED]';
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
+  return redactDeep(data) as Record<string, unknown>;
 }

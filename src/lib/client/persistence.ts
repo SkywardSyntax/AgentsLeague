@@ -36,6 +36,91 @@ const MessageSchema = z.object({
   createdAt: z.number(),
 });
 
+// --- Typed element schemas (runtime Zod equivalents of TS types) ---
+
+const PointSchema = z.object({ x: z.number(), y: z.number() });
+
+const BaseDrawElementSchema = z.object({
+  id: z.string(),
+  color: z.string().optional(),
+  stroke_width: z.number().optional(),
+});
+
+const RectSchema = BaseDrawElementSchema.extend({
+  type: z.literal('rect'),
+  x: z.number(), y: z.number(), w: z.number(), h: z.number(),
+}).passthrough();
+
+const EllipseSchema = BaseDrawElementSchema.extend({
+  type: z.literal('ellipse'),
+  cx: z.number(), cy: z.number(), rx: z.number(), ry: z.number(),
+}).passthrough();
+
+const LineSchema = BaseDrawElementSchema.extend({
+  type: z.literal('line'),
+  from: PointSchema, to: PointSchema,
+}).passthrough();
+
+const ArrowSchema = BaseDrawElementSchema.extend({
+  type: z.literal('arrow'),
+  from: PointSchema, to: PointSchema,
+}).passthrough();
+
+const TextSchema = BaseDrawElementSchema.extend({
+  type: z.literal('text'),
+  x: z.number(), y: z.number(), text: z.string(),
+  size: z.number().optional(),
+}).passthrough();
+
+const LatexSchema = BaseDrawElementSchema.extend({
+  type: z.literal('latex'),
+  x: z.number(), y: z.number(), tex: z.string(),
+  displayMode: z.boolean().optional(),
+  fontSize: z.number().optional(),
+  align: z.enum(['left', 'center', 'right']).optional(),
+}).passthrough();
+
+const ClearSchema = BaseDrawElementSchema.extend({
+  type: z.literal('clear'),
+}).passthrough();
+
+const DrawElementSchema = z.discriminatedUnion('type', [
+  RectSchema, EllipseSchema, LineSchema, ArrowSchema,
+  TextSchema, LatexSchema, ClearSchema,
+]);
+
+const SemanticBatchSchema = z.object({
+  batch_id: z.string(),
+  template: z.string(),
+  blocks: z.array(z.object({ id: z.string(), kind: z.string() }).passthrough()),
+  intent: z.string().optional(),
+}).passthrough();
+
+const PlannerMetaSchema = z.object({
+  batchId: z.string(),
+  violationsFixed: z.array(z.string()),
+  templateUsed: z.string(),
+  fallbackUsed: z.boolean(),
+}).passthrough();
+
+/** Filter array to only elements passing schema; tolerant for legacy data. */
+function filterValidElements<T>(arr: unknown[], schema: z.ZodType<T>): T[] {
+  const result: T[] = [];
+  for (const item of arr) {
+    const parsed = schema.safeParse(item);
+    if (parsed.success) result.push(parsed.data);
+  }
+  return result;
+}
+
+/** Tolerant array schema: accepts any array, filters to valid typed elements. */
+function tolerantArray<T>(schema: z.ZodType<T>) {
+  return z.preprocess(
+    (val) => Array.isArray(val) ? filterValidElements(val, schema) : [],
+    z.array(z.any()),
+  ) as unknown as z.ZodType<T[]>;
+}
+
 const PersistedSessionV3Schema = z.object({
   version: z.literal(3),
   updatedAt: z.number(),
@@ -47,9 +132,9 @@ const PersistedSessionV3Schema = z.object({
       createdAt: z.number(),
       updatedAt: z.number(),
       messages: z.array(MessageSchema),
-      semanticScene: z.array(z.any()),
-      scene: z.array(z.any()),
-      plannerMeta: z.array(z.any()),
+      semanticScene: tolerantArray(SemanticBatchSchema),
+      scene: tolerantArray(DrawElementSchema),
+      plannerMeta: tolerantArray(PlannerMetaSchema),
     }),
   ),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
@@ -66,7 +151,7 @@ const PersistedSessionV2Schema = z.object({
       createdAt: z.number(),
       updatedAt: z.number(),
       messages: z.array(MessageSchema),
-      scene: z.array(z.any()),
+      scene: tolerantArray(DrawElementSchema),
     }),
   ),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
@@ -76,7 +161,7 @@ const LegacyPersistedSessionV1Schema = z.object({
   version: z.literal(1),
   updatedAt: z.number(),
   messages: z.array(MessageSchema),
-  scene: z.array(z.any()),
+  scene: tolerantArray(DrawElementSchema),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
 });
 
@@ -110,7 +195,7 @@ function migrateV2toV3(v2: z.infer<typeof PersistedSessionV2Schema>): PersistedS
       ...chat,
       semanticScene: [importedLegacySemanticBatch(chat.id, chat.scene.length)],
       plannerMeta: [],
-      scene: chat.scene as DrawElement[],
+      scene: chat.scene,
     })),
     prefs: v2.prefs,
   };
@@ -131,7 +216,7 @@ function migrateV1toV3(legacy: z.infer<typeof LegacyPersistedSessionV1Schema>): 
         messages: legacy.messages,
         semanticScene: [importedLegacySemanticBatch(chatId, legacy.scene.length)],
         plannerMeta: [],
-        scene: legacy.scene as DrawElement[],
+        scene: legacy.scene,
       },
     ],
     prefs: legacy.prefs,
@@ -148,7 +233,7 @@ export function loadSession(): PersistedSessionV3 | null {
 
     const v3 = PersistedSessionV3Schema.safeParse(parsed);
     if (v3.success) {
-      return v3.data as PersistedSessionV3;
+      return v3.data as unknown as PersistedSessionV3;
     }
 
     const v2 = PersistedSessionV2Schema.safeParse(parsed);

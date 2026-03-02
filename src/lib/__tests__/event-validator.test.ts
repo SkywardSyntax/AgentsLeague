@@ -130,6 +130,62 @@ describe('isValidAgentSSEEvent', () => {
       type: 'whiteboard.layout.diagnostics', turnId: 't1', batchId: 'b1',
     })).toBe(false);
   });
+
+  it('rejects diagnostics without templateUsed', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.layout.diagnostics', turnId: 't1', batchId: 'b1',
+      violationsFixed: [], fallbackUsed: false,
+    })).toBe(false);
+  });
+
+  it('rejects diagnostics without fallbackUsed boolean', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.layout.diagnostics', turnId: 't1', batchId: 'b1',
+      violationsFixed: [], templateUsed: 'legacy_draw_batch', fallbackUsed: 'yes',
+    })).toBe(false);
+  });
+});
+
+describe('strict field-type validation', () => {
+  it('rejects whiteboard.batch with batch as string', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.batch', turnId: 't1', batch: 'string',
+    })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with batch.elements as non-array', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: 'not-array' },
+    })).toBe(false);
+  });
+
+  it('rejects assistant.text.delta with delta as number', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'assistant.text.delta', turnId: 't1', delta: 42,
+    })).toBe(false);
+  });
+
+  it('rejects error with retryable as string', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'error', turnId: 't1', code: 'E1', message: 'fail', retryable: 'yes',
+    })).toBe(false);
+  });
+
+  it('accepts valid events with extra unknown fields (forward-compatible)', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'turn.done', turnId: 't1', futureField: 'v2-data', anotherField: 123,
+    })).toBe(true);
+    expect(isValidAgentSSEEvent({
+      type: 'assistant.text.delta', turnId: 't1', delta: 'hi', newMeta: { x: 1 },
+    })).toBe(true);
+  });
+
+  it('accepts whiteboard.batch elements with extra unknown fields', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.batch', turnId: 't1',
+      batch: { batch_id: 'b1', elements: [{ id: 'r1', type: 'rect', unknownProp: true }] },
+    })).toBe(true);
+  });
 });
 
 // Circuit breaker behavior is tested via the parse loop in useAgentStream.

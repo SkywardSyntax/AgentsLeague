@@ -78,7 +78,7 @@ describe('loadSession — error recovery', () => {
           createdAt: 500,
           updatedAt: 1000,
           messages: [],
-          scene: [{ type: 'rect' }, { type: 'ellipse' }],
+          scene: [{ type: 'rect', id: 'r1', x: 0, y: 0, w: 10, h: 10 }, { type: 'ellipse', id: 'e1', cx: 0, cy: 0, rx: 5, ry: 5 }],
         },
       ],
       prefs: { panelSizes: [40, 60] },
@@ -99,5 +99,75 @@ describe('loadSession — error recovery', () => {
     if (block.kind === 'caption') {
       expect(block.text).toContain('2 elements');
     }
+  });
+});
+
+describe('loadSession — typed schema validation', () => {
+  beforeEach(() => {
+    Object.keys(store).forEach((k) => delete store[k]);
+    vi.clearAllMocks();
+  });
+
+  it('filters out scene elements missing the type field', () => {
+    const session = makeV3Session();
+    session.chats[0].scene = [
+      { type: 'rect', id: 'r1', x: 0, y: 0, w: 50, h: 50 } as any,
+      { id: 'bad', x: 0, y: 0 } as any,
+    ];
+    saveSession(session);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].scene).toHaveLength(1);
+    expect(loaded!.chats[0].scene[0].id).toBe('r1');
+  });
+
+  it('loads valid session with properly typed scene elements', () => {
+    const session = makeV3Session();
+    session.chats[0].scene = [
+      { type: 'text', id: 't1', x: 10, y: 20, text: 'hello' },
+      { type: 'clear', id: 'c1' },
+    ];
+    saveSession(session);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].scene).toHaveLength(2);
+  });
+
+  it('filters invalid elements from semanticScene while keeping valid ones', () => {
+    const session = makeV3Session();
+    session.chats[0].semanticScene = [
+      {
+        batch_id: 'b1', template: 'freeform_semantic',
+        blocks: [{ id: 'bl1', kind: 'caption', text: 'ok', region_hint: 'bottom' }],
+      },
+      { missing: 'fields' } as any,
+    ];
+    saveSession(session);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].semanticScene).toHaveLength(1);
+    expect(loaded!.chats[0].semanticScene[0].batch_id).toBe('b1');
+  });
+
+  it('V2 migration preserves valid scene elements through typed schema', () => {
+    const v2Data = {
+      version: 2,
+      updatedAt: 1000,
+      activeChatId: 'c1',
+      chats: [{
+        id: 'c1', title: 'Legacy', createdAt: 500, updatedAt: 1000,
+        messages: [],
+        scene: [
+          { type: 'rect', id: 'r1', x: 0, y: 0, w: 10, h: 10 },
+          { broken: true },
+        ],
+      }],
+      prefs: { panelSizes: [40, 60] },
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(v2Data));
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].scene).toHaveLength(1);
+    expect(loaded!.chats[0].scene[0].type).toBe('rect');
   });
 });
