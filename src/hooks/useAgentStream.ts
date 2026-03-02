@@ -16,6 +16,7 @@ export interface StreamHandlers {
 
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
@@ -33,6 +34,7 @@ export function useAgentStream() {
       handlers: StreamHandlers;
     }) => {
       cancel();
+      const gen = ++generationRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -56,7 +58,9 @@ export function useAgentStream() {
         });
 
         if (!res.ok || !res.body) {
-          args.handlers.onError(`Stream request failed with status ${res.status}`);
+          if (gen === generationRef.current) {
+            args.handlers.onError(`Stream request failed with status ${res.status}`);
+          }
           return;
         }
 
@@ -84,9 +88,9 @@ export function useAgentStream() {
               if (!json) continue;
               try {
                 const event = JSON.parse(json) as AgentSSEEvent;
-                args.handlers.onEvent(event);
+                if (gen === generationRef.current) args.handlers.onEvent(event);
               } catch {
-                args.handlers.onError('Invalid SSE JSON payload received');
+                if (gen === generationRef.current) args.handlers.onError('Invalid SSE JSON payload received');
               }
             }
           }
@@ -97,15 +101,17 @@ export function useAgentStream() {
           const json = trailing.slice(5).trim();
           if (json) {
             try {
-              args.handlers.onEvent(JSON.parse(json) as AgentSSEEvent);
+              if (gen === generationRef.current) args.handlers.onEvent(JSON.parse(json) as AgentSSEEvent);
             } catch {
-              args.handlers.onError('Invalid trailing SSE JSON payload received');
+              if (gen === generationRef.current) args.handlers.onError('Invalid trailing SSE JSON payload received');
             }
           }
         }
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;
-        args.handlers.onError(error instanceof Error ? error.message : 'Stream aborted unexpectedly');
+        if (gen === generationRef.current) {
+          args.handlers.onError(error instanceof Error ? error.message : 'Stream aborted unexpectedly');
+        }
       } finally {
         abortRef.current = null;
       }

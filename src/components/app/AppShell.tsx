@@ -280,6 +280,7 @@ export function AppShell() {
     (chatId: string) => {
       if (status !== 'idle') return;
       if (chatId === activeChatId) return;
+      lastTurnEventsRef.current = [];
       dispatch({ type: 'SELECT_CHAT', chatId });
       setActiveChatId(chatId);
       setInput('');
@@ -427,7 +428,7 @@ export function AppShell() {
           ))}
         </div>
       ) : null,
-    [activeChat?.warnings],
+    [activeChat?.id, activeChat?.warnings],
   );
 
   const statusLabel =
