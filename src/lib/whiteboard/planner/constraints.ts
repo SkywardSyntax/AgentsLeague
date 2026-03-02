@@ -70,9 +70,10 @@ function ensureCanvasBounds(
   elements: DrawElement[],
   config: PlannerConfig,
   fixes: Set<string>,
+  cache: BoundsCache,
 ): DrawElement[] {
   return elements.map((el) => {
-    const b = boundsOf(el);
+    const b = cache.get(el);
     if (!b) return el;
 
     let dx = 0;
@@ -101,7 +102,12 @@ function ensureCanvasBounds(
     if (dx !== 0) fixes.add('shift_x');
     if (dy !== 0) fixes.add('shift_y');
 
-    return dx !== 0 || dy !== 0 ? shiftElement(el, dx, dy) : el;
+    if (dx !== 0 || dy !== 0) {
+      const shifted = shiftElement(el, dx, dy);
+      cache.updateAfterShift(el.id, dx, dy);
+      return shifted;
+    }
+    return el;
   });
 }
 
@@ -109,9 +115,10 @@ function resolveTextSpacing(
   elements: DrawElement[],
   config: PlannerConfig,
   fixes: Set<string>,
+  cache: BoundsCache,
 ): DrawElement[] {
   const textItems = elements
-    .map((el, idx) => ({ el, idx, b: boundsOf(el) }))
+    .map((el, idx) => ({ el, idx, b: cache.get(el) }))
     .filter((entry): entry is { el: DrawElement; idx: number; b: WhiteboardBounds } =>
       Boolean(entry.b) && isTextLike(entry.el),
     )
@@ -120,19 +127,20 @@ function resolveTextSpacing(
   const next = [...elements];
   for (let i = 1; i < textItems.length; i++) {
     const current = textItems[i]!;
-    let currentBounds = boundsOf(next[current.idx]);
+    let currentBounds = cache.get(next[current.idx]!);
     if (!currentBounds) continue;
 
     for (let j = 0; j < i; j++) {
       const prev = textItems[j]!;
-      const prevBounds = boundsOf(next[prev.idx]);
+      const prevBounds = cache.get(next[prev.idx]!);
       if (!prevBounds) continue;
       if (horizontalOverlap(currentBounds, prevBounds) < 10) continue;
 
       const needed = prevBounds.maxY + config.minTextGap - currentBounds.minY;
       if (needed > 0) {
         next[current.idx] = shiftElement(next[current.idx]!, 0, needed);
-        currentBounds = boundsOf(next[current.idx]);
+        cache.updateAfterShift(current.el.id, 0, needed);
+        currentBounds = cache.get(next[current.idx]!);
         if (!currentBounds) break;
         fixes.add('shift_y');
       }
@@ -146,9 +154,10 @@ function resolveLabelShapeSpacing(
   elements: DrawElement[],
   config: PlannerConfig,
   fixes: Set<string>,
+  cache: BoundsCache,
 ): DrawElement[] {
   const shapes = elements
-    .map((el, idx) => ({ el, idx, b: boundsOf(el) }))
+    .map((el, idx) => ({ el, idx, b: cache.get(el) }))
     .filter((entry): entry is { el: DrawElement; idx: number; b: WhiteboardBounds } =>
       Boolean(entry.b) && isShapeLike(entry.el),
     );
@@ -161,7 +170,7 @@ function resolveLabelShapeSpacing(
     const id = (el as { id: string }).id.toLowerCase();
     if (!id.includes('label') && !id.includes('caption') && !id.includes('title')) continue;
 
-    let b = boundsOf(el);
+    let b = cache.get(el);
     if (!b) continue;
 
     for (const shape of shapes) {
@@ -169,7 +178,8 @@ function resolveLabelShapeSpacing(
       const needed = shape.b.maxY + config.minLabelGap - b.minY;
       if (needed > 0) {
         next[i] = shiftElement(next[i]!, 0, needed);
-        b = boundsOf(next[i]);
+        cache.updateAfterShift(el.id, 0, needed);
+        b = cache.get(next[i]!);
         if (!b) break;
         fixes.add('shift_y');
       }
@@ -221,9 +231,9 @@ function resolveShapeSpacing(
   return next;
 }
 
-function hasTextOverlap(elements: DrawElement[]): boolean {
+function hasTextOverlap(elements: DrawElement[], cache: BoundsCache): boolean {
   const items = elements
-    .map((el) => ({ el, b: boundsOf(el) }))
+    .map((el) => ({ el, b: cache.get(el) }))
     .filter((entry): entry is { el: DrawElement; b: WhiteboardBounds } =>
       Boolean(entry.b) && isTextLike(entry.el),
     );
@@ -240,7 +250,7 @@ function hasTextOverlap(elements: DrawElement[]): boolean {
 
   // Also check text-shape overlaps to avoid false convergence
   const shapes = elements
-    .map((el) => ({ el, b: boundsOf(el) }))
+    .map((el) => ({ el, b: cache.get(el) }))
     .filter((entry): entry is { el: DrawElement; b: WhiteboardBounds } =>
       Boolean(entry.b) && isShapeLike(entry.el),
     );
@@ -261,9 +271,10 @@ function fallbackVerticalReflow(
   elements: DrawElement[],
   config: PlannerConfig,
   fixes: Set<string>,
+  cache: BoundsCache,
 ): DrawElement[] {
   const sortedText = elements
-    .map((el, idx) => ({ el, idx, b: boundsOf(el) }))
+    .map((el, idx) => ({ el, idx, b: cache.get(el) }))
     .filter((entry): entry is { el: DrawElement; idx: number; b: WhiteboardBounds } =>
       Boolean(entry.b) && isTextLike(entry.el),
     )
@@ -291,14 +302,15 @@ function fallbackVerticalReflow(
     let y = col[0]!.b.minY;
     for (const item of col) {
       const current = next[item.idx]!;
-      const b = boundsOf(current);
+      const b = cache.get(current);
       if (!b) continue;
       const dy = y - b.minY;
       if (Math.abs(dy) > 0.5) {
         next[item.idx] = shiftElement(current, 0, dy);
+        cache.updateAfterShift(item.el.id, 0, dy);
         fixes.add('region_reflow');
       }
-      const nextBounds = boundsOf(next[item.idx]!);
+      const nextBounds = cache.get(next[item.idx]!);
       if (!nextBounds) continue;
       y = nextBounds.maxY + config.minTextGap;
     }
@@ -342,13 +354,14 @@ export function enforceDrawBatchConstraints(
   let elements = [...batch.elements];
   let prevElementHash = '';
   for (let i = 0; i < config.maxRepairIterations; i++) {
+    cache.clear();
     elements = enforceArrowLegibility(elements, fixes);
-    elements = resolveTextSpacing(elements, config, fixes);
-    elements = resolveLabelShapeSpacing(elements, config, fixes);
+    elements = resolveTextSpacing(elements, config, fixes, cache);
+    elements = resolveLabelShapeSpacing(elements, config, fixes, cache);
     elements = resolveShapeSpacing(elements, config, fixes, cache);
-    elements = ensureCanvasBounds(elements, config, fixes);
+    elements = ensureCanvasBounds(elements, config, fixes, cache);
 
-    if (!hasTextOverlap(elements)) {
+    if (!hasTextOverlap(elements, cache)) {
       return {
         batch: { ...batch, elements },
         violationsFixed: [...fixes],
@@ -356,14 +369,15 @@ export function enforceDrawBatchConstraints(
       };
     }
 
-    // Fixed-point detection: stop if element positions didn't change
-    const curHash = elements.map((el) => el.id + JSON.stringify(cache.get(el))).join('|');
+    // Fixed-point detection: hash from element properties directly (not cache)
+    const curHash = elements.map((el) => JSON.stringify(el)).join('|');
     if (curHash === prevElementHash) break;
     prevElementHash = curHash;
   }
 
-  elements = fallbackVerticalReflow(elements, config, fixes);
-  elements = ensureCanvasBounds(elements, config, fixes);
+  cache.clear();
+  elements = fallbackVerticalReflow(elements, config, fixes, cache);
+  elements = ensureCanvasBounds(elements, config, fixes, cache);
 
   return {
     batch: { ...batch, elements },
