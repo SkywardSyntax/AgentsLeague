@@ -143,6 +143,13 @@ test.describe('Error Scenarios', () => {
   test('send button is disabled during active stream (prevents rapid double-send)', async ({
     page,
   }) => {
+    // Count actual network requests to the stream endpoint
+    let requestCount = 0;
+    await page.route('/api/agent/stream', (route) => {
+      requestCount++;
+      return route.continue();
+    });
+
     const chatInput = page.locator('[data-testid="chat-input"]');
     await chatInput.fill('draw a biology cell');
     await page.locator('[data-testid="chat-send"]').click();
@@ -153,9 +160,15 @@ test.describe('Error Scenarios', () => {
     });
     await expect(page.locator('[data-testid="chat-send"]')).toBeDisabled();
 
+    // Attempt a second click while streaming — should be blocked
+    await page.locator('[data-testid="chat-send"]').click({ force: true });
+
     // Wait for completion
     await expect(page.locator('[data-testid="status-label"]')).toHaveText('Ready', {
       timeout: 15_000,
     });
+
+    // Only one network request should have been made
+    expect(requestCount).toBe(1);
   });
 });
