@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '@/types/agent';
 import { downloadChatAsMarkdown, downloadChatAsJson } from '@/lib/client/export-chat';
 import { MessageContent } from './MessageContent';
+import { MessageErrorBoundary } from './MessageErrorBoundary';
 import { MessageSearch } from './MessageSearch';
 
 export interface ChatThreadMeta {
@@ -302,7 +303,9 @@ export function ChatPanel({
                   Delete
                 </button>
               </div>
-              <MessageContent content={message.content} />
+              <MessageErrorBoundary fallbackText={message.content.slice(0, 120)}>
+                <MessageContent content={message.content} />
+              </MessageErrorBoundary>
             </article>
           );
         })}
@@ -321,6 +324,7 @@ export function ChatPanel({
             aria-label="Message input"
             value={input}
             onChange={(e) => onInput(e.target.value)}
+            maxLength={8000}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

@@ -426,7 +426,7 @@ export function AppShell() {
     (rawInput: string): boolean => {
       if (!activeChat) return false;
       const message = rawInput.trim();
-      if (!message || status !== 'idle') return false;
+      if (!message || message.length > 8000 || status !== 'idle') return false;
 
       const chatId = activeChat.id;
       const userMessage = createMessage('user', message);
