@@ -189,4 +189,50 @@ test.describe('Accessibility — axe-core WCAG AA', () => {
     expect(labelText).toBeTruthy();
     expect(['Ready', 'Thinking', 'Responding', 'Drawing']).toContain(labelText);
   });
+
+  test('Stop button cancels active stream and returns to Ready', async ({ page }) => {
+    // Mock a long-running SSE stream that sends an initial delta then hangs
+    // indefinitely, providing a deterministic streaming state.
+    await page.route('/api/agent/stream', async (route) => {
+      const body =
+        'data: {"type":"assistant.text.delta","turnId":"hang-1","delta":"Streaming..."}\n\n';
+      await route.fulfill({
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body,
+        // Stream ends after the single delta — no turn.done, so app stays in non-idle state
+      });
+    });
+
+    const chatInput = page.locator('[data-testid="chat-input"]');
+    await chatInput.fill('trigger hanging stream');
+    await page.locator('[data-testid="chat-send"]').click();
+
+    // Wait for the status to leave Ready (deterministic: route always returns a delta)
+    await expect(page.locator('[data-testid="status-label"]')).not.toHaveText('Ready', {
+      timeout: 5_000,
+    });
+
+    // The Stop button should now be enabled
+    const stopBtn = page.locator('[data-testid="chat-stop"]');
+    await expect(stopBtn).toBeEnabled();
+
+    // Click Stop to cancel the stream
+    await stopBtn.click();
+
+    // App should return to Ready
+    await expect(page.locator('[data-testid="status-label"]')).toHaveText('Ready', {
+      timeout: 10_000,
+    });
+
+    // Stop button should be disabled again
+    await expect(stopBtn).toBeDisabled();
+
+    // Chat input should be usable again
+    await expect(chatInput).toBeEnabled();
+  });
 });

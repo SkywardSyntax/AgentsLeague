@@ -160,4 +160,30 @@ test.describe('Session Persistence Across Page Reload', () => {
     // Input should be enabled and the app is usable
     await expect(chatInput).toBeEnabled();
   });
+
+  test('recovers from corrupt localStorage data', async ({ page }) => {
+    // Inject corrupt (unparseable) JSON into the session storage key
+    await page.evaluate(() => {
+      localStorage.setItem('agentsleague:session:v1', '{corrupt data!!!');
+    });
+
+    await page.reload();
+
+    // App should load without crashing — chat panel visible
+    await expect(page.locator('[data-testid="chat-panel"]')).toBeVisible({ timeout: 10_000 });
+
+    // Should start with a fresh session — no messages
+    await expect(page.locator('[data-testid="chat-message-user"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="chat-message-assistant"]')).toHaveCount(0);
+
+    // Corrupt data should have been cleaned up from localStorage
+    const hasData = await page.evaluate(() => {
+      return localStorage.getItem('agentsleague:session:v1');
+    });
+    expect(hasData).toBeNull();
+
+    // App should be functional: status is Ready and input is usable
+    await expect(page.locator('[data-testid="status-label"]')).toHaveText('Ready');
+    await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled();
+  });
 });
