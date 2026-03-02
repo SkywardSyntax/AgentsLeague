@@ -156,6 +156,14 @@ export function AppShell() {
   >(new Map());
   const { run, cancel } = useAgentStream();
 
+  const resetStreamState = useCallback(() => {
+    streamChatIdRef.current = null;
+    currentAssistantMessageId.current = null;
+    turnHadRenderableOutputRef.current = false;
+    turnSawToolBatchRef.current = false;
+    pendingDiagnosticsRef.current.clear();
+  }, []);
+
   const activeChat = useMemo(
     () => chatSessions.find((chat) => chat.id === activeChatId) ?? chatSessions[0] ?? null,
     [activeChatId, chatSessions],
@@ -370,10 +378,8 @@ export function AppShell() {
 
       if (event.type === 'error') {
         currentAssistantMessageId.current = null;
-        streamChatIdRef.current = null;
+        resetStreamState();
         setStatus('idle');
-        turnSawToolBatchRef.current = false;
-        pendingDiagnosticsRef.current.clear();
         setChatSessions((prev) =>
           prev.map((chat) =>
             chat.id === targetChatId
@@ -404,14 +410,11 @@ export function AppShell() {
           }),
         );
         turnHadRenderableOutputRef.current = false;
-        currentAssistantMessageId.current = null;
-        streamChatIdRef.current = null;
-        turnSawToolBatchRef.current = false;
-        pendingDiagnosticsRef.current.clear();
+        resetStreamState();
         setStatus('idle');
       }
     },
-    [pushWarning],
+    [pushWarning, resetStreamState],
   );
 
   const sendMessage = useCallback(
@@ -442,11 +445,9 @@ export function AppShell() {
         }),
       );
       setStatus('thinking');
-      currentAssistantMessageId.current = null;
+      resetStreamState();
       turnHadRenderableOutputRef.current = false;
-      turnSawToolBatchRef.current = false;
       streamChatIdRef.current = chatId;
-      pendingDiagnosticsRef.current.clear();
       lastTurnEventsRef.current = ['turn.started'];
 
       void run({
@@ -460,12 +461,9 @@ export function AppShell() {
           onEvent: handleEvent,
           onError: (msg) => {
             const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
-            currentAssistantMessageId.current = null;
             turnHadRenderableOutputRef.current = true;
-            streamChatIdRef.current = null;
+            resetStreamState();
             setStatus('idle');
-            turnSawToolBatchRef.current = false;
-            pendingDiagnosticsRef.current.clear();
             lastTurnEventsRef.current.push('error');
             if (!targetChatId) return;
 
@@ -485,7 +483,7 @@ export function AppShell() {
       });
       return true;
     },
-    [activeChat, handleEvent, run, sessionId, status],
+    [activeChat, handleEvent, resetStreamState, run, sessionId, status],
   );
 
   const send = useCallback(() => {
@@ -499,12 +497,8 @@ export function AppShell() {
     setChatSessions((prev) => [nextChat, ...prev]);
     setActiveChatId(nextChat.id);
     setInput('');
-    currentAssistantMessageId.current = null;
-    turnHadRenderableOutputRef.current = false;
-    turnSawToolBatchRef.current = false;
-    streamChatIdRef.current = null;
-    pendingDiagnosticsRef.current.clear();
-  }, [chatSessions.length, status]);
+    resetStreamState();
+  }, [chatSessions.length, resetStreamState, status]);
 
   const selectChat = useCallback(
     (chatId: string) => {
@@ -512,13 +506,9 @@ export function AppShell() {
       if (chatId === activeChatId) return;
       setActiveChatId(chatId);
       setInput('');
-      currentAssistantMessageId.current = null;
-      turnHadRenderableOutputRef.current = false;
-      turnSawToolBatchRef.current = false;
-      streamChatIdRef.current = null;
-      pendingDiagnosticsRef.current.clear();
+      resetStreamState();
     },
-    [activeChatId, status],
+    [activeChatId, resetStreamState, status],
   );
 
   const deleteChat = useCallback(
@@ -546,10 +536,7 @@ export function AppShell() {
       if (streamChatIdRef.current === chatId) {
         cancel();
         setStatus('idle');
-        streamChatIdRef.current = null;
-        currentAssistantMessageId.current = null;
-        turnHadRenderableOutputRef.current = false;
-        turnSawToolBatchRef.current = false;
+        resetStreamState();
       }
 
       if (nextActiveId) {
@@ -557,17 +544,13 @@ export function AppShell() {
         setInput('');
       }
     },
-    [cancel, status],
+    [cancel, resetStreamState, status],
   );
 
   const clearActiveChat = useCallback(() => {
     if (!activeChat || status !== 'idle') return;
 
-    currentAssistantMessageId.current = null;
-    turnHadRenderableOutputRef.current = false;
-    turnSawToolBatchRef.current = false;
-    streamChatIdRef.current = null;
-    pendingDiagnosticsRef.current.clear();
+    resetStreamState();
 
     const clearBatch: DrawBatch = {
       batch_id: `clear-${createId()}`,
@@ -591,7 +574,7 @@ export function AppShell() {
           : chat,
       ),
     );
-  }, [activeChat, status]);
+  }, [activeChat, resetStreamState, status]);
 
   const clearForAgent = useCallback(() => {
     clearActiveChat();
@@ -735,10 +718,10 @@ export function AppShell() {
         </header>
 
         <div
-          className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 lg:flex-row"
+          className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 md:flex-row"
           style={{ ['--left-width' as string]: `${panelSizes[0]}%` }}
         >
-          <section data-testid="whiteboard-canvas" className={isAgentMode ? 'h-full w-full' : 'h-[56%] w-full lg:h-full lg:w-[var(--left-width)]'}>
+          <section data-testid="whiteboard-canvas" className={isAgentMode ? 'h-full w-full' : 'h-[56%] w-full md:h-full md:w-[var(--left-width)]'}>
             <WhiteboardCanvas
               key={activeChat.id}
               batches={activeChat.batches}
@@ -750,16 +733,17 @@ export function AppShell() {
             <div
               role="separator"
               aria-orientation="vertical"
-              className="group relative hidden w-2 cursor-col-resize rounded-full bg-transparent lg:block"
+              className="group relative hidden w-2 cursor-col-resize rounded-full bg-transparent md:block"
               onPointerDown={(e) => {
-                const startX = e.clientX;
+                let lastX = e.clientX;
                 const target = e.currentTarget;
                 target.setPointerCapture(e.pointerId);
 
                 const onMove = (ev: PointerEvent) => {
-                  const dx = ev.clientX - startX;
-                  const vw = window.innerWidth;
-                  resizeBy((dx / vw) * 100);
+                  const dx = ev.clientX - lastX;
+                  lastX = ev.clientX;
+                  const containerWidth = target.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+                  resizeBy((dx / containerWidth) * 100);
                 };
                 const onUp = () => {
                   target.removeEventListener('pointermove', onMove);
@@ -776,7 +760,7 @@ export function AppShell() {
           )}
 
           {!isAgentMode && (
-            <section data-testid="chat-panel" className="h-[44%] min-h-0 w-full lg:h-full lg:flex-1">
+            <section data-testid="chat-panel" className="h-[44%] min-h-0 w-full md:h-full md:flex-1">
               <ChatPanel
                 chats={chatMeta}
                 activeChatId={activeChat.id}
@@ -787,11 +771,7 @@ export function AppShell() {
                 onSend={send}
                 onCancel={() => {
                   cancel();
-                  streamChatIdRef.current = null;
-                  currentAssistantMessageId.current = null;
-                  turnHadRenderableOutputRef.current = false;
-                  turnSawToolBatchRef.current = false;
-                  pendingDiagnosticsRef.current.clear();
+                  resetStreamState();
                   setStatus('idle');
                 }}
                 onSelectChat={selectChat}

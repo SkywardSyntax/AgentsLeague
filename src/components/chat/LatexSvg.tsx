@@ -19,6 +19,12 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const cacheKey = `${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
   const cached = svgCache.get(cacheKey);
 
+  // Promote to most-recently-used on access (Map preserves insertion order)
+  if (cached) {
+    svgCache.delete(cacheKey);
+    svgCache.set(cacheKey, cached);
+  }
+
   useEffect(() => {
     let cancelled = false;
     if (cached) return;

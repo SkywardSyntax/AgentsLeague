@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import type { ChatMessage } from '@/types/agent';
 import { MessageContent } from './MessageContent';
 
@@ -44,6 +45,18 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
   const canManageChats = status === 'idle';
+  const seenMessageIdsRef = useRef<Set<string>>(new Set());
+
+  // Mark all current message IDs as seen after render, animate only new ones
+  const currentIds = new Set(messages.map((m) => m.id));
+  const newMessageIds = new Set<string>();
+  for (const id of currentIds) {
+    if (!seenMessageIdsRef.current.has(id)) newMessageIds.add(id);
+  }
+  // Defer marking as seen so the animation class is applied on this render
+  queueMicrotask(() => {
+    seenMessageIdsRef.current = currentIds;
+  });
 
   return (
     <section className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-card)]">
@@ -132,7 +145,7 @@ export function ChatPanel({
           return (
             <article
               key={message.id}
-              className={`animate-rise-in rounded-2xl border px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${
+              className={`${newMessageIds.has(message.id) ? 'animate-rise-in' : ''} rounded-2xl border px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${
                 isUser
                   ? 'ml-6 border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)]'
                   : 'mr-6 border-[var(--color-border)] bg-[var(--color-surface)]'

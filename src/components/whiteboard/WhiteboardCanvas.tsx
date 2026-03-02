@@ -70,6 +70,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
 
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
+  const MAX_PROCESSED_BATCH_IDS = 500;
   const rafRef = useRef<number | null>(null);
   const [dpr, setDpr] = useState(1);
   const [size, setSize] = useState({ width: 1000, height: 700 });
@@ -110,6 +111,16 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       for (const batch of batches) {
         if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
         processedBatchIdsRef.current.add(batch.batch_id);
+
+        // Prune to prevent unbounded growth
+        if (processedBatchIdsRef.current.size > MAX_PROCESSED_BATCH_IDS) {
+          const ids = processedBatchIdsRef.current.values();
+          const excess = processedBatchIdsRef.current.size - MAX_PROCESSED_BATCH_IDS;
+          for (let i = 0; i < excess; i++) {
+            const next = ids.next();
+            if (!next.done) processedBatchIdsRef.current.delete(next.value);
+          }
+        }
 
         const compiled = await compileBatchToStrokes(batch);
         if (cancelled) return;
@@ -165,11 +176,11 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       const drawGrid = () => {
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
-        bgCtx.fillStyle = '#f7f9fc';
+        bgCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-grid-bg').trim() || '#f7f9fc';
         bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
 
         bgCtx.setTransform(scale, 0, 0, scale, tx, ty);
-        bgCtx.strokeStyle = 'rgba(77, 93, 118, 0.16)';
+        bgCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-grid').trim() || 'rgba(77, 93, 118, 0.16)';
         bgCtx.lineWidth = 1 / scale;
 
         const grid = 30;
