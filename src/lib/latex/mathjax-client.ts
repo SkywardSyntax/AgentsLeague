@@ -173,6 +173,17 @@ async function getMathJaxContext(): Promise<MathJaxContext> {
 
 const MAX_TEX_LENGTH = 10_000;
 
+export function getCachedSvg(tex: string, displayMode: boolean): string | undefined {
+  const prepared = prepareTexForMathJax(tex, displayMode);
+  const cacheKey = `render:${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
+  const cached = renderCache.get(cacheKey);
+  if (cached) {
+    renderCache.delete(cacheKey);
+    renderCache.set(cacheKey, cached);
+  }
+  return cached;
+}
+
 export async function renderTexToSvg(tex: string, displayMode: boolean): Promise<string> {
   if (tex.length > MAX_TEX_LENGTH) {
     throw new Error(`TeX input exceeds maximum length of ${MAX_TEX_LENGTH} characters`);
@@ -181,7 +192,11 @@ export async function renderTexToSvg(tex: string, displayMode: boolean): Promise
   const cacheKey = `render:${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
 
   const cached = renderCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    renderCache.delete(cacheKey);
+    renderCache.set(cacheKey, cached);
+    return cached;
+  }
 
   const candidates = [prepared.tex];
   const rawTrimmed = tex.trim();

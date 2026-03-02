@@ -86,11 +86,13 @@ describe('parseStreamingLatex', () => {
     const parsed = parseStreamingLatex('J=\\begin{pmatrix}a&b\\\\[4pt]c&d\\end{pmatrix}');
     const latexSegments = parsed.filter((segment) => segment.kind === 'latex');
     expect(latexSegments).toHaveLength(1);
+    // pmatrix is now a recognized delimiter so its body is extracted directly
     expect(latexSegments[0]).toMatchObject({
       kind: 'latex',
-      value: 'J=\\begin{pmatrix}a&b\\\\[4pt]c&d\\end{pmatrix}',
       display: true,
     });
+    expect(latexSegments[0]!.value).toContain('a&b');
+    expect(latexSegments[0]!.value).toContain('c&d');
   });
 
   it('merges overlapping inline detections into one latex segment', () => {
@@ -102,5 +104,62 @@ describe('parseStreamingLatex', () => {
       value: 'x^2+\\frac{b}{a}',
       display: true,
     });
+  });
+
+  // --- Iteration 2 tests ---
+
+  it('handles nested $ inside \\text{} within $$', () => {
+    const parsed = parseStreamingLatex('$$\\text{if $x > 0$}$$');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(1);
+    expect(latexSegments[0]).toMatchObject({
+      kind: 'latex',
+      display: true,
+    });
+    expect(latexSegments[0]!.value).toContain('\\text{if $x > 0$}');
+  });
+
+  it('treats escaped dollar signs as text', () => {
+    const parsed = parseStreamingLatex('Price is \\$5 and \\$10');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(0);
+  });
+
+  it('treats empty delimiters as text', () => {
+    const parsed1 = parseStreamingLatex('$$$$');
+    expect(parsed1.every((s) => s.kind === 'text')).toBe(true);
+
+    const parsed2 = parseStreamingLatex('\\(\\)');
+    expect(parsed2.every((s) => s.kind === 'text')).toBe(true);
+  });
+
+  it('parses bmatrix as display-mode latex', () => {
+    const parsed = parseStreamingLatex('\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(1);
+    expect(latexSegments[0]).toMatchObject({ kind: 'latex', display: true });
+  });
+
+  it('parses aligned within $$ as single display latex', () => {
+    const parsed = parseStreamingLatex('$$\\begin{aligned}x&=1\\\\y&=2\\end{aligned}$$');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(1);
+    expect(latexSegments[0]).toMatchObject({ kind: 'latex', display: true });
+  });
+
+  it('handles multiple environments in one string', () => {
+    const parsed = parseStreamingLatex('Matrix \\begin{pmatrix}a\\end{pmatrix} and \\begin{cases}x\\end{cases}');
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(2);
+  });
+
+  it('parses vmatrix, Bmatrix, Vmatrix, split, multline environments', () => {
+    for (const env of ['vmatrix', 'Bmatrix', 'Vmatrix', 'split', 'multline', 'multline*']) {
+      const input = `\\begin{${env}}a\\end{${env}}`;
+      const parsed = parseStreamingLatex(input);
+      const latexSegments = parsed.filter((s) => s.kind === 'latex');
+      expect(latexSegments, `expected latex segment for ${env}`).toHaveLength(1);
+      expect(latexSegments[0]).toMatchObject({ kind: 'latex', display: true });
+    }
   });
 });

@@ -49,7 +49,11 @@ export async function renderTexToSvgServer(texInput: string, displayModeInput: b
   const cacheKey = `${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
 
   const cached = serverRenderCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    serverRenderCache.delete(cacheKey);
+    serverRenderCache.set(cacheKey, cached);
+    return cached;
+  }
 
   const ctx = await getMathJaxContext();
   const candidates = [prepared.tex];

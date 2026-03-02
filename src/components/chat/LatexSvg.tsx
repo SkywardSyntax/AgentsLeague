@@ -1,22 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { renderTexToSvg } from '@/lib/latex/mathjax-client';
+import { renderTexToSvg, getCachedSvg } from '@/lib/latex/mathjax-client';
+import { formatTexError } from '@/lib/latex/tex-errors';
 
 interface LatexSvgProps {
   tex: string;
   displayMode: boolean;
 }
 
-const svgCache = new Map<string, string>();
-const MAX_SVG_CACHE = 300;
+const DANGEROUS_SVG_PATTERN =
+  /(<script[\s>]|on\w+\s*=|javascript\s*:|data\s*:\s*text\/html)/i;
+
+function sanitizeSvg(raw: string): string {
+  let svg = raw.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+  svg = svg.replace(/\s*on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
+  svg = svg.replace(/href\s*=\s*"javascript:[^"]*"/gi, 'href=""');
+  svg = svg.replace(/href\s*=\s*'javascript:[^']*'/gi, "href=''");
+  if (DANGEROUS_SVG_PATTERN.test(svg)) return '';
+  return svg;
+}
 
 export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  // Cache key uses raw input; renderTexToSvg normalizes internally exactly once.
-  const cacheKey = `svg:${displayMode ? 'D' : 'I'}:${tex}`;
-  const cached = svgCache.get(cacheKey);
+  const cached = getCachedSvg(tex, displayMode);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,17 +34,12 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
       try {
         const rendered = await renderTexToSvg(tex, displayMode);
         if (!cancelled) {
-          if (svgCache.size > MAX_SVG_CACHE) {
-            const oldest = svgCache.keys().next().value as string | undefined;
-            if (oldest) svgCache.delete(oldest);
-          }
-          svgCache.set(cacheKey, rendered);
           setSvg(rendered);
           setError(null);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setError('Invalid LaTeX');
+          setError(formatTexError(err, tex));
           setSvg('');
         }
       }
@@ -45,14 +48,17 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     return () => {
       cancelled = true;
     };
-  }, [cached, cacheKey, displayMode, tex]);
+  }, [cached, displayMode, tex]);
 
   const visibleSvg = cached ?? svg;
   const visibleError = cached ? null : error;
 
   if (visibleError) {
     return (
-      <code className="rounded-md bg-[var(--color-surface-soft)] px-1 py-0.5 text-[var(--color-danger)]">
+      <code
+        className="rounded-md bg-[var(--color-surface-soft)] px-1 py-0.5 text-[var(--color-danger)]"
+        title={visibleError}
+      >
         {tex}
       </code>
     );
@@ -62,12 +68,14 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     return <span className="text-[var(--color-text-muted)]">Rendering…</span>;
   }
 
+  const safeSvg = sanitizeSvg(visibleSvg);
+
   return (
     <span
       className={displayMode ? 'block overflow-x-auto py-1' : 'inline-block align-middle'}
       role="math"
       aria-label={`LaTeX: ${tex}`}
-      dangerouslySetInnerHTML={{ __html: visibleSvg }}
+      dangerouslySetInnerHTML={{ __html: safeSvg }}
     />
   );
 }

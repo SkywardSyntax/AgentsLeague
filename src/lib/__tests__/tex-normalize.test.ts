@@ -23,7 +23,42 @@ describe('tex normalization', () => {
   });
 
   it('preserves matrix row spacing commands', () => {
+    // pmatrix is now stripped as an outer delimiter, so the inner content is returned
     const normalized = normalizeTexForMathJax('\\begin{pmatrix}a&b\\\\[4pt]c&d\\end{pmatrix}');
-    expect(normalized).toBe('\\begin{pmatrix}a&b\\\\[4pt]c&d\\end{pmatrix}');
+    expect(normalized).toBe('a&b\\\\[4pt]c&d');
+  });
+
+  // --- Iteration 2 tests ---
+
+  it('preserves row breaks inside environments during over-escape fix', () => {
+    // \\\\hline inside an environment is row-break (\\) + \\hline — should not be collapsed
+    const normalized = normalizeTexForMathJax('\\begin{pmatrix}a\\\\\\\\hline b\\end{pmatrix}');
+    expect(normalized).toContain('\\\\');
+    expect(normalized).toContain('\\hline');
+  });
+
+  it('fixes deeply over-escaped commands outside environments', () => {
+    const normalized = normalizeTexForMathJax('\\\\frac{a}{b}');
+    expect(normalized).toBe('\\frac{a}{b}');
+  });
+
+  it('strips bmatrix outer delimiters', () => {
+    const prepared = prepareTexForMathJax('\\begin{bmatrix}1&2\\end{bmatrix}');
+    expect(prepared).toEqual({ tex: '1&2', displayMode: true });
+  });
+
+  it('strips vmatrix outer delimiters', () => {
+    const prepared = prepareTexForMathJax('\\begin{vmatrix}a&b\\end{vmatrix}');
+    expect(prepared).toEqual({ tex: 'a&b', displayMode: true });
+  });
+
+  it('strips multline outer delimiters', () => {
+    const prepared = prepareTexForMathJax('\\begin{multline}a+b\\end{multline}');
+    expect(prepared).toEqual({ tex: 'a+b', displayMode: true });
+  });
+
+  it('strips split outer delimiters', () => {
+    const prepared = prepareTexForMathJax('\\begin{split}x=1\\end{split}');
+    expect(prepared).toEqual({ tex: 'x=1', displayMode: true });
   });
 });

@@ -20,6 +20,14 @@ function stripOuterDelimiters(input: string): DelimiterStripResult {
     { open: '\\begin{gather}', close: '\\end{gather}', displayMode: true },
     { open: '\\begin{cases}', close: '\\end{cases}', displayMode: true },
     { open: '\\begin{gathered}', close: '\\end{gathered}', displayMode: true },
+    { open: '\\begin{bmatrix}', close: '\\end{bmatrix}', displayMode: true },
+    { open: '\\begin{vmatrix}', close: '\\end{vmatrix}', displayMode: true },
+    { open: '\\begin{Bmatrix}', close: '\\end{Bmatrix}', displayMode: true },
+    { open: '\\begin{Vmatrix}', close: '\\end{Vmatrix}', displayMode: true },
+    { open: '\\begin{pmatrix}', close: '\\end{pmatrix}', displayMode: true },
+    { open: '\\begin{split}', close: '\\end{split}', displayMode: true },
+    { open: '\\begin{multline*}', close: '\\end{multline*}', displayMode: true },
+    { open: '\\begin{multline}', close: '\\end{multline}', displayMode: true },
     { open: '$$', close: '$$', displayMode: true },
     { open: '\\\\[', close: '\\\\]', displayMode: true },
     { open: '\\[', close: '\\]', displayMode: true },
@@ -50,8 +58,23 @@ export function normalizeTexForMathJax(input: string): string {
   const stripped = stripOuterDelimiters(tex);
   tex = stripped.tex;
 
-  // Convert over-escaped commands (e.g. "\\frac") into valid TeX ("\\frac" in JS string).
-  tex = tex.replace(/\\\\(?=[A-Za-z])/g, '\\');
+  // Fix over-escaped commands while preserving row breaks inside environments.
+  // Protect \\begin{...}...\\end{...} blocks so row-break \\\\ sequences aren't corrupted.
+  const envParts: string[] = [];
+  const envPattern = /\\begin\{[^}]+\}[\s\S]*?\\end\{[^}]+\}/g;
+  let envMatch: RegExpExecArray | null;
+  let lastEnd = 0;
+  while ((envMatch = envPattern.exec(tex)) !== null) {
+    if (envMatch.index > lastEnd) {
+      envParts.push(tex.slice(lastEnd, envMatch.index).replace(/\\\\(?=[A-Za-z])/g, '\\'));
+    }
+    envParts.push(envMatch[0]);
+    lastEnd = envMatch.index + envMatch[0].length;
+  }
+  if (lastEnd < tex.length) {
+    envParts.push(tex.slice(lastEnd).replace(/\\\\(?=[A-Za-z])/g, '\\'));
+  }
+  tex = envParts.join('');
 
   return tex.trim();
 }
