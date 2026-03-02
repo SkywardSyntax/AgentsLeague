@@ -8,6 +8,11 @@ test.describe('Whiteboard Draw Verification', () => {
       await page.goto('/?mode=interactive');
     });
 
+    test.afterEach(async ({ page }) => {
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+      await page.evaluate(() => localStorage.clear());
+    });
+
     test('mock math batch produces expected committed stroke count', async ({ page }) => {
       await sendAndWait(page, 'draw a math circle');
 
@@ -111,6 +116,10 @@ test.describe('Whiteboard Draw Verification', () => {
   });
 
   test.describe('Agent Mode — Committed Stroke Counts', () => {
+    test.afterEach(async ({ page }) => {
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+      await page.evaluate(() => localStorage.clear());
+    });
     test('agent auto-draw produces committed strokes', async ({ page }) => {
       await page.goto('/?mode=agent');
 

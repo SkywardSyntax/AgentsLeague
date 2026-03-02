@@ -197,6 +197,69 @@ describe('parseSSEBuffer adversarial inputs', () => {
   });
 });
 
+describe('[DONE] interleaving', () => {
+  it('events before [DONE] are parsed, [DONE] produces no event', () => {
+    const buffer = 'data: {"a":1}\n\ndata: {"b":2}\n\ndata: [DONE]\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]).toEqual({ a: 1 });
+    expect(result.events[1]).toEqual({ b: 2 });
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('[DONE] with trailing data — parser is permissive and processes post-DONE events', () => {
+    // The parser processes each chunk independently; [DONE] is not stream-terminal.
+    // This documents the current permissive/resilient parsing behavior.
+    const buffer = 'data: [DONE]\n\ndata: {"c":3}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual({ c: 3 });
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('[DONE] with partial buffer keeps incomplete sentinel in remaining', () => {
+    const buffer = 'data: {"a":1}\n\ndata: [DON';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual({ a: 1 });
+    expect(result.remaining).toBe('data: [DON');
+  });
+});
+
+describe('data: inside JSON content', () => {
+  it('data: in a JSON string value is preserved correctly', () => {
+    const buffer = 'data: {"label":"data: points","value":42}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect((result.events[0] as Record<string, unknown>).label).toBe('data: points');
+    expect((result.events[0] as Record<string, unknown>).value).toBe(42);
+  });
+
+  it('nested data: data: in JSON string is preserved', () => {
+    const buffer = 'data: {"nested":"data: data: deep"}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect((result.events[0] as Record<string, unknown>).nested).toBe('data: data: deep');
+  });
+});
+
+describe('retry: and id: field handling', () => {
+  it('id: and retry: fields are ignored, data: event is parsed', () => {
+    const buffer = 'id: 7\nretry: 3000\ndata: {"x":1}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual({ x: 1 });
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('retry-only block produces 0 events', () => {
+    const buffer = 'retry: 5000\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
+  });
+});
+
 describe('parseSSEBuffer empty and whitespace edge cases', () => {
   it('returns 0 events for buffer of only newlines', () => {
     const result = parseSSEBuffer('\n\n\n\n');

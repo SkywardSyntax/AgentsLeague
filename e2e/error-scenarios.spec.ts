@@ -6,6 +6,11 @@ test.describe('Error Scenarios', () => {
     await page.goto('/?mode=interactive');
   });
 
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.evaluate(() => localStorage.clear());
+  });
+
   test('HTTP 500 from stream endpoint shows error and recovers', async ({ page }) => {
     await page.route('/api/agent/stream', (route) =>
       route.fulfill({ status: 500, body: 'Internal Server Error' }),
@@ -18,7 +23,7 @@ test.describe('Error Scenarios', () => {
     // Error message should appear in chat
     const assistant = page.locator('[data-testid="chat-message-assistant"]').first();
     await expect(assistant).toBeVisible({ timeout: 10_000 });
-    await expect(assistant).toContainText(/error|failed/i);
+    await expect(assistant).toContainText(/network error|stream.*failed|connection.*error|error|failed/i);
 
     // Status returns to Ready
     await expect(page.locator('[data-testid="status-label"]')).toHaveText('Ready', {

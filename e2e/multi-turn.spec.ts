@@ -6,6 +6,11 @@ test.describe('Multi-Turn Conversation', () => {
     await page.goto('/?mode=interactive');
   });
 
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.evaluate(() => localStorage.clear());
+  });
+
   test('two consecutive sends accumulate messages', async ({ page }) => {
     await sendAndWait(page, 'draw a biology cell');
 

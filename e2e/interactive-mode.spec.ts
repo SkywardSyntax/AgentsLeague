@@ -5,6 +5,11 @@ test.describe('Interactive Mode', () => {
     await page.goto('/?mode=interactive');
   });
 
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.evaluate(() => localStorage.clear());
+  });
+
   test('loads in interactive mode with chat panel visible', async ({ page }) => {
     await expect(page.locator('[data-testid="chat-panel"]')).toBeVisible();
     await expect(page.locator('[data-testid="whiteboard-canvas"]')).toBeVisible();

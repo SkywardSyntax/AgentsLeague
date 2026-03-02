@@ -16,6 +16,10 @@ declare global {
 }
 
 test.describe('Agent Mode', () => {
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.evaluate(() => localStorage.clear());
+  });
   test('hides chat panel and shows full-screen whiteboard', async ({ page }) => {
     await page.goto('/?mode=agent');
     await expect(page.locator('[data-testid="chat-panel"]')).not.toBeVisible();
