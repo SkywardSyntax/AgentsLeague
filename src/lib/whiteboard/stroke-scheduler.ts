@@ -10,7 +10,7 @@ export function strokeDurationMs(length: number): number {
 
 export function createActiveBatch(
   strokes: StrokeTrajectory[],
-  startedAt = performance.now(),
+  startedAt: number,
 ): ActiveStroke[] {
   return strokes.map((stroke) => {
     const cumulative = cumulativeLengths(stroke.points);

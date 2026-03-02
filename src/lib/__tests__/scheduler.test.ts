@@ -38,4 +38,9 @@ describe('stroke scheduler', () => {
     expect(strokeDurationMs(1)).toBe(220);
     expect(strokeDurationMs(1_000_000)).toBe(2600);
   });
+
+  it('requires startedAt parameter (no default)', () => {
+    // @ts-expect-error — startedAt is now required
+    createActiveBatch([]);
+  });
 });
