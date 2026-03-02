@@ -1,0 +1,318 @@
+import { describe, it, expect } from 'vitest';
+import {
+  chatSessionReducer,
+  createEmptyChatSession,
+  createInitialTurn,
+  createMessage,
+  type ChatStore,
+  type ChatAction,
+} from '../state/chatSessionReducer';
+
+function makeStore(overrides?: Partial<ChatStore>): ChatStore {
+  const chat = createEmptyChatSession(1);
+  return {
+    chatOrder: [chat.id],
+    chats: { [chat.id]: chat },
+    turn: createInitialTurn(),
+    ...overrides,
+  };
+}
+
+function chatId(store: ChatStore): string {
+  return store.chatOrder[0]!;
+}
+
+describe('chatSessionReducer', () => {
+  describe('PUSH_WARNING', () => {
+    it('appends a warning to the target chat', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const next = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: id, warning: 'test warn' });
+      expect(next.chats[id]!.warnings).toEqual(['test warn']);
+    });
+
+    it('deduplicates consecutive identical warnings', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: id, warning: 'dup' });
+      s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: 'dup' });
+      expect(s.chats[id]!.warnings).toEqual(['dup']);
+    });
+
+    it('caps warnings at 8', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = store;
+      for (let i = 0; i < 10; i++) {
+        s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: `w${i}` });
+      }
+      expect(s.chats[id]!.warnings).toHaveLength(8);
+    });
+  });
+
+  describe('ADD_USER_MESSAGE', () => {
+    it('appends the user message and updates title', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const msg = createMessage('user', 'hello world');
+      const next = chatSessionReducer(store, { type: 'ADD_USER_MESSAGE', chatId: id, message: msg, rawContent: 'hello world' });
+      expect(next.chats[id]!.messages).toHaveLength(1);
+      expect(next.chats[id]!.messages[0]!.content).toBe('hello world');
+      expect(next.chats[id]!.title).toBe('hello world');
+    });
+  });
+
+  describe('TURN_START', () => {
+    it('sets status to thinking and stores streamChatId', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const next = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      expect(next.turn.status).toBe('thinking');
+      expect(next.turn.streamChatId).toBe(id);
+      expect(next.turn.currentAssistantMessageId).toBeNull();
+      expect(next.turn.turnHadRenderableOutput).toBe(false);
+    });
+  });
+
+  describe('APPEND_ASSISTANT_DELTA', () => {
+    it('creates a new assistant message on first delta', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'Hello' });
+      expect(s.turn.status).toBe('streaming');
+      expect(s.turn.turnHadRenderableOutput).toBe(true);
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.chats[id]!.messages[0]!.content).toBe('Hello');
+      expect(s.turn.currentAssistantMessageId).toBe(s.chats[id]!.messages[0]!.id);
+    });
+
+    it('appends to existing message on subsequent deltas', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'Hello' });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: ' world' });
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.chats[id]!.messages[0]!.content).toBe('Hello world');
+    });
+  });
+
+  describe('FINALIZE_ASSISTANT_MESSAGE', () => {
+    it('clears currentAssistantMessageId', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'x' });
+      expect(s.turn.currentAssistantMessageId).not.toBeNull();
+      s = chatSessionReducer(s, { type: 'FINALIZE_ASSISTANT_MESSAGE' });
+      expect(s.turn.currentAssistantMessageId).toBeNull();
+    });
+  });
+
+  describe('TURN_DONE', () => {
+    it('resets turn state to idle', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'hi' });
+      s = chatSessionReducer(s, { type: 'TURN_DONE', chatId: id });
+      expect(s.turn.status).toBe('idle');
+      expect(s.turn.streamChatId).toBeNull();
+      expect(s.turn.currentAssistantMessageId).toBeNull();
+    });
+
+    it('adds fallback message when no renderable output', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'TURN_DONE', chatId: id });
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.chats[id]!.messages[0]!.content).toContain('could not produce output');
+    });
+  });
+
+  describe('TURN_ERROR', () => {
+    it('adds error message and resets turn', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'TURN_ERROR', chatId: id, errorMessage: 'boom' });
+      expect(s.turn.status).toBe('idle');
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.chats[id]!.messages[0]!.content).toBe('Error: boom');
+    });
+  });
+
+  describe('STREAM_ERROR', () => {
+    it('adds stream error message and resets turn', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'STREAM_ERROR', chatId: id, errorMessage: 'network' });
+      expect(s.turn.status).toBe('idle');
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.chats[id]!.messages[0]!.content).toBe('Stream error: network');
+    });
+  });
+
+  describe('CREATE_CHAT', () => {
+    it('prepends new chat and resets turn', () => {
+      const store = makeStore();
+      const newChat = createEmptyChatSession(2);
+      const next = chatSessionReducer(store, { type: 'CREATE_CHAT', chat: newChat });
+      expect(next.chatOrder[0]).toBe(newChat.id);
+      expect(next.chatOrder).toHaveLength(2);
+      expect(next.chats[newChat.id]).toBeDefined();
+      expect(next.turn.status).toBe('idle');
+    });
+  });
+
+  describe('SELECT_CHAT', () => {
+    it('resets turn state', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: { ...createInitialTurn(), status: 'streaming', streamChatId: chat1.id },
+      };
+      const next = chatSessionReducer(store, { type: 'SELECT_CHAT', chatId: chat2.id });
+      expect(next.turn.status).toBe('idle');
+      expect(next.turn.streamChatId).toBeNull();
+    });
+
+    it('lazily builds restore batch for unvisited chats with scene', () => {
+      const chat = createEmptyChatSession(1);
+      chat.scene = [{ id: 'r1', type: 'rect', x: 0, y: 0, w: 10, h: 10 }];
+      const store: ChatStore = {
+        chatOrder: [chat.id],
+        chats: { [chat.id]: chat },
+        turn: createInitialTurn(),
+      };
+      const next = chatSessionReducer(store, { type: 'SELECT_CHAT', chatId: chat.id });
+      expect(next.chats[chat.id]!.batches).toHaveLength(1);
+      expect(next.chats[chat.id]!.batches[0]!.batch_id).toContain('restore-');
+    });
+  });
+
+  describe('DELETE_CHAT', () => {
+    it('removes chat and creates replacement when last chat', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const next = chatSessionReducer(store, { type: 'DELETE_CHAT', chatId: id, activeChatId: id });
+      expect(next.chatOrder).toHaveLength(1);
+      expect(next.chatOrder[0]).not.toBe(id);
+      expect(next.chats[id]).toBeUndefined();
+    });
+
+    it('removes chat from multi-chat store', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      const next = chatSessionReducer(store, { type: 'DELETE_CHAT', chatId: chat1.id, activeChatId: chat1.id });
+      expect(next.chatOrder).toEqual([chat2.id]);
+      expect(next.chats[chat1.id]).toBeUndefined();
+    });
+  });
+
+  describe('CLEAR_CHAT', () => {
+    it('clears messages, scene, and sets clear batch', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      // Add a message first
+      const msg = createMessage('user', 'test');
+      let s = chatSessionReducer(store, { type: 'ADD_USER_MESSAGE', chatId: id, message: msg, rawContent: 'test' });
+      const clearBatch = { batch_id: 'clear-1', style_preset: 'clean_pen_sketch' as const, elements: [{ id: 'c1', type: 'clear' as const }] };
+      s = chatSessionReducer(s, { type: 'CLEAR_CHAT', chatId: id, clearBatch });
+      expect(s.chats[id]!.messages).toHaveLength(0);
+      expect(s.chats[id]!.scene).toHaveLength(0);
+      expect(s.chats[id]!.batches).toEqual([clearBatch]);
+      expect(s.turn.status).toBe('idle');
+    });
+  });
+
+  describe('DELETE_MESSAGE', () => {
+    it('removes the specified message', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const msg = createMessage('user', 'delete me');
+      let s = chatSessionReducer(store, { type: 'ADD_USER_MESSAGE', chatId: id, message: msg, rawContent: 'delete me' });
+      s = chatSessionReducer(s, { type: 'DELETE_MESSAGE', chatId: id, messageId: msg.id });
+      expect(s.chats[id]!.messages).toHaveLength(0);
+    });
+
+    it('clears currentAssistantMessageId if it matches', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'hi' });
+      const msgId = s.turn.currentAssistantMessageId!;
+      s = chatSessionReducer(s, { type: 'DELETE_MESSAGE', chatId: id, messageId: msgId });
+      expect(s.turn.currentAssistantMessageId).toBeNull();
+    });
+  });
+
+  describe('RESTORE_SESSION', () => {
+    it('replaces chats and chatOrder', () => {
+      const store = makeStore();
+      const newChat = createEmptyChatSession(1);
+      const next = chatSessionReducer(store, {
+        type: 'RESTORE_SESSION',
+        chats: { [newChat.id]: newChat },
+        chatOrder: [newChat.id],
+      });
+      expect(next.chatOrder).toEqual([newChat.id]);
+      expect(Object.keys(next.chats)).toEqual([newChat.id]);
+    });
+  });
+
+  describe('APPLY_WHITEBOARD_BATCH', () => {
+    it('appends batch elements to scene', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const batch = {
+        batch_id: 'b1',
+        elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }],
+      };
+      s = chatSessionReducer(s, {
+        type: 'APPLY_WHITEBOARD_BATCH',
+        chatId: id,
+        batch,
+        firstToolBatch: false,
+      });
+      expect(s.chats[id]!.scene).toHaveLength(1);
+      expect(s.chats[id]!.batches).toHaveLength(1);
+      expect(s.turn.status).toBe('drawing');
+      expect(s.turn.turnHadRenderableOutput).toBe(true);
+    });
+
+    it('handles clear element in batch', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      // Pre-populate scene
+      let s: ChatStore = {
+        ...store,
+        chats: {
+          [id]: { ...store.chats[id]!, scene: [{ id: 'old', type: 'rect', x: 0, y: 0, w: 5, h: 5 }] },
+        },
+      };
+      s = chatSessionReducer(s, { type: 'TURN_START', chatId: id });
+      const batch = {
+        batch_id: 'b2',
+        elements: [
+          { id: 'c1', type: 'clear' as const },
+          { id: 'r2', type: 'rect' as const, x: 10, y: 10, w: 20, h: 20 },
+        ],
+      };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch, firstToolBatch: false });
+      expect(s.chats[id]!.scene).toHaveLength(1);
+      expect(s.chats[id]!.scene[0]!.id).toBe('r2');
+    });
+  });
+});

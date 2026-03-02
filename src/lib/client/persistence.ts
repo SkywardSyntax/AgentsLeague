@@ -5,6 +5,7 @@ import type {
   SemanticBatch,
   WhiteboardLayoutDiagnostics,
 } from '@/types/agent';
+import { sanitizeScene, sanitizeSemanticScene } from './sanitize';
 
 export interface PersistedChatV3 {
   id: string;
@@ -28,6 +29,7 @@ export interface PersistedSessionV3 {
 }
 
 const STORAGE_KEY = 'agentsleague:session:v1';
+const BACKUP_KEY = 'agentsleague:session:backup';
 
 const MessageSchema = z.object({
   id: z.string(),
@@ -138,6 +140,17 @@ function migrateV1toV3(legacy: z.infer<typeof LegacyPersistedSessionV1Schema>): 
   };
 }
 
+function sanitizeSession(session: PersistedSessionV3): PersistedSessionV3 {
+  return {
+    ...session,
+    chats: session.chats.map((chat) => {
+      const { valid: scene } = sanitizeScene(chat.scene);
+      const semanticScene = sanitizeSemanticScene(chat.semanticScene);
+      return { ...chat, scene, semanticScene };
+    }),
+  };
+}
+
 export function loadSession(): PersistedSessionV3 | null {
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -148,24 +161,33 @@ export function loadSession(): PersistedSessionV3 | null {
 
     const v3 = PersistedSessionV3Schema.safeParse(parsed);
     if (v3.success) {
-      return v3.data as PersistedSessionV3;
+      return sanitizeSession(v3.data as PersistedSessionV3);
     }
+
+    // Backup raw JSON before migration
+    try { localStorage.setItem(BACKUP_KEY, raw); } catch { /* quota */ }
 
     const v2 = PersistedSessionV2Schema.safeParse(parsed);
     if (v2.success) {
-      return migrateV2toV3(v2.data);
+      return sanitizeSession(migrateV2toV3(v2.data));
     }
 
     const v1 = LegacyPersistedSessionV1Schema.safeParse(parsed);
     if (v1.success) {
-      return migrateV1toV3(v1.data);
+      return sanitizeSession(migrateV1toV3(v1.data));
     }
 
-    throw new Error('Invalid persisted session schema');
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
+    console.error('[loadSession] No schema matched persisted data');
+    return null;
+  } catch (err) {
+    console.error('[loadSession] Failed to parse session:', err);
     return null;
   }
+}
+
+export function clearCorruptSession(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 export function saveSession(session: PersistedSessionV3): void {
