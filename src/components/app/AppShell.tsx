@@ -5,8 +5,8 @@ import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useSessionManager, type ChatSessionState } from '@/hooks/useSessionManager';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
-import { loadSession, saveSession } from '@/lib/client/persistence';
 import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
 import { buildWhiteboardContext, buildWhiteboardContextV2 } from '@/lib/whiteboard/context';
 import {
@@ -26,19 +26,6 @@ import { AppHeader } from '@/components/app/AppHeader';
 import { AgentSidebar } from '@/components/app/AgentSidebar';
 import { WarningOverlay } from '@/components/app/WarningOverlay';
 import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
-
-interface ChatSessionState {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  messages: ChatMessage[];
-  scene: DrawElement[];
-  semanticScene: SemanticBatch[];
-  plannerMeta: WhiteboardLayoutDiagnostics[];
-  batches: DrawBatch[];
-  warnings: string[];
-}
 
 interface AgentAPI {
   submitQuery: (text: string) => Promise<void>;
@@ -70,10 +57,6 @@ function createMessage(role: ChatMessage['role'], content: string): ChatMessage 
   };
 }
 
-function defaultChatTitle(index: number): string {
-  return `Chat ${index}`;
-}
-
 function looksDefaultTitle(title: string): boolean {
   return /^Chat \d+$/.test(title.trim());
 }
@@ -82,33 +65,6 @@ function buildChatTitleFromMessage(content: string): string {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (!normalized) return 'New Chat';
   return normalized.length > 40 ? `${normalized.slice(0, 40)}…` : normalized;
-}
-
-function buildRestoreBatch(chatId: string, scene: DrawElement[]): DrawBatch[] {
-  if (scene.length === 0) return [];
-  return [
-    {
-      batch_id: `restore-${chatId}-${Date.now()}`,
-      style_preset: 'clean_pen_sketch',
-      elements: scene,
-    },
-  ];
-}
-
-function createEmptyChatSession(index: number): ChatSessionState {
-  const now = Date.now();
-  return {
-    id: createId(),
-    title: defaultChatTitle(index),
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
-    scene: [],
-    semanticScene: [],
-    plannerMeta: [],
-    batches: [],
-    warnings: [],
-  };
 }
 
 function withoutStreamOverlay(chat: ChatSessionState): ChatSessionState {
@@ -123,24 +79,31 @@ function withoutStreamOverlay(chat: ChatSessionState): ChatSessionState {
 }
 
 export function AppShell() {
+  const {
+    chatSessions,
+    setChatSessions,
+    activeChatId,
+    activeChat,
+    activeChatIdRef,
+    didRestoreSession,
+    sessionId,
+    createChat: createChatBase,
+    selectChat: selectChatBase,
+    deleteChat: deleteChatBase,
+    panelSizes,
+    setPanelSizes,
+  } = useSessionManager();
+
   const [appMode, setAppMode] = useState<AppMode>(() => getInitialAppMode());
   const isAgentMode = appMode === 'agent';
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'thinking' | 'streaming' | 'drawing'>('idle');
-  const [panelSizes, setPanelSizes] = useState<[number, number]>([62, 38]);
   const [agentRunning, setAgentRunning] = useState(isAgentMode);
   const [agentLastQuery, setAgentLastQuery] = useState('');
   const [agentDomainIndex, setAgentDomainIndex] = useState(0);
-  const [didRestoreSession, setDidRestoreSession] = useState(false);
-  const [seedChat] = useState<ChatSessionState>(() => createEmptyChatSession(1));
   const [mobileActivePanel, setMobileActivePanel] = useState<'whiteboard' | 'chat'>('whiteboard');
 
-  const [chatSessions, setChatSessions] = useState<ChatSessionState[]>([seedChat]);
-  const [activeChatId, setActiveChatId] = useState<string>(seedChat.id);
-
-  const [sessionId] = useState(() => createId());
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
-  const activeChatIdRef = useRef<string>(activeChatId);
   const streamChatIdRef = useRef<string | null>(null);
   const currentAssistantMessageId = useRef<string | null>(null);
   const turnHadRenderableOutputRef = useRef(false);
@@ -148,7 +111,6 @@ export function AppShell() {
   const agentQueryEngineRef = useRef(new QueryEngine());
   const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTurnEventsRef = useRef<string[]>([]);
-  const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDiagnosticsRef = useRef<
     Map<
       string,
@@ -171,11 +133,6 @@ export function AppShell() {
     pendingDiagnosticsRef.current.clear();
   }, []);
 
-  const activeChat = useMemo(
-    () => chatSessions.find((chat) => chat.id === activeChatId) ?? chatSessions[0] ?? null,
-    [activeChatId, chatSessions],
-  );
-
   useEffect(() => {
     setAppMode(getClientAppMode(window.location.search));
   }, []);
@@ -183,67 +140,6 @@ export function AppShell() {
   useEffect(() => {
     if (isAgentMode) setAgentRunning(true);
   }, [isAgentMode]);
-
-  useEffect(() => {
-    activeChatIdRef.current = activeChat?.id ?? '';
-  }, [activeChat?.id]);
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    const restored = loadSession();
-    if (restored && restored.chats.length > 0) {
-      const restoredChats: ChatSessionState[] = restored.chats.map((chat) => ({
-        id: chat.id,
-        title: chat.title,
-        createdAt: chat.createdAt,
-        updatedAt: chat.updatedAt,
-        messages: chat.messages,
-        scene: chat.scene,
-        semanticScene: chat.semanticScene ?? [],
-        plannerMeta: chat.plannerMeta ?? [],
-        batches: buildRestoreBatch(chat.id, chat.scene),
-        warnings: [],
-      }));
-
-      setChatSessions(restoredChats);
-      setPanelSizes(restored.prefs.panelSizes);
-
-      const activeExists = restoredChats.some((chat) => chat.id === restored.activeChatId);
-      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]!.id);
-    }
-
-    setDidRestoreSession(true);
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  useEffect(() => {
-    if (!didRestoreSession) return;
-    if (persistTimeout.current) clearTimeout(persistTimeout.current);
-
-    persistTimeout.current = setTimeout(() => {
-      if (chatSessions.length === 0) return;
-      saveSession({
-        version: 3,
-        updatedAt: Date.now(),
-        activeChatId: activeChat?.id ?? chatSessions[0]!.id,
-        chats: chatSessions.map((chat) => ({
-          id: chat.id,
-          title: chat.title,
-          createdAt: chat.createdAt,
-          updatedAt: chat.updatedAt,
-          messages: chat.messages,
-          scene: chat.scene,
-          semanticScene: chat.semanticScene,
-          plannerMeta: chat.plannerMeta,
-        })),
-        prefs: { panelSizes },
-      });
-    }, 500);
-
-    return () => {
-      if (persistTimeout.current) clearTimeout(persistTimeout.current);
-    };
-  }, [activeChat?.id, chatSessions, didRestoreSession, panelSizes]);
 
   const pushWarning = useCallback((warning: string, chatIdOverride?: string) => {
     const targetChatId = chatIdOverride ?? streamChatIdRef.current ?? activeChatIdRef.current;
@@ -500,58 +396,37 @@ export function AppShell() {
 
   const createChat = useCallback(() => {
     if (status !== 'idle') return;
-    const nextChat = createEmptyChatSession(chatSessions.length + 1);
-    setChatSessions((prev) => [nextChat, ...prev]);
-    setActiveChatId(nextChat.id);
+    createChatBase();
     setInput('');
     resetStreamState();
-  }, [chatSessions.length, resetStreamState, status]);
+  }, [createChatBase, resetStreamState, status]);
 
   const selectChat = useCallback(
     (chatId: string) => {
       if (status !== 'idle') return;
-      if (chatId === activeChatId) return;
-      setActiveChatId(chatId);
+      selectChatBase(chatId);
       setInput('');
       resetStreamState();
     },
-    [activeChatId, resetStreamState, status],
+    [resetStreamState, selectChatBase, status],
   );
 
   const deleteChat = useCallback(
     (chatId: string) => {
       if (status !== 'idle') return;
 
-      let nextActiveId: string | null = null;
-      setChatSessions((prev) => {
-        const index = prev.findIndex((chat) => chat.id === chatId);
-        if (index === -1) return prev;
-
-        if (prev.length === 1) {
-          const replacement = createEmptyChatSession(1);
-          nextActiveId = replacement.id;
-          return [replacement];
-        }
-
-        const remaining = prev.filter((chat) => chat.id !== chatId);
-        if (activeChatIdRef.current === chatId) {
-          nextActiveId = remaining[Math.max(0, index - 1)]?.id ?? remaining[0]!.id;
-        }
-        return remaining;
+      deleteChatBase(chatId, {
+        cancel,
+        resetStreamState: () => {
+          setStatus('idle');
+          resetStreamState();
+        },
+        streamChatId: streamChatIdRef.current,
       });
 
-      if (streamChatIdRef.current === chatId) {
-        cancel();
-        setStatus('idle');
-        resetStreamState();
-      }
-
-      if (nextActiveId) {
-        setActiveChatId(nextActiveId);
-        setInput('');
-      }
+      setInput('');
     },
-    [cancel, resetStreamState, status],
+    [cancel, deleteChatBase, resetStreamState, status],
   );
 
   const clearActiveChat = useCallback(() => {

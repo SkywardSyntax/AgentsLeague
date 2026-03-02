@@ -73,6 +73,7 @@ export function ChatPanel({
                 variant={isActive ? 'accent' : 'default'}
                 onClick={() => onSelectChat(chat.id)}
                 disabled={!canManageChats || isActive}
+                aria-current={isActive ? 'true' : undefined}
                 className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-white/65 hover:bg-white'} disabled:opacity-65`}
               >
                 <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
