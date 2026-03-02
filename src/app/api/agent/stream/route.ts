@@ -11,6 +11,8 @@ import {
 } from '@/lib/server/openai';
 import { formatSSE, sseHeaders, createSSEHeartbeat, safeEnqueue } from '@/lib/server/sse';
 import { createLogger } from '@/lib/server/logger';
+import { applyMiddleware, withErrorBoundary } from '@/lib/server/api-middleware';
+import type { HandlerContext } from '@/lib/server/api-middleware';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import { buildWhiteboardContextMessage, buildWhiteboardContextMessageV2 } from '@/lib/server/stream/context-builder';
 import { boundsOfBatch } from '@/lib/server/stream/bounds';
@@ -76,8 +78,8 @@ function parseFunctionCallFromEvent(
   return null;
 }
 
-export async function POST(request: Request): Promise<Response> {
-  const requestId = randomUUID();
+async function handlePost(request: Request, ctx: HandlerContext): Promise<Response> {
+  const requestId = ctx.requestId;
   const startTime = Date.now();
   const log = createLogger({ requestId, route: '/api/agent/stream' });
 
@@ -492,3 +494,5 @@ export async function POST(request: Request): Promise<Response> {
 
   return new Response(stream, { headers: { ...sseHeaders(), 'X-Request-Id': requestId } });
 }
+
+export const POST = applyMiddleware(withErrorBoundary, handlePost);

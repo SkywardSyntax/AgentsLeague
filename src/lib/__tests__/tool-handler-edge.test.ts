@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { handleToolCall, type ToolHandlerContext } from '@/lib/server/stream/tool-handler';
+import { extendStructuredWhiteboardContext } from '@/lib/whiteboard/planner';
+import type { DrawBatch } from '@/types/agent';
 
 function makeCtx(overrides?: Partial<ToolHandlerContext>): ToolHandlerContext {
   return {
@@ -53,5 +55,50 @@ describe('handleToolCall edge cases', () => {
     expect(callArgs).not.toHaveProperty('password');
     expect(callArgs).not.toHaveProperty('apiKey');
     expect(JSON.stringify(callArgs)).not.toContain('secret123');
+  });
+});
+
+describe('suggested_next_regions safety (10A verification)', () => {
+  const minimalBatch: DrawBatch = {
+    batch_id: 'test-batch',
+    elements: [
+      { id: 'el-1', type: 'text', x: 100, y: 100, text: 'hello', size: 16 },
+    ],
+  };
+
+  it('extendStructuredWhiteboardContext returns non-empty suggested_next_regions when context is undefined', () => {
+    const result = extendStructuredWhiteboardContext(undefined, minimalBatch);
+    expect(result.suggested_next_regions).toBeDefined();
+    expect(result.suggested_next_regions.length).toBeGreaterThan(0);
+    expect(result.suggested_next_regions[0]).toHaveProperty('x');
+    expect(result.suggested_next_regions[0]).toHaveProperty('y');
+  });
+
+  it('extendStructuredWhiteboardContext returns non-empty suggested_next_regions with existing context', () => {
+    const existing = extendStructuredWhiteboardContext(undefined, minimalBatch);
+    const result = extendStructuredWhiteboardContext(existing, {
+      batch_id: 'batch-2',
+      elements: [{ id: 'el-2', type: 'text', x: 200, y: 200, text: 'world', size: 16 }],
+    });
+    expect(result.suggested_next_regions.length).toBeGreaterThan(0);
+    expect(result.suggested_next_regions[0]).toHaveProperty('x');
+    expect(result.suggested_next_regions[0]).toHaveProperty('y');
+  });
+
+  it('extendStructuredWhiteboardContext returns non-empty suggested_next_regions after clear element', () => {
+    const result = extendStructuredWhiteboardContext(undefined, {
+      batch_id: 'clear-batch',
+      elements: [{ id: 'clr', type: 'clear' }],
+    });
+    expect(result.suggested_next_regions.length).toBeGreaterThan(0);
+  });
+
+  it('suggested_next_regions[0] ternary guard produces valid origin or undefined', () => {
+    const result = extendStructuredWhiteboardContext(undefined, minimalBatch);
+    const suggested = result.suggested_next_regions[0];
+    const origin = suggested ? { x: suggested.x, y: suggested.y } : undefined;
+    expect(origin).toBeDefined();
+    expect(typeof origin!.x).toBe('number');
+    expect(typeof origin!.y).toBe('number');
   });
 });
