@@ -260,6 +260,78 @@ describe('retry: and id: field handling', () => {
   });
 });
 
+describe('parseSSEBuffer non-object JSON payloads', () => {
+  it('parses array payload', () => {
+    const buffer = 'data: [1,2,3]\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual([1, 2, 3]);
+  });
+
+  it('parses primitive string payload', () => {
+    const buffer = 'data: "hello"\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toBe('hello');
+  });
+
+  it('parses primitive number payload', () => {
+    const buffer = 'data: 42\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toBe(42);
+  });
+
+  it('parses null payload', () => {
+    const buffer = 'data: null\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toBeNull();
+  });
+
+  it('parses boolean payload', () => {
+    const buffer = 'data: true\n\ndata: false\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]).toBe(true);
+    expect(result.events[1]).toBe(false);
+  });
+});
+
+describe('parseSSEBuffer unicode and special content', () => {
+  it('handles unicode/emoji in JSON values', () => {
+    const buffer = 'data: {"emoji":"🎉","text":"日本語"}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect((result.events[0] as Record<string, string>).emoji).toBe('🎉');
+    expect((result.events[0] as Record<string, string>).text).toBe('日本語');
+  });
+
+  it('handles escaped unicode sequences in JSON', () => {
+    const buffer = 'data: {"escaped":"\\u0048\\u0065\\u006C\\u006C\\u006F"}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect((result.events[0] as Record<string, string>).escaped).toBe('Hello');
+  });
+});
+
+describe('parseSSEBuffer unknown field handling', () => {
+  it('event with only unknown fields (id:, retry:) produces no events', () => {
+    const buffer = 'id: 42\nretry: 3000\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('deeply nested JSON parses correctly', () => {
+    const nested = { a: { b: { c: { d: { e: 'deep' } } } } };
+    const buffer = `data: ${JSON.stringify(nested)}\n\n`;
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual(nested);
+  });
+});
+
 describe('parseSSEBuffer empty and whitespace edge cases', () => {
   it('returns 0 events for buffer of only newlines', () => {
     const result = parseSSEBuffer('\n\n\n\n');
