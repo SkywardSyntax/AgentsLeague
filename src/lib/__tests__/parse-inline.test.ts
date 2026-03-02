@@ -323,3 +323,55 @@ describe('parseInline token limit flushes remainder as text', () => {
     expect((lastToken as { kind: 'text'; value: string }).value.length).toBeGreaterThan(0);
   });
 });
+
+// --- iter12 03-B: backslash escape sequences ---
+
+describe('parseInline backslash escapes', () => {
+  it('\\* prevents bold parsing', () => {
+    const tokens = parseInline('This is \\*not bold\\*');
+    expect(tokens).toEqual([{ kind: 'text', value: 'This is *not bold*' }]);
+  });
+
+  it('\\_ prevents italic parsing', () => {
+    const tokens = parseInline('Use \\_underscores\\_ in snake_case');
+    expect(tokens).toEqual([{ kind: 'text', value: 'Use _underscores_ in snake_case' }]);
+  });
+
+  it('\\` prevents inline code parsing', () => {
+    const tokens = parseInline('Code: \\`not code\\`');
+    expect(tokens).toEqual([{ kind: 'text', value: 'Code: `not code`' }]);
+  });
+
+  it('\\~ prevents strikethrough parsing', () => {
+    const tokens = parseInline('Not \\~\\~struck\\~\\~');
+    expect(tokens).toEqual([{ kind: 'text', value: 'Not ~~struck~~' }]);
+  });
+
+  it('\\[ prevents link parsing', () => {
+    const tokens = parseInline('\\[not a link\\](url)');
+    expect(tokens).toEqual([{ kind: 'text', value: '[not a link](url)' }]);
+  });
+
+  it('double backslash \\\\* produces literal backslash followed by bold', () => {
+    const tokens = parseInline('\\\\*bold*');
+    expect(tokens).toEqual([
+      { kind: 'text', value: '\\' },
+      { kind: 'italic', value: 'bold' },
+    ]);
+  });
+
+  it('escaped backslash before non-markdown char is literal', () => {
+    const tokens = parseInline('path\\\\dir');
+    expect(tokens).toEqual([{ kind: 'text', value: 'path\\dir' }]);
+  });
+
+  it('backslash at end of string is literal', () => {
+    const tokens = parseInline('trailing\\');
+    expect(tokens).toEqual([{ kind: 'text', value: 'trailing\\' }]);
+  });
+
+  it('backslash before non-escapable char is literal', () => {
+    const tokens = parseInline('\\n is not an escape');
+    expect(tokens).toEqual([{ kind: 'text', value: '\\n is not an escape' }]);
+  });
+});

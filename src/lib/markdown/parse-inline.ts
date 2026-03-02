@@ -32,12 +32,22 @@ export function parseInline(text: string): InlineToken[] {
     }
   }
 
+  // Set of characters that can be backslash-escaped to prevent formatting
+  const ESCAPABLE = new Set(['*', '_', '~', '`', '[', ']', '\\']);
+
   while (i < text.length) {
     // --- Token limit guard: prevent runaway parsing ---
     if (tokens.length >= MAX_INLINE_TOKENS) {
       flush();
       tokens.push({ kind: 'text', value: text.slice(i) });
       break;
+    }
+
+    // --- Backslash escape: \* \_ \~ \` \[ \] \\ ---
+    if (text[i] === '\\' && i + 1 < text.length && ESCAPABLE.has(text[i + 1]!)) {
+      buf += text[i + 1]!;
+      i += 2;
+      continue;
     }
 
     // --- Inline code ---

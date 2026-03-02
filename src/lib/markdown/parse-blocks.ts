@@ -85,7 +85,8 @@ export function parseBlocks(raw: string, depth = 0): BlockSegment[] {
       let closed = false;
       while (i < lines.length) {
         const cl = lines[i]!;
-        // Closing fence: same char, at least same length, nothing else meaningful
+        // Closing fence must use the same marker character as the opening fence
+        // (backticks close backticks, tildes close tildes) per CommonMark spec
         const closeRe = new RegExp(`^${fenceChar === '`' ? '`' : '~'}{${fenceLen},}\\s*$`);
         if (closeRe.test(cl)) {
           closed = true;

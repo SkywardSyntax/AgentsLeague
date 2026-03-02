@@ -315,4 +315,26 @@ describe('parseBlocks', () => {
     expect(result[0]!.kind).toBe('code_block');
     expect(elapsed).toBeLessThan(5000);
   });
+
+  // --- iter12 03-B: tilde fence cannot be closed by backticks (CommonMark) ---
+
+  it('tilde-opened fence is not closed by backtick fence', () => {
+    const input = '~~~\ncode here\n```\nmore code\n~~~';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      kind: 'code_block',
+      content: 'code here\n```\nmore code',
+    });
+  });
+
+  it('backtick-opened fence is not closed by tilde fence', () => {
+    const input = '```\ncode here\n~~~\nmore code\n```';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      kind: 'code_block',
+      content: 'code here\n~~~\nmore code',
+    });
+  });
 });

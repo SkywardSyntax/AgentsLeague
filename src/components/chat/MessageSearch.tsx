@@ -17,15 +17,25 @@ export function MessageSearch({ onSearch, matchCount, visible, onClose }: Messag
     if (visible) inputRef.current?.focus();
   }, [visible]);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   const handleChange = useCallback(
     (value: string) => {
       setQuery(value);
-      onSearch(value);
+      clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => onSearch(value), 200);
     },
     [onSearch],
   );
 
   const handleClose = useCallback(() => {
+    clearTimeout(debounceRef.current);
     setQuery('');
     onSearch('');
     onClose();

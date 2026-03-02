@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { renderTexToSvg } from '@/lib/latex/mathjax-client';
 import { prepareTexForMathJax } from '@/lib/latex/tex-normalize';
 
@@ -24,7 +24,7 @@ function sanitizeSvg(raw: string): string {
     .replace(/<object[\s>][\s\S]*?<\/object>/gi, '');
 }
 
-export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
+export const LatexSvg = memo(function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const prepared = prepareTexForMathJax(tex, displayMode);
@@ -81,4 +81,4 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
       dangerouslySetInnerHTML={{ __html: visibleSvg }}
     />
   );
-}
+}, (prev, next) => prev.tex === next.tex && prev.displayMode === next.displayMode);
