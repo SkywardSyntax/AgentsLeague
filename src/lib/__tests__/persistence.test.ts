@@ -168,7 +168,7 @@ describe('persistence', () => {
 
   describe('localStorage.getItem failure', () => {
     it('returns null when getItem throws', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const origGetItem = localStorage.getItem;
       localStorage.getItem = () => { throw new DOMException('SecurityError'); };
       const loaded = loadSession();
@@ -180,11 +180,24 @@ describe('persistence', () => {
 
   describe('corrupted JSON', () => {
     it('returns null for invalid JSON', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       localStorage.setItem('agentsleague:session:v1', '{not valid json');
       const loaded = loadSession();
       expect(loaded).toBeNull();
       expect(consoleSpy).toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it('logs structured warning and clears storage key on invalid JSON', () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      localStorage.setItem(STORAGE_KEY, '%%%not-json%%%');
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[persistence] Failed to load session; clearing storage.',
+        expect.any(String),
+      );
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
       consoleSpy.mockRestore();
     });
   });

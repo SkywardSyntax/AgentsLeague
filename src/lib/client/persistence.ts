@@ -183,8 +183,12 @@ export function loadSession(): PersistedSessionV3 | null {
 
     console.error('[loadSession] No schema matched persisted data');
     return null;
-  } catch (err) {
-    console.error('[loadSession] Failed to parse session:', err);
+  } catch (err: unknown) {
+    console.warn(
+      '[persistence] Failed to load session; clearing storage.',
+      err instanceof Error ? err.message : err,
+    );
+    localStorage.removeItem(STORAGE_KEY);
     return null;
   }
 }
