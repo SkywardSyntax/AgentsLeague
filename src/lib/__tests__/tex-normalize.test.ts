@@ -26,4 +26,29 @@ describe('tex normalization', () => {
     const normalized = normalizeTexForMathJax('\\begin{pmatrix}a&b\\\\[4pt]c&d\\end{pmatrix}');
     expect(normalized).toBe('\\begin{pmatrix}a&b\\\\[4pt]c&d\\end{pmatrix}');
   });
+
+  it('handles $$$$ as single-$ delimiters leaving inner $$', () => {
+    const prepared = prepareTexForMathJax('$$$$');
+    expect(prepared).toEqual({ tex: '$$', displayMode: false });
+  });
+
+  it('returns mismatched delimiters as-is without stripping', () => {
+    const prepared = prepareTexForMathJax('\\[content\\)');
+    expect(prepared).toEqual({ tex: '\\[content\\)', displayMode: false });
+  });
+
+  it('handles whitespace-only content between delimiters', () => {
+    const prepared = prepareTexForMathJax('\\[  \\]');
+    expect(prepared).toEqual({ tex: '', displayMode: true });
+  });
+
+  it('preserves \\text command in inline mode', () => {
+    const prepared = prepareTexForMathJax('$\\text{hello}$');
+    expect(prepared).toEqual({ tex: '\\text{hello}', displayMode: false });
+  });
+
+  it('does not strip \\begin{align} delimiters (only equation supported)', () => {
+    const prepared = prepareTexForMathJax('\\begin{align}x+1\\end{align}');
+    expect(prepared).toEqual({ tex: '\\begin{align}x+1\\end{align}', displayMode: false });
+  });
 });
