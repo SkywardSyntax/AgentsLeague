@@ -16,7 +16,7 @@ import {
   getModel,
 } from '@/lib/server/openai';
 import { formatSSE, sseHeaders } from '@/lib/server/sse';
-import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
+import { isMockMode, isPassthroughMode, mockAgentStream, passthroughAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
   extendStructuredWhiteboardContext,
@@ -290,7 +290,14 @@ export async function POST(request: Request): Promise<Response> {
         { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
-    const body = json as { userMessage?: string };
+    const body = json as { userMessage?: string; passthroughBatch?: Record<string, unknown>; passthroughError?: string };
+    if (isPassthroughMode() || body.passthroughBatch || body.passthroughError) {
+      return passthroughAgentStream({
+        userMessage: body.userMessage ?? '',
+        passthroughBatch: body.passthroughBatch,
+        passthroughError: body.passthroughError,
+      });
+    }
     return mockAgentStream({ userMessage: body.userMessage ?? '' });
   }
 

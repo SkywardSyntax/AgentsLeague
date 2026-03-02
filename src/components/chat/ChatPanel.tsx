@@ -93,6 +93,7 @@ export function ChatPanel({
         </div>
         <button
           type="button"
+          data-testid="chat-stop"
           onClick={onCancel}
           disabled={status === 'idle'}
           className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -132,6 +133,7 @@ export function ChatPanel({
           return (
             <article
               key={message.id}
+              data-testid={`chat-message-${isUser ? 'user' : 'assistant'}`}
               className={`animate-rise-in rounded-2xl border px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${
                 isUser
                   ? 'ml-6 border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)]'
@@ -160,6 +162,7 @@ export function ChatPanel({
 
       <footer className="border-t border-[var(--color-border)] bg-[var(--color-surface-soft)]/55 p-3">
         <textarea
+          data-testid="chat-input"
           value={input}
           onChange={(e) => onInput(e.target.value)}
           onKeyDown={(e) => {
@@ -178,6 +181,7 @@ export function ChatPanel({
           <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline</p>
           <button
             type="button"
+            data-testid="chat-send"
             onClick={onSend}
             disabled={disabled || input.trim().length === 0}
             className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"

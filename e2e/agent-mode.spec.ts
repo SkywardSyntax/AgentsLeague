@@ -113,8 +113,23 @@ test.describe('Agent Mode', () => {
     // Pause
     await page.locator('[data-testid="agent-toggle"]').click();
     const countBefore = await page.evaluate(() => window.__agentAPI!.getMessages().length);
-    await page.waitForTimeout(4000);
-    const countAfter = await page.evaluate(() => window.__agentAPI!.getMessages().length);
+    // Poll to confirm no new messages arrive while paused (replaces brittle waitForTimeout)
+    const stableCheck = await page.evaluate(
+      (prev) =>
+        new Promise<number>((resolve) => {
+          let checks = 0;
+          const interval = setInterval(() => {
+            checks++;
+            const current = window.__agentAPI?.getMessages().length ?? prev;
+            if (current > prev || checks >= 8) {
+              clearInterval(interval);
+              resolve(current);
+            }
+          }, 500);
+        }),
+      countBefore,
+    );
+    const countAfter = stableCheck;
     expect(countAfter).toBe(countBefore);
 
     // Resume

@@ -73,7 +73,61 @@ function detectDomain(query: string): string {
 }
 
 export function isMockMode(): boolean {
-  return process.env.AGENT_STREAM_MODE === 'mock';
+  return process.env.AGENT_STREAM_MODE === 'mock' || process.env.AGENT_STREAM_MODE === 'passthrough';
+}
+
+export function isPassthroughMode(): boolean {
+  return process.env.AGENT_STREAM_MODE === 'passthrough';
+}
+
+/**
+ * Passthrough mode: echoes a batch from the request body as SSE.
+ * Enables per-test scenario control without env var switching or server restart.
+ * The request body must include a `passthroughBatch` field with the batch to echo.
+ * Optionally include `passthroughError` to simulate an error event.
+ */
+export function passthroughAgentStream(body: {
+  userMessage: string;
+  passthroughBatch?: Record<string, unknown>;
+  passthroughError?: string;
+}): Response {
+  const turnId = `passthrough-turn-${Date.now()}`;
+  const messageId = `passthrough-msg-${Date.now()}`;
+  const textReply = `Passthrough response for: ${body.userMessage.slice(0, 80)}`;
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(encoder.encode(formatSSE(payload)));
+      };
+
+      await delay(20);
+      send({ type: 'assistant.text.delta', turnId, delta: textReply });
+
+      await delay(20);
+      send({ type: 'assistant.text.done', turnId, messageId });
+
+      if (body.passthroughError) {
+        await delay(20);
+        send({ type: 'error', message: body.passthroughError });
+        controller.close();
+        return;
+      }
+
+      if (body.passthroughBatch) {
+        await delay(20);
+        send({ type: 'whiteboard.batch', turnId, batch: body.passthroughBatch });
+      }
+
+      await delay(20);
+      send({ type: 'turn.done', turnId, usage: { prompt: 0, completion: 0, total: 0 } });
+
+      controller.close();
+    },
+  });
+
+  return new Response(stream, { headers: sseHeaders() });
 }
 
 export function mockAgentStream(body: { userMessage: string }): Response {

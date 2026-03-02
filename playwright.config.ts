@@ -15,7 +15,7 @@ export default defineConfig({
   webServer: {
     command: 'NEXT_PUBLIC_MODE=agent AGENT_STREAM_MODE=mock npm run dev -- --port 4203',
     port: 4203,
-    timeout: 30_000,
+    timeout: 60_000,
     reuseExistingServer: !process.env.CI,
   },
 });

@@ -13,5 +13,6 @@ export function getInitialAppMode(): AppMode {
 export function getClientAppMode(search: string): AppMode {
   const urlMode = new URLSearchParams(search).get('mode');
   if (urlMode === 'agent') return 'agent';
+  if (urlMode === 'interactive') return 'interactive';
   return getInitialAppMode();
 }
