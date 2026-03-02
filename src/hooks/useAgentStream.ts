@@ -14,6 +14,28 @@ export interface StreamHandlers {
   onError: (message: string) => void;
 }
 
+/**
+ * Parse an SSE buffer into decoded event objects. Returns parsed events,
+ * the leftover (incomplete) buffer tail, and any JSON parse errors.
+ */
+export function parseSSEFrames(
+  buffer: string,
+): { events: unknown[]; remaining: string; errors: string[] } {
+  const parts = buffer.split(/\r?\n\r?\n/);
+  const remaining = parts.pop() ?? '';
+  const events: unknown[] = [];
+  const errors: string[] = [];
+  for (const chunk of parts) {
+    for (const line of chunk.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('data:'))) {
+      const json = line.slice(5).trim();
+      if (!json) continue;
+      try { events.push(JSON.parse(json)); }
+      catch { errors.push('Invalid SSE JSON payload received'); }
+    }
+  }
+  return { events, remaining, errors };
+}
+
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
 
@@ -63,46 +85,21 @@ export function useAgentStream() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        const splitChunks = (raw: string) => raw.split(/\r?\n\r?\n/);
 
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          const parts = splitChunks(buffer);
-          if (parts.length <= 1) continue;
-
-          buffer = parts.pop() ?? '';
-          for (const chunk of parts) {
-            const lines = chunk
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .filter((line) => line.startsWith('data:'));
-            for (const line of lines) {
-              const json = line.slice(5).trim();
-              if (!json) continue;
-              try {
-                const event = JSON.parse(json) as AgentSSEEvent;
-                args.handlers.onEvent(event);
-              } catch {
-                args.handlers.onError('Invalid SSE JSON payload received');
-              }
-            }
-          }
+          const { events, remaining, errors } = parseSSEFrames(buffer);
+          buffer = remaining;
+          for (const error of errors) args.handlers.onError(error);
+          for (const event of events) args.handlers.onEvent(event as AgentSSEEvent);
         }
 
-        const trailing = buffer.trim();
-        if (trailing.startsWith('data:')) {
-          const json = trailing.slice(5).trim();
-          if (json) {
-            try {
-              args.handlers.onEvent(JSON.parse(json) as AgentSSEEvent);
-            } catch {
-              args.handlers.onError('Invalid trailing SSE JSON payload received');
-            }
-          }
-        }
+        const { events, errors } = parseSSEFrames(buffer + '\n\n');
+        for (const error of errors) args.handlers.onError(error);
+        for (const event of events) args.handlers.onEvent(event as AgentSSEEvent);
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;
         args.handlers.onError(error instanceof Error ? error.message : 'Stream aborted unexpectedly');
