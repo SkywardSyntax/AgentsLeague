@@ -593,15 +593,21 @@ function buildTextLanes(
     };
   }
 
+  // When there are fewer than 2 panel columns, create distinct non-overlapping
+  // lane regions instead of giving all lanes the same spatial bounds.
+  const laneGap = 40;
+  const leftW = Math.max(280, Math.floor((baseRegion.w - laneGap) / 2));
+  const rightW = Math.max(280, baseRegion.w - leftW - laneGap);
+
   return {
     left: {
       name: 'left',
-      region: { ...baseRegion, x: baseRegion.x, y: topTextY, w: baseRegion.w, h: baseRegion.h, score: 1 },
+      region: { ...baseRegion, x: baseRegion.x, y: topTextY, w: leftW, h: baseRegion.h, score: 1 },
       cursorY: topTextY,
     },
     right: {
       name: 'right',
-      region: { ...baseRegion, x: baseRegion.x, y: topTextY, w: baseRegion.w, h: baseRegion.h, score: 1 },
+      region: { ...baseRegion, x: baseRegion.x + leftW + laneGap, y: topTextY, w: rightW, h: baseRegion.h, score: 1 },
       cursorY: topTextY,
     },
     center: {
@@ -646,12 +652,8 @@ function chooseLaneForBlock(
   if (hint === 'right') return lanes.right;
   if (hint === 'center') return lanes.center;
   if (hint === 'bottom') {
-    lanes.bottom.cursorY = Math.max(
-      lanes.bottom.cursorY,
-      lanes.left.cursorY + 16,
-      lanes.right.cursorY + 16,
-      lanes.center.cursorY + 16,
-    );
+    // Don't mutate cursorY during selection — the caller advances cursorY
+    // after placement. Just ensure bottom starts below other lanes.
     return lanes.bottom;
   }
 
@@ -720,52 +722,83 @@ function buildAdaptiveLayout(
       panelPlacements.set(block.id, placed);
       textStartY = Math.max(textStartY, placed.bottomY);
     }
-
-    for (const relation of semanticBatch.relations ?? []) {
-      const from = panelPlacements.get(relation.from_block_id);
-      const to = panelPlacements.get(relation.to_block_id);
-      if (!from || !to) continue;
-
-      const fromAnchor = findAnchorPoint(state.anchors, relation.from_anchor);
-      const toAnchor = findAnchorPoint(state.anchors, relation.to_anchor);
-
-      const arrowFrom = fromAnchor ??
-        (from.center.x < to.center.x
-          ? { x: from.exit.x, y: from.center.y - 6 }
-          : { x: from.entry.x, y: from.center.y - 6 });
-      const arrowTo = toAnchor ??
-        (from.center.x < to.center.x
-          ? { x: to.entry.x, y: to.center.y - 6 }
-          : { x: to.exit.x, y: to.center.y - 6 });
-
-      pushElement(state, {
-        id: relation.id,
-        type: 'arrow',
-        from: arrowFrom,
-        to: arrowTo,
-      });
-      if (relation.label) {
-        pushElement(state, {
-          id: `${relation.id}-label`,
-          type: 'text',
-          x: (arrowFrom.x + arrowTo.x) / 2 - 20,
-          y: Math.min(arrowFrom.y, arrowTo.y) - 12,
-          text: relation.label,
-          size: 20,
-        });
-      }
-    }
   }
 
   const lanes = buildTextLanes(baseRegion, panelColumns, textStartY + (diagramBlocks.length > 0 ? 8 : 0));
 
+  // Track text block positions so cross-type relations (panel↔equation, panel↔caption) work
+  const textBlockPositions = new Map<string, PanelPlacement>();
+
   for (const block of textBlocks) {
     const lane = chooseLaneForBlock(block, lanes);
+    // Ensure bottom lane starts below all other lanes
+    if (lane.name === 'bottom') {
+      lane.cursorY = Math.max(
+        lane.cursorY,
+        lanes.left.cursorY + 16,
+        lanes.right.cursorY + 16,
+        lanes.center.cursorY + 16,
+      );
+    }
+    const startY = lane.cursorY;
     if (block.kind === 'equation_stack') {
       lane.cursorY = placeEquationStack(block, lane.region, state, lane.cursorY);
       lane.cursorY += 14;
     } else {
       lane.cursorY = placeCaptionBlock(block, lane.region, state, lane.cursorY);
+    }
+    const midY = (startY + lane.cursorY) / 2;
+    const midX = lane.region.x + lane.region.w / 2;
+    textBlockPositions.set(block.id, {
+      blockId: block.id,
+      center: { x: midX, y: midY },
+      entry: { x: lane.region.x - 10, y: midY },
+      exit: { x: lane.region.x + lane.region.w + 10, y: midY },
+      bottomY: lane.cursorY,
+    });
+  }
+
+  // Render relations between ANY block types (panel↔panel, panel↔equation, etc.)
+  for (const relation of semanticBatch.relations ?? []) {
+    const from = panelPlacements.get(relation.from_block_id) ?? textBlockPositions.get(relation.from_block_id);
+    const to = panelPlacements.get(relation.to_block_id) ?? textBlockPositions.get(relation.to_block_id);
+    if (!from || !to) continue;
+
+    const fromAnchor = findAnchorPoint(state.anchors, relation.from_anchor);
+    const toAnchor = findAnchorPoint(state.anchors, relation.to_anchor);
+
+    const arrowFrom = fromAnchor ??
+      (from.center.x < to.center.x
+        ? { x: from.exit.x, y: from.center.y - 6 }
+        : { x: from.entry.x, y: from.center.y - 6 });
+    const arrowTo = toAnchor ??
+      (from.center.x < to.center.x
+        ? { x: to.entry.x, y: to.center.y - 6 }
+        : { x: to.exit.x, y: to.center.y - 6 });
+
+    pushElement(state, {
+      id: relation.id,
+      type: 'arrow',
+      from: arrowFrom,
+      to: arrowTo,
+    });
+    if (relation.label) {
+      const midX = (arrowFrom.x + arrowTo.x) / 2;
+      const midY = (arrowFrom.y + arrowTo.y) / 2;
+      const dx = arrowTo.x - arrowFrom.x;
+      const dy = arrowTo.y - arrowFrom.y;
+      // Offset label perpendicular to arrow direction for readability
+      const isMoreVertical = Math.abs(dy) > Math.abs(dx);
+      const labelX = isMoreVertical ? midX + 8 : midX - 20;
+      const labelY = isMoreVertical ? midY : midY - 14;
+      pushElement(state, {
+        id: `${relation.id}-label`,
+        type: 'text',
+        x: labelX,
+        y: labelY,
+        text: relation.label,
+        size: 20,
+      });
     }
   }
 }

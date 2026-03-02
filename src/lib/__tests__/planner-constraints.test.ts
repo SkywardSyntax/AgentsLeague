@@ -43,4 +43,66 @@ describe('planner constraints', () => {
     expect(rect.x).toBeGreaterThanOrEqual(20);
     expect(rect.y).toBeGreaterThanOrEqual(20);
   });
+
+  it('handles oversized elements without contradictory corrections', () => {
+    const batch: DrawBatch = {
+      batch_id: 'b3',
+      elements: [{ id: 'r1', type: 'rect', x: -10, y: 30, w: 900, h: 50 }],
+    };
+
+    const repaired = enforceDrawBatchConstraints(batch, {
+      canvasWidth: 800,
+      canvasHeight: 600,
+      margin: 20,
+    });
+
+    const rect = repaired.batch.elements[0]!;
+    expect(rect.type).toBe('rect');
+    if (rect.type !== 'rect') return;
+
+    // Oversized element should be clamped to left margin, not pushed both ways
+    expect(rect.x).toBe(20);
+  });
+
+  it('fallback reflow preserves two-column structure', () => {
+    // Two columns of text that overlap within each column
+    const batch: DrawBatch = {
+      batch_id: 'b4',
+      elements: [
+        { id: 'left-1', type: 'text', x: 50, y: 100, text: 'left column line one', size: 18 },
+        { id: 'left-2', type: 'text', x: 55, y: 101, text: 'left column line two', size: 18 },
+        { id: 'right-1', type: 'text', x: 600, y: 100, text: 'right column line one', size: 18 },
+        { id: 'right-2', type: 'text', x: 605, y: 101, text: 'right column line two', size: 18 },
+      ],
+    };
+
+    const repaired = enforceDrawBatchConstraints(batch, {
+      canvasWidth: 1600,
+      canvasHeight: 1200,
+      margin: 24,
+      maxRepairIterations: 0, // force fallback
+    });
+
+    // After fallback reflow, left-column elements should still be
+    // spatially separated from right-column elements
+    const leftEls = repaired.batch.elements.filter(
+      (el) => el.type === 'text' && el.id.startsWith('left'),
+    );
+    const rightEls = repaired.batch.elements.filter(
+      (el) => el.type === 'text' && el.id.startsWith('right'),
+    );
+    expect(leftEls.length).toBe(2);
+    expect(rightEls.length).toBe(2);
+
+    // Right-column x positions should remain distinct from left-column
+    for (const r of rightEls) {
+      if (r.type === 'text') {
+        for (const l of leftEls) {
+          if (l.type === 'text') {
+            expect(r.x).toBeGreaterThan(l.x + 100);
+          }
+        }
+      }
+    }
+  });
 });

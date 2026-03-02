@@ -1,60 +1,7 @@
 import type { DrawBatch, DrawElement, WhiteboardBounds } from '@/types/agent';
 import type { PlannerConfig, PlannerConstraintResult } from './types';
 import { DEFAULT_PLANNER_CONFIG } from './types';
-
-function boundsOf(el: DrawElement): WhiteboardBounds | null {
-  if (el.type === 'rect') {
-    return { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h };
-  }
-  if (el.type === 'ellipse') {
-    return { minX: el.cx - el.rx, minY: el.cy - el.ry, maxX: el.cx + el.rx, maxY: el.cy + el.ry };
-  }
-  if (el.type === 'line' || el.type === 'arrow') {
-    return {
-      minX: Math.min(el.from.x, el.to.x),
-      minY: Math.min(el.from.y, el.to.y),
-      maxX: Math.max(el.from.x, el.to.x),
-      maxY: Math.max(el.from.y, el.to.y),
-    };
-  }
-  if (el.type === 'text') {
-    const size = el.size ?? 18;
-    const width = Math.max(size * 0.45, el.text.length * size * 0.52);
-    return { minX: el.x, minY: el.y - size * 0.9, maxX: el.x + width, maxY: el.y + size * 0.5 };
-  }
-  if (el.type === 'latex') {
-    const size = el.fontSize ?? 20;
-    const fracCount = (el.tex.match(/\\(?:d?frac|tfrac)\b/g) ?? []).length;
-    const rootCount = (el.tex.match(/\\sqrt\b/g) ?? []).length;
-    const sumLikeCount = (el.tex.match(/\\(?:sum|prod|int|lim)\b/g) ?? []).length;
-    const matrixLikeCount = (el.tex.match(/\\(?:begin\{[^}]*matrix\}|begin\{array\}|cases|aligned|align)\b/g) ?? [])
-      .length;
-    const scriptCount = (el.tex.match(/[\^_]/g) ?? []).length;
-    const lineBreakCount = (el.tex.match(/\\\\/g) ?? []).length;
-
-    const widthScale = 0.44 + Math.min(0.16, fracCount * 0.02 + matrixLikeCount * 0.04);
-    const rawWidth = Math.max(size * 1.8, el.tex.length * size * widthScale);
-    const width = Math.min(1460, rawWidth);
-
-    const complexity =
-      1 +
-      fracCount * 0.55 +
-      rootCount * 0.2 +
-      sumLikeCount * 0.25 +
-      matrixLikeCount * 1.2 +
-      Math.min(1.2, scriptCount * 0.04) +
-      lineBreakCount * 0.6;
-    const baseHeight = size * (el.displayMode ? 1.95 : 1.45);
-    const height = Math.max(size * (el.displayMode ? 2.15 : 1.5), baseHeight * complexity);
-
-    let minX = el.x;
-    if (el.align === 'center') minX = el.x - width / 2;
-    if (el.align === 'right') minX = el.x - width;
-
-    return { minX, minY: el.y - size * 1.02, maxX: minX + width, maxY: el.y + height };
-  }
-  return null;
-}
+import { boundsOf } from './bounds';
 
 function shiftElement(el: DrawElement, dx: number, dy: number): DrawElement {
   if (el.type === 'rect') return { ...el, x: el.x + dx, y: el.y + dy };
@@ -94,11 +41,26 @@ function ensureCanvasBounds(
 
     let dx = 0;
     let dy = 0;
+    const elWidth = b.maxX - b.minX;
+    const elHeight = b.maxY - b.minY;
+    const availW = config.canvasWidth - 2 * config.margin;
+    const availH = config.canvasHeight - 2 * config.margin;
 
-    if (b.minX < config.margin) dx += config.margin - b.minX;
-    if (b.minY < config.margin) dy += config.margin - b.minY;
-    if (b.maxX > config.canvasWidth - config.margin) dx -= b.maxX - (config.canvasWidth - config.margin);
-    if (b.maxY > config.canvasHeight - config.margin) dy -= b.maxY - (config.canvasHeight - config.margin);
+    // When element is wider/taller than canvas, clamp to start margin only
+    // to avoid contradictory corrections pushing both directions.
+    if (elWidth >= availW) {
+      dx = config.margin - b.minX;
+    } else {
+      if (b.minX < config.margin) dx += config.margin - b.minX;
+      if (b.maxX > config.canvasWidth - config.margin) dx -= b.maxX - (config.canvasWidth - config.margin);
+    }
+
+    if (elHeight >= availH) {
+      dy = config.margin - b.minY;
+    } else {
+      if (b.minY < config.margin) dy += config.margin - b.minY;
+      if (b.maxY > config.canvasHeight - config.margin) dy -= b.maxY - (config.canvasHeight - config.margin);
+    }
 
     if (dx !== 0) fixes.add('shift_x');
     if (dy !== 0) fixes.add('shift_y');
@@ -198,6 +160,22 @@ function hasTextOverlap(elements: DrawElement[]): boolean {
     }
   }
 
+  // Also check text-shape overlaps to avoid false convergence
+  const shapes = elements
+    .map((el) => ({ el, b: boundsOf(el) }))
+    .filter((entry): entry is { el: DrawElement; b: WhiteboardBounds } =>
+      Boolean(entry.b) && isShapeLike(entry.el),
+    );
+
+  for (const text of items) {
+    const id = (text.el as { id: string }).id.toLowerCase();
+    if (!id.includes('label') && !id.includes('caption') && !id.includes('title')) continue;
+    for (const shape of shapes) {
+      if (horizontalOverlap(text.b, shape.b) < 12) continue;
+      if (Math.min(text.b.maxY, shape.b.maxY) > Math.max(text.b.minY, shape.b.minY)) return true;
+    }
+  }
+
   return false;
 }
 
@@ -215,20 +193,37 @@ function fallbackVerticalReflow(
 
   if (sortedText.length === 0) return elements;
 
-  let y = sortedText[0]!.b.minY;
+  // Group text elements into columns by horizontal midpoint to preserve
+  // multi-column layouts instead of linearizing everything.
+  const canvasMid = config.canvasWidth / 2;
+  const leftCol = sortedText.filter((item) => {
+    const midX = (item.b.minX + item.b.maxX) / 2;
+    return midX < canvasMid * 0.75;
+  });
+  const rightCol = sortedText.filter((item) => {
+    const midX = (item.b.minX + item.b.maxX) / 2;
+    return midX >= canvasMid * 0.75;
+  });
+
+  // If all elements are in one column, fall back to single-column reflow.
+  const columns = leftCol.length > 0 && rightCol.length > 0 ? [leftCol, rightCol] : [sortedText];
+
   const next = [...elements];
-  for (const item of sortedText) {
-    const current = next[item.idx]!;
-    const b = boundsOf(current);
-    if (!b) continue;
-    const dy = y - b.minY;
-    if (Math.abs(dy) > 0.5) {
-      next[item.idx] = shiftElement(current, 0, dy);
-      fixes.add('region_reflow');
+  for (const col of columns) {
+    let y = col[0]!.b.minY;
+    for (const item of col) {
+      const current = next[item.idx]!;
+      const b = boundsOf(current);
+      if (!b) continue;
+      const dy = y - b.minY;
+      if (Math.abs(dy) > 0.5) {
+        next[item.idx] = shiftElement(current, 0, dy);
+        fixes.add('region_reflow');
+      }
+      const nextBounds = boundsOf(next[item.idx]!);
+      if (!nextBounds) continue;
+      y = nextBounds.maxY + config.minTextGap;
     }
-    const nextBounds = boundsOf(next[item.idx]!);
-    if (!nextBounds) continue;
-    y = nextBounds.maxY + config.minTextGap;
   }
 
   return next;
@@ -266,6 +261,7 @@ export function enforceDrawBatchConstraints(
   const fixes = new Set<string>();
 
   let elements = [...batch.elements];
+  let prevElementHash = '';
   for (let i = 0; i < config.maxRepairIterations; i++) {
     elements = enforceArrowLegibility(elements, fixes);
     elements = resolveTextSpacing(elements, config, fixes);
@@ -279,6 +275,11 @@ export function enforceDrawBatchConstraints(
         fallbackUsed: false,
       };
     }
+
+    // Fixed-point detection: stop if element positions didn't change
+    const curHash = elements.map((el) => el.id + JSON.stringify(boundsOf(el))).join('|');
+    if (curHash === prevElementHash) break;
+    prevElementHash = curHash;
   }
 
   elements = fallbackVerticalReflow(elements, config, fixes);

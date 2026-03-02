@@ -132,4 +132,82 @@ describe('planner templates', () => {
       expect(eq.lines.length).toBeLessThanOrEqual(6);
     }
   });
+
+  it('renders relations between diagram panels and equation stacks', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-cross',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'panel1',
+          kind: 'diagram_panel',
+          axes: { x_label: 'x', y_label: 'y' },
+        },
+        {
+          id: 'eq1',
+          kind: 'equation_stack',
+          lines: [{ id: 'l1', tex: 'f(x)=x^2' }],
+        },
+      ],
+      relations: [
+        {
+          id: 'rel1',
+          type: 'explains',
+          from_block_id: 'panel1',
+          to_block_id: 'eq1',
+          label: 'derives',
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    const arrows = planned.elements.filter((el) => el.type === 'arrow');
+    const relLabel = planned.elements.find(
+      (el) => el.type === 'text' && el.id === 'rel1-label',
+    );
+
+    // Cross-type relation should produce an arrow
+    expect(arrows.some((a) => a.id === 'rel1')).toBe(true);
+    // And a label
+    expect(relLabel).toBeDefined();
+    if (relLabel?.type === 'text') {
+      expect(relLabel.text).toBe('derives');
+    }
+  });
+
+  it('creates non-overlapping lane regions for single-panel layouts', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-lanes',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'eq-left',
+          kind: 'equation_stack',
+          region_hint: 'left',
+          lines: [{ id: 'l1', tex: 'a=1' }],
+        },
+        {
+          id: 'eq-right',
+          kind: 'equation_stack',
+          region_hint: 'right',
+          lines: [{ id: 'l2', tex: 'b=2' }],
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    const leftEq = planned.elements.find(
+      (el) => el.type === 'latex' && el.id.startsWith('eq-left'),
+    );
+    const rightEq = planned.elements.find(
+      (el) => el.type === 'latex' && el.id.startsWith('eq-right'),
+    );
+
+    expect(leftEq).toBeDefined();
+    expect(rightEq).toBeDefined();
+    if (leftEq?.type === 'latex' && rightEq?.type === 'latex') {
+      // Right lane content should be placed at a distinctly different x
+      expect(rightEq.x).toBeGreaterThan(leftEq.x + 100);
+    }
+  });
 });
