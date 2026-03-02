@@ -25,6 +25,8 @@ import { buildWhiteboardContextMessage, buildWhiteboardContextMessageV2 } from '
 import { boundsOfBatch } from '@/lib/server/stream/bounds';
 import { extractStableChunks, normalizeChunkKey, estimateProvisionalAdvance } from '@/lib/server/stream/provisional';
 import { handleToolCall } from '@/lib/server/stream/tool-handler';
+import { parseFunctionCallFromEvent } from '@/lib/server/stream/event-parser';
+import type { FunctionCall } from '@/lib/server/stream/event-parser';
 import {
   enforceDrawBatchConstraints,
   lowerPlannedLayoutToDrawBatch,
@@ -36,54 +38,6 @@ import type {
 } from '@/types/agent';
 
 export const runtime = 'nodejs';
-
-type FunctionCall = {
-  callId: string;
-  name: string;
-  arguments: string;
-};
-
-function parseFunctionCallFromEvent(
-  event: ResponseStreamEvent,
-): FunctionCall | null {
-  if (event.type === 'response.function_call_arguments.done') {
-    const anyEvent = event as unknown as {
-      call_id?: string;
-      name?: string;
-      arguments?: string;
-      item?: { call_id?: string; name?: string; arguments?: string };
-    };
-
-    const callId = anyEvent.call_id ?? anyEvent.item?.call_id;
-    const name = anyEvent.name ?? anyEvent.item?.name;
-    const args = anyEvent.arguments ?? anyEvent.item?.arguments;
-    if (callId && name && typeof args === 'string') {
-      return { callId, name, arguments: args };
-    }
-  }
-
-  if (event.type === 'response.output_item.done') {
-    const anyEvent = event as unknown as {
-      item?: {
-        type?: string;
-        call_id?: string;
-        name?: string;
-        arguments?: string;
-      };
-    };
-
-    if (anyEvent.item?.type === 'function_call') {
-      const callId = anyEvent.item.call_id;
-      const name = anyEvent.item.name;
-      const args = anyEvent.item.arguments;
-      if (callId && name && typeof args === 'string') {
-        return { callId, name, arguments: args };
-      }
-    }
-  }
-
-  return null;
-}
 
 async function handlePost(request: Request, ctx: HandlerContext): Promise<Response> {
   const requestId = ctx.requestId;
@@ -119,9 +73,9 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   const parsed = AgentStreamRequestSchema.safeParse(json);
   if (!parsed.success) {
     log.warn('validation_error', { issues: parsed.error.issues.length });
-    return new Response(
-      JSON.stringify({ error: 'VALIDATION_ERROR', issues: parsed.error.issues }),
-      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
+    return Response.json(
+      { error: 'VALIDATION_ERROR', issues: parsed.error.issues, requestId },
+      { status: 400, headers: { 'X-Request-Id': requestId } },
     );
   }
 
