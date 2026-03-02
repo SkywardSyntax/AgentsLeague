@@ -5,6 +5,7 @@ import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
+import { sanitizeUserMessage } from '@/lib/client/message-validation';
 import { loadSession, saveSession } from '@/lib/client/persistence';
 import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
 import { buildWhiteboardContext, buildWhiteboardContextV2 } from '@/lib/whiteboard/context';
@@ -417,7 +418,7 @@ export function AppShell() {
   const sendMessage = useCallback(
     (rawInput: string): boolean => {
       if (!activeChat) return false;
-      const message = rawInput.trim();
+      const message = sanitizeUserMessage(rawInput);
       if (!message || status !== 'idle') return false;
 
       const chatId = activeChat.id;

@@ -387,7 +387,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
   const batch_id = typeof payload.batch_id === 'string' && payload.batch_id.trim().length > 0
     ? payload.batch_id.trim()
     : `graph-${Date.now()}`;
-  const script = typeof payload.script === 'string' ? payload.script : '';
+  const rawScript = typeof payload.script === 'string' ? payload.script : '';
+  if (rawScript.length > 50_000) {
+    return { semanticBatch: null, warnings: ['Script exceeds maximum length'] };
+  }
+  // Strip control characters (keep \t, \n, \r)
+  const script = rawScript.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
   if (!script.trim()) {
     return { semanticBatch: null, warnings: ['Graph script is empty'] };
   }

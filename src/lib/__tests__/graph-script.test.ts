@@ -285,6 +285,48 @@ describe('parseGraphScriptToSemanticBatch', () => {
     expect(result.warnings.length).toBeGreaterThan(0);
   });
 
+  it('returns null with warning for array input', () => {
+    const result = parseGraphScriptToSemanticBatch([{ script: 'panel id=p1' }]);
+    expect(result.semanticBatch).toBeNull();
+    expect(result.warnings.some((w) => w.includes('must be an object'))).toBe(true);
+  });
+
+  it('strips control characters from script before parsing', () => {
+    const script = 'panel id=p1\x00\x01\nshape id=s1 panel=p1 type=rect\x08';
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-ctrl', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const panel = result.semanticBatch!.blocks.find((b) => b.kind === 'diagram_panel');
+    if (panel?.kind === 'diagram_panel') {
+      expect(panel.shapes).toHaveLength(1);
+    }
+  });
+
+  it('rejects script exceeding 50000 characters', () => {
+    const script = 'panel id=p1\n' + 'a'.repeat(50_001);
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-long', script });
+    expect(result.semanticBatch).toBeNull();
+    expect(result.warnings.some((w) => w.includes('maximum length'))).toBe(true);
+  });
+
+  it('accepts script of exactly 50000 characters', () => {
+    // Build a valid script padded to exactly 50000 chars with trailing comment
+    const base = 'panel id=p1\nshape id=s1 panel=p1 type=rect\n# ';
+    const padding = 'x'.repeat(50_000 - base.length);
+    const script = base + padding;
+    expect(script.length).toBe(50_000);
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-exact', script });
+    expect(result.semanticBatch).not.toBeNull();
+  });
+
+  it('auto-generates batch_id when empty string provided', () => {
+    const result = parseGraphScriptToSemanticBatch({
+      batch_id: '   ',
+      script: 'panel id=p1\nshape id=s1 panel=p1 type=rect',
+    });
+    expect(result.semanticBatch).not.toBeNull();
+    expect(result.semanticBatch!.batch_id).toMatch(/^graph-\d+$/);
+  });
+
   it('single-axis axes="X" is ignored (requires two labels)', () => {
     const script = 'panel id=p1 axes=X';
     const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-1axis', script });
