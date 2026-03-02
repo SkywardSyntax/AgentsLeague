@@ -9,7 +9,7 @@ import {
   createOpenAIClient,
   getModel,
 } from '@/lib/server/openai';
-import { formatSSE, sseHeaders, createSSEHeartbeat } from '@/lib/server/sse';
+import { formatSSE, sseHeaders, createSSEHeartbeat, safeEnqueue } from '@/lib/server/sse';
 import { createLogger } from '@/lib/server/logger';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import { buildWhiteboardContextMessage, buildWhiteboardContextMessageV2 } from '@/lib/server/stream/context-builder';
@@ -81,6 +81,15 @@ export async function POST(request: Request): Promise<Response> {
   const startTime = Date.now();
   const log = createLogger({ requestId, route: '/api/agent/stream' });
 
+  // Content-Type validation — consistent across mock and non-mock paths
+  const ct = request.headers.get('Content-Type') ?? '';
+  if (!ct.includes('application/json')) {
+    return new Response(
+      JSON.stringify({ error: 'UNSUPPORTED_MEDIA_TYPE', message: 'Content-Type must be application/json' }),
+      { status: 415, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
+    );
+  }
+
   // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
   if (isMockMode()) {
     let json: unknown;
@@ -148,8 +157,12 @@ export async function POST(request: Request): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
+      let clientDisconnected = false;
       const send = (payload: unknown) => {
-        controller.enqueue(encoder.encode(formatSSE(payload)));
+        if (clientDisconnected) return;
+        if (!safeEnqueue(controller, formatSSE(payload), encoder)) {
+          clientDisconnected = true;
+        }
       };
 
       let turnTimer: ReturnType<typeof setTimeout> | undefined;

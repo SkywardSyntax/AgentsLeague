@@ -83,12 +83,61 @@ export function withValidation<T extends z.ZodType>(
   };
 }
 
+export function withContentType(expected: string, handler: Handler): Handler {
+  return async (request, ctx) => {
+    const ct = request.headers.get('Content-Type') ?? '';
+    if (!ct.includes(expected)) {
+      return apiError(415, 'UNSUPPORTED_MEDIA_TYPE', `Expected Content-Type: ${expected}`, ctx.requestId);
+    }
+    return handler(request, ctx);
+  };
+}
+
 export function withBodySizeLimit(maxBytes: number, handler: Handler): Handler {
   return async (request, ctx) => {
     const contentLength = request.headers.get('Content-Length');
-    if (contentLength && parseInt(contentLength, 10) > maxBytes) {
-      return apiError(413, 'PAYLOAD_TOO_LARGE', `Request body exceeds ${maxBytes} bytes`, ctx.requestId);
+    if (contentLength) {
+      const len = parseInt(contentLength, 10);
+      if (!Number.isNaN(len) && len > maxBytes) {
+        return apiError(413, 'PAYLOAD_TOO_LARGE', `Request body exceeds ${maxBytes} bytes`, ctx.requestId);
+      }
     }
+
+    // When Content-Length is missing (e.g. chunked transfer), read the body
+    // with a byte counter to enforce the limit.
+    if (!contentLength && request.body) {
+      const reader = request.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalBytes += value.byteLength;
+          if (totalBytes > maxBytes) {
+            reader.cancel();
+            return apiError(413, 'PAYLOAD_TOO_LARGE', `Request body exceeds ${maxBytes} bytes`, ctx.requestId);
+          }
+          chunks.push(value);
+        }
+      } catch {
+        return apiError(400, 'BAD_REQUEST', 'Failed to read request body', ctx.requestId);
+      }
+      // Reconstruct the request with the already-read body so downstream can call request.json()
+      const combined = new Uint8Array(totalBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const newRequest = new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: combined,
+      });
+      return handler(newRequest, ctx);
+    }
+
     return handler(request, ctx);
   };
 }

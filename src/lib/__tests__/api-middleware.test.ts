@@ -5,6 +5,7 @@ import {
   withErrorBoundary,
   withValidation,
   withBodySizeLimit,
+  withContentType,
   withRateLimit,
   compose,
 } from '@/lib/server/api-middleware';
@@ -182,5 +183,71 @@ describe('withRateLimit', () => {
     const r2 = await handler(req2, ctx);
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
+  });
+});
+
+describe('withContentType', () => {
+  it('rejects request with wrong Content-Type', async () => {
+    const handler = withContentType('application/json', async () => Response.json({ ok: true }));
+    const req = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'hello',
+    });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(415);
+    const body = await res.json();
+    expect(body.error).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+
+  it('accepts request with matching Content-Type (including charset)', async () => {
+    const handler = withContentType('application/json', async () => Response.json({ ok: true }));
+    const req = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ data: 'test' }),
+    });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects request with missing Content-Type', async () => {
+    const handler = withContentType('application/json', async () => Response.json({ ok: true }));
+    const req = new Request('http://localhost/test', { method: 'POST' });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(415);
+  });
+});
+
+describe('withBodySizeLimit (chunked transfer)', () => {
+  it('rejects oversized body when Content-Length is missing (chunked)', async () => {
+    const handler = withBodySizeLimit(10, async () => Response.json({ ok: true }));
+    // Construct a Request then strip Content-Length to simulate chunked transfer
+    const req = new Request('http://localhost/test', {
+      method: 'POST',
+      body: 'x'.repeat(100),
+    });
+    // Delete Content-Length header to simulate chunked encoding
+    req.headers.delete('Content-Length');
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(413);
+  });
+
+  it('allows body within limit when Content-Length is missing', async () => {
+    const handler = withBodySizeLimit(1000, async (_req) => {
+      const json = await _req.json();
+      return Response.json(json);
+    });
+    const payload = JSON.stringify({ small: true });
+    const req = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    });
+    req.headers.delete('Content-Length');
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.small).toBe(true);
   });
 });

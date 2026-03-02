@@ -517,3 +517,237 @@ describe('AgentSSEEventSchema validation', () => {
     expect(validateSSEEvent(event)).toBeTruthy();
   });
 });
+
+describe('relative_pose precision', () => {
+  it('{x: -0.001, y: 1.001} clamped to {x: 0, y: 1}', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [{ id: 's1', type: 'rect', relative_pose: { x: -0.001, y: 1.001 } }],
+        },
+      ],
+    });
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    expect(panel.shapes[0].relative_pose.x).toBe(0);
+    expect(panel.shapes[0].relative_pose.y).toBe(1);
+    expect(warnings.some((w) => w.includes('clamped'))).toBe(true);
+  });
+
+  it('{x: 0.5, y: 0.5} passes through unchanged', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [{ id: 's1', type: 'rect', relative_pose: { x: 0.5, y: 0.5 } }],
+        },
+      ],
+    });
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    expect(panel.shapes[0].relative_pose.x).toBe(0.5);
+    expect(panel.shapes[0].relative_pose.y).toBe(0.5);
+    expect(warnings.filter((w) => w.includes('clamped'))).toHaveLength(0);
+  });
+
+  it('{x: 0.9999999999, y: 0.0000000001} passes through without clamping', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [{ id: 's1', type: 'rect', relative_pose: { x: 0.9999999999, y: 0.0000000001 } }],
+        },
+      ],
+    });
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    expect(panel.shapes[0].relative_pose.x).toBeCloseTo(0.9999999999);
+    expect(panel.shapes[0].relative_pose.y).toBeCloseTo(0.0000000001);
+    expect(warnings.filter((w) => w.includes('clamped'))).toHaveLength(0);
+  });
+
+  it('{x: NaN, y: 0.5} — NaN is sanitized via asNumber fallback to default 0.5', () => {
+    // asNumber returns null for NaN; the normalizer falls back to 0.5
+    const { normalized } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [{ id: 's1', type: 'rect', relative_pose: { x: NaN, y: 0.5 } }],
+        },
+      ],
+    });
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    // NaN filtered by asNumber → null → defaults to 0.5 via `x ?? 0.5`
+    expect(panel.shapes[0].relative_pose.x).toBe(0.5);
+    expect(panel.shapes[0].relative_pose.y).toBe(0.5);
+  });
+
+  it('{x: Infinity, y: -Infinity} — asNumber filters non-finite, no pose set', () => {
+    const { normalized } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [{ id: 's1', type: 'rect', relative_pose: { x: Infinity, y: -Infinity } }],
+        },
+      ],
+    });
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    // asNumber returns null for non-finite → condition fails → no relative_pose set
+    expect(panel.shapes[0].relative_pose).toBeUndefined();
+  });
+});
+
+describe('enum coercion edge cases', () => {
+  it('uppercase shape type (RECT) is dropped with warning', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [
+            { id: 's1', type: 'RECT', label: 'Bad shape' },
+            { id: 's2', type: 'rect', label: 'Good shape' },
+          ],
+        },
+      ],
+    });
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    expect(panel.shapes).toHaveLength(1);
+    expect(panel.shapes[0].type).toBe('rect');
+    expect(warnings.some((w) => w.includes('invalid type'))).toBe(true);
+  });
+
+  it('empty string shape type is dropped with warning', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [
+            { id: 's1', type: '', label: 'Empty type' },
+            { id: 's2', type: 'rect', label: 'Good' },
+          ],
+        },
+      ],
+    });
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    expect(panel.shapes).toHaveLength(1);
+    expect(warnings.some((w) => w.includes('invalid type'))).toBe(true);
+  });
+
+  it('near-miss synonym shape type (rectangle) is dropped with warning', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'p1',
+          kind: 'diagram_panel',
+          shapes: [{ id: 's1', type: 'rectangle', label: 'Near-miss' }],
+        },
+      ],
+    });
+    // diagram_panel with no valid shapes still gets added (shapes array empty)
+    const panel = normalized!.blocks.find((b) => b.kind === 'diagram_panel') as any;
+    expect(panel.shapes).toBeUndefined();
+    expect(warnings.some((w) => w.includes('invalid type'))).toBe(true);
+  });
+});
+
+describe('mass deduplication', () => {
+  it('50 blocks with same id get unique suffixed ids with 49 warnings', () => {
+    const blocks = Array.from({ length: 50 }, (_, i) => ({
+      id: 'same',
+      kind: 'caption',
+      text: `Block ${i}`,
+    }));
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks,
+    });
+    expect(normalized!.blocks).toHaveLength(50);
+    const ids = normalized!.blocks.map((b) => b.id);
+    const uniqueIds = new Set(ids);
+    expect(uniqueIds.size).toBe(50);
+    const dupWarnings = warnings.filter((w) => w.includes('Duplicate block id'));
+    expect(dupWarnings).toHaveLength(49);
+  });
+
+  it('block order is preserved after dedup', () => {
+    const blocks = Array.from({ length: 5 }, (_, i) => ({
+      id: 'dup',
+      kind: 'caption',
+      text: `Block ${i}`,
+    }));
+    const { normalized } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks,
+    });
+    for (let i = 0; i < 5; i++) {
+      expect((normalized!.blocks[i] as any).text).toBe(`Block ${i}`);
+    }
+  });
+});
+
+describe('relation target validation', () => {
+  const makeBlocks = (...ids: string[]) =>
+    ids.map((id) => ({ id, kind: 'caption', text: `Block ${id}` }));
+
+  it('drops relation referencing non-existent from_block_id with warning', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: makeBlocks('a', 'b'),
+      relations: [
+        { id: 'r1', type: 'maps_to', from_block_id: 'nonexistent', to_block_id: 'b' },
+      ],
+    });
+    expect(normalized!.relations ?? []).toHaveLength(0);
+    expect(warnings.some((w) => w.includes('non-existent'))).toBe(true);
+  });
+
+  it('drops relation referencing non-existent to_block_id with warning', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: makeBlocks('a', 'b'),
+      relations: [
+        { id: 'r1', type: 'maps_to', from_block_id: 'a', to_block_id: 'ghost' },
+      ],
+    });
+    expect(normalized!.relations ?? []).toHaveLength(0);
+    expect(warnings.some((w) => w.includes('non-existent'))).toBe(true);
+  });
+
+  it('preserves valid relation with both existing block ids', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: makeBlocks('a', 'b'),
+      relations: [
+        { id: 'r1', type: 'maps_to', from_block_id: 'a', to_block_id: 'b' },
+      ],
+    });
+    expect(normalized!.relations).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes('non-existent'))).toHaveLength(0);
+  });
+});

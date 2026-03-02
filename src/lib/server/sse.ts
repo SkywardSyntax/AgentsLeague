@@ -48,3 +48,17 @@ export function createSSEHeartbeat(
     },
   };
 }
+
+/** Safely enqueue data to a stream controller. Returns false if the controller is closed. */
+export function safeEnqueue(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  data: string,
+  encoder: TextEncoder,
+): boolean {
+  try {
+    controller.enqueue(encoder.encode(data));
+    return true;
+  } catch {
+    return false;
+  }
+}

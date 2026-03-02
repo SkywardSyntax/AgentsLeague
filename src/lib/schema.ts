@@ -366,6 +366,7 @@ function asString(input: unknown): string | null {
 }
 
 function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
 }
 
@@ -759,6 +760,25 @@ export function normalizeSemanticBatchPayload(payload: unknown): {
 
   if (blocks.length === 0) {
     return { normalized: null, warnings: [...warnings, 'No valid semantic blocks in payload'] };
+  }
+
+  // Deduplicate block IDs — suffix duplicates with -2, -3, etc.
+  const seenBlockIds = new Map<string, number>();
+  for (const block of blocks) {
+    const count = seenBlockIds.get(block.id) ?? 0;
+    seenBlockIds.set(block.id, count + 1);
+    if (count > 0) {
+      const oldId = block.id;
+      let suffix = count + 1;
+      let newId = `${oldId}-${suffix}`;
+      while (seenBlockIds.has(newId)) {
+        suffix++;
+        newId = `${oldId}-${suffix}`;
+      }
+      (block as { id: string }).id = newId;
+      seenBlockIds.set(newId, 1);
+      warnings.push(`Duplicate block id '${oldId}' renamed to '${newId}'`);
+    }
   }
 
   const blockIds = new Set(blocks.map((b) => b.id));

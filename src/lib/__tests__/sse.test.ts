@@ -4,6 +4,7 @@ import {
   formatSSEError,
   createEventCounter,
   createSSEHeartbeat,
+  safeEnqueue,
   sseHeaders,
 } from '@/lib/server/sse';
 
@@ -188,5 +189,37 @@ describe('formatSSE edge cases', () => {
   it('handles numeric payload', () => {
     const result = formatSSE(42);
     expect(result).toBe('data: 42\n\n');
+  });
+});
+
+describe('safeEnqueue', () => {
+  it('returns true and enqueues data on open controller', () => {
+    const chunks: Uint8Array[] = [];
+    const controller = {
+      enqueue: (chunk: Uint8Array) => chunks.push(chunk),
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const result = safeEnqueue(controller, 'data: test\n\n', encoder);
+    expect(result).toBe(true);
+    expect(chunks).toHaveLength(1);
+    expect(new TextDecoder().decode(chunks[0])).toBe('data: test\n\n');
+  });
+
+  it('returns false without throwing on closed controller', () => {
+    const controller = {
+      enqueue: () => { throw new Error('Controller is closed'); },
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const result = safeEnqueue(controller, 'data: test\n\n', encoder);
+    expect(result).toBe(false);
+  });
+
+  it('returns false without throwing on TypeError (closed stream)', () => {
+    const controller = {
+      enqueue: () => { throw new TypeError('Cannot enqueue'); },
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    expect(() => safeEnqueue(controller, 'hello', encoder)).not.toThrow();
+    expect(safeEnqueue(controller, 'hello', encoder)).toBe(false);
   });
 });
