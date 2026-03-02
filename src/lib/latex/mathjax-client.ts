@@ -202,6 +202,14 @@ export function getCachedSvg(tex: string, displayMode: boolean): string | undefi
   return cached;
 }
 
+export function clearRenderCache(): void {
+  renderCache.clear();
+}
+
+export function renderCacheStats(): { size: number; maxSize: number } {
+  return { size: renderCache.size, maxSize: MAX_RENDER_CACHE };
+}
+
 export async function renderTexToSvg(
   tex: string,
   displayMode: boolean,
@@ -235,7 +243,7 @@ async function renderTexToSvgInner(
   }
 
   const remember = (rendered: string) => {
-    if (renderCache.size > MAX_RENDER_CACHE) {
+    if (renderCache.size >= MAX_RENDER_CACHE) {
       const oldest = renderCache.keys().next().value as string | undefined;
       if (oldest) renderCache.delete(oldest);
     }

@@ -50,6 +50,28 @@ describe('formatTexError', () => {
     const err = new Error('TeX input exceeds maximum length of 10000 characters');
     expect(formatTexError(err, 'x')).toBe('Expression too long to render');
   });
+
+  // --- Iteration 4 tests: additional error patterns ---
+
+  it('maps Extra open brace errors', () => {
+    const err = new Error('Extra open brace');
+    expect(formatTexError(err, 'x')).toBe("Extra '{' found");
+  });
+
+  it('maps Undefined control sequence errors', () => {
+    const err = new Error('Undefined control sequence \\foo');
+    expect(formatTexError(err, 'x')).toBe('Unknown command: \\foo');
+  });
+
+  it('maps Missing \\right errors', () => {
+    const err = new Error('Missing \\right');
+    expect(formatTexError(err, 'x')).toBe('Unmatched \\left delimiter');
+  });
+
+  it('maps Missing \\left errors', () => {
+    const err = new Error('Missing \\left');
+    expect(formatTexError(err, 'x')).toBe('Unmatched \\right delimiter');
+  });
 });
 
 describe('isTimeoutError', () => {

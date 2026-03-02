@@ -61,4 +61,41 @@ describe('tex normalization', () => {
     const prepared = prepareTexForMathJax('\\begin{split}x=1\\end{split}');
     expect(prepared).toEqual({ tex: 'x=1', displayMode: true });
   });
+
+  // --- Iteration 4 tests: \left/\right balancing ---
+
+  it('appends \\right. for unmatched \\left', () => {
+    const result = normalizeTexForMathJax('\\left(x+1');
+    expect(result).toContain('\\right.');
+  });
+
+  it('prepends \\left. for unmatched \\right', () => {
+    const result = normalizeTexForMathJax('x+1\\right)');
+    expect(result).toContain('\\left.');
+    expect(result.indexOf('\\left.')).toBe(0);
+  });
+
+  it('does not modify already balanced \\left/\\right', () => {
+    const result = normalizeTexForMathJax('\\left(x\\right)');
+    expect(result).toBe('\\left(x\\right)');
+  });
+
+  it('does not count \\leftarrow as \\left', () => {
+    const result = normalizeTexForMathJax('\\leftarrow x');
+    expect(result).not.toContain('\\right.');
+    expect(result).toBe('\\leftarrow x');
+  });
+
+  it('does not count \\leftrightarrow as \\left or \\right', () => {
+    const result = normalizeTexForMathJax('\\leftrightarrow');
+    expect(result).not.toContain('\\left.');
+    expect(result).not.toContain('\\right.');
+    expect(result).toBe('\\leftrightarrow');
+  });
+
+  it('does not count \\rightarrow as \\right', () => {
+    const result = normalizeTexForMathJax('\\rightarrow x');
+    expect(result).not.toContain('\\left.');
+    expect(result).toBe('\\rightarrow x');
+  });
 });

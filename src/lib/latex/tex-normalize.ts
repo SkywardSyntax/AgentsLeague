@@ -76,6 +76,16 @@ export function normalizeTexForMathJax(input: string): string {
   }
   tex = envParts.join('');
 
+  // Balance unbalanced \left / \right pairs.
+  // Use negative lookahead to avoid matching \leftarrow, \leftrightarrow, etc.
+  const leftCount = (tex.match(/\\left(?![a-zA-Z])/g) ?? []).length;
+  const rightCount = (tex.match(/\\right(?![a-zA-Z])/g) ?? []).length;
+  if (leftCount > rightCount) {
+    tex = tex + '\\right.'.repeat(leftCount - rightCount);
+  } else if (rightCount > leftCount) {
+    tex = '\\left.'.repeat(rightCount - leftCount) + tex;
+  }
+
   return tex.trim();
 }
 
