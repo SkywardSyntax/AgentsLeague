@@ -219,4 +219,51 @@ describe('parseBlocks', () => {
     expect(bq.children).toBeDefined();
     expect(bq.children![0]).toMatchObject({ kind: 'paragraph', content: 'plain text' });
   });
+
+  // --- iter7 3A: nested blockquote + table interactions ---
+
+  it('blockquote containing a table parses table as child', () => {
+    const input = '> | A | B |\n> | --- | --- |\n> | x | y |';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const bq = result[0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children!).toEqual([
+      { kind: 'table', headers: ['A', 'B'], rows: [['x', 'y']] },
+    ]);
+  });
+
+  it('nested blockquotes parse recursively', () => {
+    const input = '> > inner quote';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const outer = result[0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(outer.children).toBeDefined();
+    const inner = outer.children![0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(inner.kind).toBe('blockquote');
+    expect(inner.children).toBeDefined();
+    expect(inner.children![0]).toMatchObject({ kind: 'paragraph', content: 'inner quote' });
+  });
+
+  it('table immediately after code fence stays separate', () => {
+    const input = '```\ncode\n```\n| H1 | H2 |\n|---|---|\n| a | b |';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ kind: 'code_block', content: 'code' });
+    expect(result[1]).toEqual({ kind: 'table', headers: ['H1', 'H2'], rows: [['a', 'b']] });
+  });
+
+  it('empty table cells are parsed as empty strings', () => {
+    const input = '| | |\n|---|---|\n| | |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'table', headers: ['', ''], rows: [['', '']] },
+    ]);
+  });
+
+  it('table row without trailing pipe is not parsed as table', () => {
+    const input = '| a | b\n| --- | ---\n| x | y';
+    const result = parseBlocks(input);
+    expect(result.every(b => b.kind !== 'table')).toBe(true);
+  });
 });

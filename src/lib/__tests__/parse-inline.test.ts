@@ -234,6 +234,35 @@ describe('parseInline', () => {
     // The exact output depends on parser behavior; key is no crash
     expect(tokens.length).toBeGreaterThan(0);
   });
+
+  // --- iter7 3C: complex mixed-token edge cases ---
+
+  it('inline code preserves bold markers as literal text', () => {
+    const tokens = parseInline('`**not bold**`');
+    expect(tokens).toEqual([
+      { kind: 'inline_code', value: '**not bold**' },
+    ]);
+  });
+
+  it('bold wrapping underscored text is a single bold token (token-linear)', () => {
+    const tokens = parseInline('**bold _italic_ bold**');
+    expect(tokens).toEqual([
+      { kind: 'bold', value: 'bold _italic_ bold' },
+    ]);
+  });
+
+  it('four underscores ____ produce empty bold token', () => {
+    const tokens = parseInline('____');
+    expect(tokens).toEqual([
+      { kind: 'bold', value: '' },
+    ]);
+  });
+
+  it('adjacent *a**b* produces two italic tokens without crash', () => {
+    const tokens = parseInline('*a**b*');
+    expect(tokens.length).toBeGreaterThan(0);
+    expect(tokens[0]).toEqual({ kind: 'italic', value: 'a' });
+  });
 });
 
 describe('sanitizeHref', () => {

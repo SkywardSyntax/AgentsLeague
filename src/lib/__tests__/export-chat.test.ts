@@ -138,6 +138,48 @@ describe('exportChatToMarkdown edge cases', () => {
   });
 });
 
+// --- iter7 3B: safeFilename + escapeStructuralMarkdown + wrapDisplayLatex defensive edge cases ---
+
+describe('safeFilename edge cases', () => {
+  it('returns default for spaces-only input', () => {
+    expect(safeFilename('   ')).toBe('chat-export');
+  });
+
+  it('strips emoji and keeps latin characters', () => {
+    const result = safeFilename('My Chat 🚀 Notes');
+    expect(result).toBe('My-Chat-Notes');
+  });
+});
+
+describe('escapeStructuralMarkdown edge cases', () => {
+  it('escapes only the HR line in multi-line input', () => {
+    const input = 'line one\n---\nline three';
+    const result = escapeStructuralMarkdown(input);
+    expect(result).toBe('line one\n\\---\nline three');
+  });
+
+  it('does not escape -- (only two dashes, insufficient for HR)', () => {
+    expect(escapeStructuralMarkdown('--')).toBe('--');
+  });
+});
+
+describe('wrapDisplayLatex edge cases', () => {
+  it('handles $$ at end of string with no trailing newline', () => {
+    const input = '$$\nx+y\n$$';
+    const result = wrapDisplayLatex(input);
+    expect(result).toContain('```latex');
+    expect(result).toContain('x+y');
+    expect(result).not.toContain('$$');
+  });
+
+  it('handles empty $$$$ as empty code fence', () => {
+    const input = '$$\n\n$$';
+    const result = wrapDisplayLatex(input);
+    expect(result).toContain('```latex');
+    expect(result).not.toContain('$$');
+  });
+});
+
 describe('exportChatToJson', () => {
   it('returns valid JSON with meta and messages', () => {
     const json = exportChatToJson(msgs, meta);
