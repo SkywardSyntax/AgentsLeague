@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
+import { z } from 'zod';
 import {
   AgentStreamRequestSchema,
   DrawBatchSchema,
@@ -343,8 +344,25 @@ export async function POST(request: Request): Promise<Response> {
         { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
-    const body = json as { userMessage?: string; scenario?: string };
-    return mockAgentStream({ userMessage: body.userMessage ?? '', scenario: body.scenario as import('./__mocks__/mock-stream').MockScenario });
+    const mockParsed = z.object({
+      userMessage: z.string().optional(),
+      scenario: z.enum([
+        'happy',
+        'error_mid_stream',
+        'rate_limit',
+        'network_drop',
+        'slow_thinking',
+        'malformed_event',
+        'auth_error',
+      ]).optional(),
+    }).safeParse(json);
+    if (!mockParsed.success) {
+      return new Response(
+        JSON.stringify({ error: 'VALIDATION_ERROR', issues: mockParsed.error.issues }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return mockAgentStream({ userMessage: mockParsed.data.userMessage ?? '', scenario: mockParsed.data.scenario });
   }
 
   // Request body size guard — reject oversized payloads before parsing

@@ -77,6 +77,22 @@ describe('POST /api/agent/stream (mock mode)', () => {
     const body = await res.json();
     expect(body.error).toBe('VALIDATION_ERROR');
   });
+
+  it('rejects wrong userMessage type in mock mode with 400 VALIDATION_ERROR', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest({ userMessage: 123 }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects invalid scenario enum in mock mode with 400 VALIDATION_ERROR', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest({ userMessage: 'hi', scenario: 'nonexistent_scenario' }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
 });
 
 describe('classifyStreamError', () => {
