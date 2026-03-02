@@ -1,55 +1,80 @@
 import type { ChatStore } from './chatSessionReducer';
 import type { AppStatus } from './statusMachine';
 
-export interface ChatThreadMeta {
-  id: string;
-  title: string;
-  messageCount: number;
+export interface Selector<S, R> {
+  (state: S): R;
+  resetSelector(): void;
 }
 
-/**
- * Minimal memoization helper: caches the result of `resultFn` and returns
- * the same reference when the inputs (by ===) haven't changed.
- */
-export function createSelector<S, Inputs extends unknown[], R>(
-  inputFn: (s: S) => [...Inputs],
-  resultFn: (...inputs: Inputs) => R,
-): (s: S) => R {
-  let lastInputs: Inputs | undefined;
-  let lastResult: R;
+type InferState<T> = T extends readonly ((state: infer S) => unknown)[] ? S : never;
+type InferResults<T extends readonly ((state: never) => unknown)[]> = {
+  [K in keyof T]: T[K] extends (state: never) => infer V ? V : never;
+};
 
-  return (s: S): R => {
-    const inputs = inputFn(s);
-    if (
-      lastInputs !== undefined &&
-      inputs.length === lastInputs.length &&
-      inputs.every((v, i) => v === lastInputs![i])
-    ) {
-      return lastResult;
+export function createSelector<
+  Selectors extends readonly ((state: any) => unknown)[],
+  R,
+>(
+  inputSelectors: [...Selectors],
+  combiner: (...inputs: InferResults<Selectors>) => R,
+): Selector<InferState<Selectors>, R> {
+  type S = InferState<Selectors>;
+  type I = InferResults<Selectors>;
+  let lastInputs: I | undefined;
+  let lastResult: R | undefined;
+  let initialized = false;
+
+  function arraysEqual(a: unknown[], b: unknown[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false; // reference equality
     }
+    return true;
+  }
+
+  const selector = (state: S): R => {
+    const inputs = inputSelectors.map((sel) => sel(state)) as unknown as I;
+
+    if (initialized && lastInputs && arraysEqual(inputs as unknown as unknown[], lastInputs as unknown as unknown[])) {
+      return lastResult!;
+    }
+
     lastInputs = inputs;
-    lastResult = resultFn(...inputs);
+    lastResult = combiner(...inputs);
+    initialized = true;
     return lastResult;
   };
+
+  selector.resetSelector = (): void => {
+    lastInputs = undefined;
+    lastResult = undefined;
+    initialized = false;
+  };
+
+  return selector;
 }
 
-/** Derives the ordered list of chat metadata for the tab bar (memoized). */
+// ── Domain selectors ───────────────────────────────────────────────────
+
 export const selectChatMeta = createSelector(
-  (store: ChatStore) => [store.chatOrder, store.chats] as const,
-  (chatOrder: ChatStore['chatOrder'], chats: ChatStore['chats']): ChatThreadMeta[] =>
-    chatOrder.flatMap((id) => {
-      const chat = chats[id];
-      if (!chat) return [];
-      return [{ id: chat.id, title: chat.title, messageCount: chat.messages.length }];
-    }),
+  [
+    (s: ChatStore) => s.chatOrder,
+    (s: ChatStore) => s.chats,
+  ],
+  (chatOrder, chats) =>
+    chatOrder
+      .filter((id) => id in chats)
+      .map((id) => ({
+        id,
+        title: chats[id]!.title,
+        messageCount: chats[id]!.messages.length,
+      })),
 );
 
-/** Returns warnings for a specific chat, or empty array if chat doesn't exist. */
 export function selectActiveWarnings(store: ChatStore, chatId: string): string[] {
   return store.chats[chatId]?.warnings ?? [];
 }
 
-/** Extracts the current turn status. */
 export function selectTurnStatus(store: ChatStore): AppStatus {
   return store.turn.status;
 }

@@ -138,7 +138,7 @@ describe('createSelector', () => {
   it('returns the same reference when inputs are unchanged', () => {
     const inputs = { a: [1, 2, 3] };
     const sel = createSelector(
-      (s: typeof inputs) => [s.a] as const,
+      [(s: typeof inputs) => s.a],
       (a: number[]) => a.map((x) => x * 2),
     );
     const r1 = sel(inputs);
@@ -149,7 +149,7 @@ describe('createSelector', () => {
   it('recomputes when input reference changes', () => {
     let data = { items: ['a'] };
     const sel = createSelector(
-      (s: typeof data) => [s.items] as const,
+      [(s: typeof data) => s.items],
       (items: string[]) => items.join(','),
     );
     const r1 = sel(data);
