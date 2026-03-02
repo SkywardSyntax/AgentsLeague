@@ -72,6 +72,19 @@ describe('formatTexError', () => {
     const err = new Error('Missing \\left');
     expect(formatTexError(err, 'x')).toBe('Unmatched \\right delimiter');
   });
+
+  it('maps unknown control sequence without trailing command', () => {
+    const err = new Error('Unknown control sequence');
+    expect(formatTexError(err, 'x')).toBe('Unknown command: (unknown)');
+  });
+
+  it('returns Rendering failed for non-Error non-string input', () => {
+    expect(formatTexError(undefined, 'x')).toBe('Rendering failed');
+  });
+
+  it('returns Rendering failed for empty Error message', () => {
+    expect(formatTexError(new Error(''), 'x')).toBe('Rendering failed');
+  });
 });
 
 describe('isTimeoutError', () => {
@@ -87,5 +100,23 @@ describe('isTimeoutError', () => {
     expect(isTimeoutError(new Error('Missing close brace'))).toBe(false);
     expect(isTimeoutError(null)).toBe(false);
     expect(isTimeoutError('some string')).toBe(false);
+  });
+
+  it('detects RenderTimeoutError by name even with different message', () => {
+    const err = new Error('something else');
+    err.name = 'RenderTimeoutError';
+    expect(isTimeoutError(err)).toBe(true);
+  });
+
+  it('detects TIMED OUT in caps (case-insensitive)', () => {
+    expect(isTimeoutError(new Error('TIMED OUT'))).toBe(true);
+  });
+
+  it('returns false for undefined input', () => {
+    expect(isTimeoutError(undefined)).toBe(false);
+  });
+
+  it('returns false for object with no message property', () => {
+    expect(isTimeoutError({ code: 123 })).toBe(false);
   });
 });
