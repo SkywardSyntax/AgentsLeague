@@ -47,9 +47,9 @@ const PersistedSessionV3Schema = z.object({
       createdAt: z.number(),
       updatedAt: z.number(),
       messages: z.array(MessageSchema),
-      semanticScene: z.array(z.any()),
-      scene: z.array(z.any()),
-      plannerMeta: z.array(z.any()),
+      semanticScene: z.array(z.object({ batch_id: z.string() }).passthrough()),
+      scene: z.array(z.object({ id: z.string(), type: z.string() }).passthrough()),
+      plannerMeta: z.array(z.object({ batchId: z.string() }).passthrough()),
     }),
   ),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
@@ -66,8 +66,7 @@ const PersistedSessionV2Schema = z.object({
       createdAt: z.number(),
       updatedAt: z.number(),
       messages: z.array(MessageSchema),
-      scene: z.array(z.any()),
-    }),
+      scene: z.array(z.object({ id: z.string(), type: z.string() }).passthrough()),    }),
   ),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
 });
@@ -76,8 +75,7 @@ const LegacyPersistedSessionV1Schema = z.object({
   version: z.literal(1),
   updatedAt: z.number(),
   messages: z.array(MessageSchema),
-  scene: z.array(z.any()),
-  prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
+  scene: z.array(z.object({ id: z.string(), type: z.string() }).passthrough()),  prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
 });
 
 function createLocalId(): string {
@@ -148,7 +146,7 @@ export function loadSession(): PersistedSessionV3 | null {
 
     const v3 = PersistedSessionV3Schema.safeParse(parsed);
     if (v3.success) {
-      return v3.data as PersistedSessionV3;
+      return v3.data as unknown as PersistedSessionV3;
     }
 
     const v2 = PersistedSessionV2Schema.safeParse(parsed);
