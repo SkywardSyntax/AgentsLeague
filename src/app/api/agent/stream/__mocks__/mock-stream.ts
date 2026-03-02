@@ -4,8 +4,17 @@
  * Gated by server-only env AGENT_STREAM_MODE=mock (never NEXT_PUBLIC_*).
  */
 
-import { createSSESender, sseHeaders } from '@/lib/server/sse';
+import { createSSESender, sseHeaders, formatSSEComment } from '@/lib/server/sse';
 import type { DrawBatch } from '@/types/agent';
+
+export type MockScenario =
+  | 'happy'
+  | 'error_mid_stream'
+  | 'rate_limit'
+  | 'network_drop'
+  | 'slow_thinking'
+  | 'malformed_event'
+  | 'auth_error';
 
 interface MockElement {
   type: string;
@@ -77,7 +86,23 @@ export function isMockMode(): boolean {
   return process.env.AGENT_STREAM_MODE === 'mock';
 }
 
-export function mockAgentStream(body: { userMessage: string }): Response {
+export function mockAgentStream(body: { userMessage: string; scenario?: MockScenario }): Response {
+  const scenario = body.scenario ?? 'happy';
+
+  // Non-streaming error scenarios return immediately
+  if (scenario === 'rate_limit') {
+    return new Response(
+      JSON.stringify({ error: 'RATE_LIMIT' }),
+      { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '2' } },
+    );
+  }
+  if (scenario === 'auth_error') {
+    return new Response(
+      JSON.stringify({ error: 'AUTH_ERROR' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
   const domain = detectDomain(body.userMessage);
   const batch = (MOCK_BATCHES[domain] ?? MOCK_BATCHES['math']!) as unknown as DrawBatch;
   const textReply = `Here is a ${domain} diagram for: ${body.userMessage.slice(0, 80)}`;
@@ -87,8 +112,46 @@ export function mockAgentStream(body: { userMessage: string }): Response {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = createSSESender(controller);
+      const encoder = new TextEncoder();
 
-      // Simulate realistic SSE sequence matching AgentSSEEvent types
+      if (scenario === 'error_mid_stream') {
+        await delay(50);
+        send({ type: 'assistant.text.delta', turnId, delta: textReply.slice(0, 20) });
+        await delay(50);
+        send({ type: 'error', turnId, code: 'MODEL_STREAM_ERROR', message: 'Simulated mid-stream error', retryable: true });
+        send({ type: 'turn.done', turnId, partial: true });
+        controller.close();
+        return;
+      }
+
+      if (scenario === 'network_drop') {
+        await delay(50);
+        send({ type: 'assistant.text.delta', turnId, delta: textReply.slice(0, 20) });
+        await delay(30);
+        controller.close();
+        return;
+      }
+
+      if (scenario === 'slow_thinking') {
+        await delay(20_000);
+        // Then continue with happy path
+      }
+
+      if (scenario === 'malformed_event') {
+        await delay(50);
+        send({ type: 'assistant.text.delta', turnId, delta: textReply.slice(0, 20) });
+        await delay(30);
+        controller.enqueue(encoder.encode('data: {broken json\n\n'));
+        await delay(30);
+        send({ type: 'assistant.text.delta', turnId, delta: textReply.slice(20) });
+        await delay(50);
+        send({ type: 'assistant.text.done', turnId, messageId });
+        send({ type: 'turn.done', turnId, usage: { prompt: 100, completion: 50, total: 150 } });
+        controller.close();
+        return;
+      }
+
+      // Happy path (default)
       await delay(50);
       send({ type: 'assistant.text.delta', turnId, delta: textReply.slice(0, 20) });
 

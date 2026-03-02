@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatSSE, createSSESender, sseHeaders } from '@/lib/server/sse';
+import { formatSSE, createSSESender, sseHeaders, formatSSEComment } from '@/lib/server/sse';
 import type { AgentSSEEvent } from '@/types/agent';
 
 describe('sseHeaders', () => {
@@ -36,6 +36,33 @@ describe('formatSSE', () => {
     const parsed = JSON.parse(result.slice(6).trim());
     expect(parsed.type).toBe('error');
     expect(parsed.retryable).toBe(false);
+  });
+
+  it('formats error events with retryAfterMs', () => {
+    const event: AgentSSEEvent = {
+      type: 'error',
+      turnId: 't1',
+      code: 'RATE_LIMIT',
+      message: 'rate limited',
+      retryable: true,
+      retryAfterMs: 3000,
+    };
+    const result = formatSSE(event);
+    const parsed = JSON.parse(result.slice(6).trim());
+    expect(parsed.retryAfterMs).toBe(3000);
+    expect(parsed.retryable).toBe(true);
+  });
+});
+
+describe('formatSSEComment', () => {
+  it('formats an SSE comment line', () => {
+    const result = formatSSEComment('heartbeat');
+    expect(result).toBe(': heartbeat\n\n');
+  });
+
+  it('formats empty comment', () => {
+    const result = formatSSEComment('');
+    expect(result).toBe(': \n\n');
   });
 });
 

@@ -22,3 +22,7 @@ export function createSSESender(controller: ReadableStreamDefaultController<Uint
     controller.enqueue(encoder.encode(formatSSE(payload)));
   };
 }
+
+export function formatSSEComment(text: string): string {
+  return `: ${text}\n\n`;
+}

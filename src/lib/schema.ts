@@ -260,6 +260,15 @@ export const AgentStreamRequestSchema = z.object({
   plannerMode: z.enum(['semantic_preferred', 'legacy_draw_only']).optional(),
   whiteboardContext: WhiteboardContextSchema.optional(),
   whiteboardContextV2: StructuredWhiteboardContextSchema.optional(),
+  scenario: z.enum([
+    'happy',
+    'error_mid_stream',
+    'rate_limit',
+    'network_drop',
+    'slow_thinking',
+    'malformed_event',
+    'auth_error',
+  ]).optional(),
 });
 
 export type DrawBatchInput = z.infer<typeof DrawBatchSchema>;

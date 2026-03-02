@@ -15,7 +15,7 @@ import {
   createOpenAIClient,
   getModel,
 } from '@/lib/server/openai';
-import { sseHeaders, createSSESender } from '@/lib/server/sse';
+import { sseHeaders, createSSESender, formatSSEComment } from '@/lib/server/sse';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
@@ -37,6 +37,41 @@ export const runtime = 'nodejs';
 
 /** Concurrent stream guard — at most one active stream per sessionId */
 const activeStreams = new Set<string>();
+
+export interface ClassifiedError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number;
+}
+
+export function classifyStreamError(error: unknown, requestAborted: boolean): ClassifiedError {
+  const errName = (error as { name?: string })?.name;
+  if (errName === 'AbortError') {
+    if (requestAborted) {
+      return { code: 'CLIENT_DISCONNECTED', message: 'Client disconnected', retryable: false };
+    }
+    return { code: 'TURN_TIMEOUT', message: 'Turn timed out', retryable: true };
+  }
+
+  // OpenAI SDK error detection via status code (safe across SDK versions)
+  const status = (error as { status?: number }).status;
+  if (status === 429) {
+    const headers = (error as { headers?: Record<string, string> }).headers;
+    const retryAfterSec = headers?.['retry-after'];
+    const retryAfterMs = retryAfterSec ? Math.ceil(Number(retryAfterSec) * 1000) : undefined;
+    return { code: 'RATE_LIMIT', message: 'Rate limited by upstream', retryable: true, retryAfterMs };
+  }
+  if (status === 401 || status === 403) {
+    return { code: 'AUTH_ERROR', message: 'Authentication failed', retryable: false };
+  }
+  if (error instanceof Error && error.message?.includes('Connection error')) {
+    return { code: 'API_CONNECTION_ERROR', message: error.message, retryable: true };
+  }
+
+  const message = error instanceof Error ? error.message : 'Unexpected stream failure';
+  return { code: 'STREAM_FAILURE', message, retryable: true };
+}
 
 type FunctionCall = {
   callId: string;
@@ -293,8 +328,8 @@ export async function POST(request: Request): Promise<Response> {
         { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
-    const body = json as { userMessage?: string };
-    return mockAgentStream({ userMessage: body.userMessage ?? '' });
+    const body = json as { userMessage?: string; scenario?: string };
+    return mockAgentStream({ userMessage: body.userMessage ?? '', scenario: body.scenario as import('./__mocks__/mock-stream').MockScenario });
   }
 
   let json: unknown;
@@ -357,6 +392,12 @@ export async function POST(request: Request): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = createSSESender(controller);
+      const heartbeatEncoder = new TextEncoder();
+      const heartbeatInterval = setInterval(() => {
+        try {
+          controller.enqueue(heartbeatEncoder.encode(formatSSEComment('heartbeat')));
+        } catch { /* stream already closed */ }
+      }, 15_000);
       let lastIteration = 0;
 
       try {
@@ -411,9 +452,17 @@ export async function POST(request: Request): Promise<Response> {
           };
         };
 
-        const emitProvisionalFromStream = () => {
+        let lastProvisionalEmitTime = 0;
+        const PROVISIONAL_THROTTLE_MS = 300;
+
+        const emitProvisionalFromStream = (force = false) => {
           if (plannerMode === 'legacy_draw_only') return;
           if (sawToolBatchInTurn) return;
+          if (!force) {
+            const now = Date.now();
+            if (now - lastProvisionalEmitTime < PROVISIONAL_THROTTLE_MS) return;
+            lastProvisionalEmitTime = now;
+          }
           const chunks = extractStableChunks(streamTextBuffer);
           const MAX_PROVISIONAL_CHUNKS_PER_TURN = 10;
           for (const chunk of chunks) {
@@ -582,7 +631,7 @@ export async function POST(request: Request): Promise<Response> {
 
           if (sawTextThisIteration) {
             send({ type: 'assistant.text.done', turnId, messageId: textMessageId });
-            emitProvisionalFromStream();
+            emitProvisionalFromStream(true);
             textMessageId = randomUUID();
           }
 
@@ -921,17 +970,15 @@ export async function POST(request: Request): Promise<Response> {
           });
         }
       } catch (error) {
-        const isAbort = error instanceof Error && error.name === 'AbortError';
-        const message = error instanceof Error ? error.message : 'Unexpected stream failure';
-        const code = isAbort ? 'STREAM_ABORTED' : 'STREAM_FAILURE';
+        const classified = classifyStreamError(error, request.signal.aborted);
 
         console.error('[agent/stream] Stream error', {
           turnId,
           sessionId,
-          code,
+          code: classified.code,
           iteration: lastIteration,
           durationMs: Date.now() - streamStartTime,
-          error: message,
+          error: classified.message,
         });
 
         // Only send error events if the client is still connected
@@ -939,14 +986,16 @@ export async function POST(request: Request): Promise<Response> {
           send({
             type: 'error',
             turnId,
-            code,
-            message,
-            retryable: !isAbort,
+            code: classified.code,
+            message: classified.message,
+            retryable: classified.retryable,
+            ...(classified.retryAfterMs != null ? { retryAfterMs: classified.retryAfterMs } : {}),
           });
           // Terminal event contract: turn.done is always the last event
           send({ type: 'turn.done', turnId, partial: true });
         }
       } finally {
+        clearInterval(heartbeatInterval);
         activeStreams.delete(sessionId);
         controller.close();
       }

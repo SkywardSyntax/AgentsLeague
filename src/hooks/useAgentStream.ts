@@ -14,6 +14,50 @@ export interface StreamHandlers {
   onError: (message: string) => void;
 }
 
+/** Determine whether a failed stream attempt should be retried. */
+function shouldRetry(
+  lastEvent: AgentSSEEvent | null,
+  httpStatus: number | null,
+  error: unknown,
+): { retry: boolean; reason: string } {
+  // Stream completed normally (even if partial) — don't retry
+  if (lastEvent?.type === 'turn.done') {
+    return { retry: false, reason: 'turn_completed' };
+  }
+  // Abort by user
+  if ((error as { name?: string })?.name === 'AbortError') {
+    return { retry: false, reason: 'aborted' };
+  }
+  // HTTP-level errors
+  if (httpStatus != null) {
+    if (httpStatus === 429) return { retry: true, reason: 'rate_limited' };
+    if (httpStatus >= 400 && httpStatus < 500) return { retry: false, reason: `http_${httpStatus}` };
+    if (httpStatus >= 500) return { retry: true, reason: `http_${httpStatus}` };
+  }
+  // Last SSE event was a retryable error
+  if (lastEvent?.type === 'error' && lastEvent.retryable) {
+    return { retry: true, reason: lastEvent.code };
+  }
+  if (lastEvent?.type === 'error' && !lastEvent.retryable) {
+    return { retry: false, reason: lastEvent.code };
+  }
+  // Network error / abrupt close — retryable
+  if (error instanceof Error) {
+    return { retry: true, reason: 'network_error' };
+  }
+  return { retry: true, reason: 'unknown' };
+}
+
+function computeDelay(attempt: number, reason: string, retryAfterMs?: number): number {
+  // Slower backoff for rate limits
+  const baseMs = reason === 'rate_limited' ? 2000 : 1000;
+  const exponential = Math.min(baseMs * 2 ** attempt, 8000);
+  // ±20% jitter
+  const jitter = exponential * (0.8 + Math.random() * 0.4);
+  // Respect server-specified retry-after
+  return retryAfterMs != null ? Math.max(retryAfterMs, jitter) : jitter;
+}
+
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
 
@@ -31,87 +75,146 @@ export function useAgentStream() {
       whiteboardContext?: WhiteboardContext;
       whiteboardContextV2?: StructuredWhiteboardContext;
       handlers: StreamHandlers;
+      maxRetries?: number;
+      onRetry?: (attempt: number, delayMs: number, reason: string) => void;
     }) => {
       cancel();
       const controller = new AbortController();
       abortRef.current = controller;
+      const maxRetries = args.maxRetries ?? 2;
 
-      try {
-        const res = await fetch('/api/agent/stream', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream',
-          },
-          cache: 'no-store',
-          body: JSON.stringify({
-              sessionId: args.sessionId,
-              userMessage: args.userMessage,
-              history: args.history,
-              plannerMode: args.plannerMode,
-              whiteboardContext: args.whiteboardContext,
-              whiteboardContextV2: args.whiteboardContextV2,
-            }),
-          signal: controller.signal,
-        });
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        let lastEvent: AgentSSEEvent | null = null;
+        let httpStatus: number | null = null;
+        let caughtError: unknown = null;
 
-        if (!res.ok || !res.body) {
-          args.handlers.onError(`Stream request failed with status ${res.status}`);
-          return;
-        }
+        try {
+          const res = await fetch('/api/agent/stream', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'text/event-stream',
+            },
+            cache: 'no-store',
+            body: JSON.stringify({
+                sessionId: args.sessionId,
+                userMessage: args.userMessage,
+                history: args.history,
+                plannerMode: args.plannerMode,
+                whiteboardContext: args.whiteboardContext,
+                whiteboardContextV2: args.whiteboardContextV2,
+              }),
+            signal: controller.signal,
+          });
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        const splitChunks = (raw: string) => raw.split(/\r?\n\r?\n/);
+          httpStatus = res.status;
 
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          if (!res.ok || !res.body) {
+            // Check if retryable at HTTP level
+            const decision = shouldRetry(null, httpStatus, null);
+            if (decision.retry && attempt < maxRetries) {
+              const delayMs = computeDelay(attempt, decision.reason);
+              args.onRetry?.(attempt + 1, delayMs, decision.reason);
+              await retrySleep(delayMs, controller.signal);
+              continue;
+            }
+            args.handlers.onError(`Stream request failed with status ${res.status}`);
+            return;
+          }
 
-          const parts = splitChunks(buffer);
-          if (parts.length <= 1) continue;
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          const splitChunks = (raw: string) => raw.split(/\r?\n\r?\n/);
 
-          buffer = parts.pop() ?? '';
-          for (const chunk of parts) {
-            const lines = chunk
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .filter((line) => line.startsWith('data:'));
-            for (const line of lines) {
-              const json = line.slice(5).trim();
-              if (!json) continue;
-              try {
-                const event = JSON.parse(json) as AgentSSEEvent;
-                args.handlers.onEvent(event);
-              } catch {
-                args.handlers.onError('Invalid SSE JSON payload received');
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const parts = splitChunks(buffer);
+            if (parts.length <= 1) continue;
+
+            buffer = parts.pop() ?? '';
+            for (const chunk of parts) {
+              const lines = chunk
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter((line) => line.startsWith('data:'));
+              for (const line of lines) {
+                const json = line.slice(5).trim();
+                if (!json) continue;
+                try {
+                  const event = JSON.parse(json) as AgentSSEEvent;
+                  lastEvent = event;
+                  args.handlers.onEvent(event);
+                } catch {
+                  args.handlers.onError('Invalid SSE JSON payload received');
+                }
               }
             }
           }
-        }
 
-        const trailing = buffer.trim();
-        if (trailing.startsWith('data:')) {
-          const json = trailing.slice(5).trim();
-          if (json) {
-            try {
-              args.handlers.onEvent(JSON.parse(json) as AgentSSEEvent);
-            } catch {
-              args.handlers.onError('Invalid trailing SSE JSON payload received');
+          const trailing = buffer.trim();
+          if (trailing.startsWith('data:')) {
+            const json = trailing.slice(5).trim();
+            if (json) {
+              try {
+                const event = JSON.parse(json) as AgentSSEEvent;
+                lastEvent = event;
+                args.handlers.onEvent(event);
+              } catch {
+                args.handlers.onError('Invalid trailing SSE JSON payload received');
+              }
             }
           }
+
+          // Stream ended — check if we should retry
+          const decision = shouldRetry(lastEvent, httpStatus, null);
+          if (decision.retry && attempt < maxRetries) {
+            const retryAfterMs = lastEvent?.type === 'error' ? lastEvent.retryAfterMs : undefined;
+            const delayMs = computeDelay(attempt, decision.reason, retryAfterMs);
+            args.onRetry?.(attempt + 1, delayMs, decision.reason);
+            await retrySleep(delayMs, controller.signal);
+            continue;
+          }
+          // Stream completed (or non-retryable) — stop
+          return;
+        } catch (error) {
+          caughtError = error;
+          if ((error as { name?: string })?.name === 'AbortError') return;
+
+          const decision = shouldRetry(lastEvent, httpStatus, error);
+          if (decision.retry && attempt < maxRetries) {
+            const delayMs = computeDelay(attempt, decision.reason);
+            args.onRetry?.(attempt + 1, delayMs, decision.reason);
+            try {
+              await retrySleep(delayMs, controller.signal);
+            } catch {
+              return; // abort during sleep
+            }
+            continue;
+          }
+          args.handlers.onError(caughtError instanceof Error ? caughtError.message : 'Stream aborted unexpectedly');
+          return;
         }
-      } catch (error) {
-        if ((error as Error).name === 'AbortError') return;
-        args.handlers.onError(error instanceof Error ? error.message : 'Stream aborted unexpectedly');
-      } finally {
-        abortRef.current = null;
       }
     },
     [cancel],
   );
 
   return { run, cancel };
+}
+
+/** Sleep that can be cancelled by an AbortSignal. */
+function retrySleep(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }

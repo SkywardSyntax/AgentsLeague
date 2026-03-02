@@ -282,5 +282,6 @@ export type AgentSSEEvent =
       code: string;
       message: string;
       retryable: boolean;
+      retryAfterMs?: number;
     }
   | { type: 'turn.done'; turnId: string; usage?: TokenUsage; partial?: boolean };

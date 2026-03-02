@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { classifyStreamError } from '@/app/api/agent/stream/route';
 
 /**
  * Integration-style tests for the streaming route handler.
@@ -75,5 +76,63 @@ describe('POST /api/agent/stream (mock mode)', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('classifyStreamError', () => {
+  it('classifies client disconnect (AbortError + requestAborted)', () => {
+    const err = new DOMException('Aborted', 'AbortError');
+    const result = classifyStreamError(err, true);
+    expect(result.code).toBe('CLIENT_DISCONNECTED');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('classifies turn timeout (AbortError, not requestAborted)', () => {
+    const err = new DOMException('Timeout', 'AbortError');
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('TURN_TIMEOUT');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies 429 rate limit with retry-after', () => {
+    const err = { status: 429, headers: { 'retry-after': '5' }, message: 'rate limited' };
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('RATE_LIMIT');
+    expect(result.retryable).toBe(true);
+    expect(result.retryAfterMs).toBe(5000);
+  });
+
+  it('classifies 401 auth error', () => {
+    const err = { status: 401, message: 'unauthorized' };
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('AUTH_ERROR');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('classifies 403 auth error', () => {
+    const err = { status: 403, message: 'forbidden' };
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('AUTH_ERROR');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('classifies connection error', () => {
+    const err = new Error('Connection error: ECONNREFUSED');
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies unknown error as STREAM_FAILURE', () => {
+    const err = new Error('something broke');
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies non-Error values as STREAM_FAILURE', () => {
+    const result = classifyStreamError('string error', false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.retryable).toBe(true);
   });
 });
