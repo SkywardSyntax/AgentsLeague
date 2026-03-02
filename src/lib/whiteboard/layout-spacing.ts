@@ -1,4 +1,5 @@
 import type { DrawBatch, StrokeTrajectory } from '@/types/agent';
+import { resolveSourceElementId } from './semantic-to-strokes';
 
 interface Bounds {
   minX: number;
@@ -49,13 +50,6 @@ function shiftGroup(group: Group, dy: number): void {
 
 function horizontalOverlap(a: Bounds, b: Bounds): number {
   return Math.max(0, Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX));
-}
-
-function resolveSourceElementId(strokeElementId: string, candidates: string[]): string | null {
-  for (const id of candidates) {
-    if (strokeElementId === id || strokeElementId.startsWith(`${id}-`)) return id;
-  }
-  return null;
 }
 
 function groupedBoundsByElementId(strokes: StrokeTrajectory[]): Bounds[] {

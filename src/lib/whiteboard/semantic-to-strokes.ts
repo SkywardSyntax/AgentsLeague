@@ -24,23 +24,22 @@ function strokeWidthForPreset(preset: StylePreset | undefined, base: number): nu
   }
 }
 
-export function withJitter(points: Point[], seed: string, preset: StylePreset | undefined): Point[] {
-  const rnd = seededRandom(hashString(seed));
-  const amount = preset === 'rough_sketch' ? 0.85 : preset === 'blueprint_neat' ? 0.12 : 0.24;
-  if (amount <= 0) return points;
-
-  return points.map((p, idx) => {
-    if (idx === 0 || idx === points.length - 1) return p;
-    return {
-      x: p.x + (rnd() - 0.5) * amount,
-      y: p.y + (rnd() - 0.5) * amount,
-    };
-  });
-}
-
-function withJitterAmount(points: Point[], seed: string, amount: number): Point[] {
+export function withJitter(
+  points: Point[],
+  seed: string,
+  presetOrAmount: StylePreset | undefined | number,
+): Point[] {
+  const amount =
+    typeof presetOrAmount === 'number'
+      ? presetOrAmount
+      : presetOrAmount === 'rough_sketch'
+        ? 0.85
+        : presetOrAmount === 'blueprint_neat'
+          ? 0.12
+          : 0.24;
   if (amount <= 0) return points;
   const rnd = seededRandom(hashString(seed));
+
   return points.map((p, idx) => {
     if (idx === 0 || idx === points.length - 1) return p;
     return {
@@ -179,7 +178,7 @@ function shiftStrokes(strokes: StrokeTrajectory[], dx: number, dy: number): void
   }
 }
 
-function resolveSourceElementId(strokeElementId: string, elementIdsSorted: string[]): string | null {
+export function resolveSourceElementId(strokeElementId: string, elementIdsSorted: string[]): string | null {
   for (const id of elementIdsSorted) {
     if (strokeElementId === id || strokeElementId.startsWith(`${id}-`)) return id;
   }
@@ -374,7 +373,7 @@ export async function compileBatchToStrokes(
           minAdvanceGap: number,
         ) => {
           rendered.forEach((stroke) => {
-            stroke.points = withJitterAmount(stroke.points, stroke.id, jitterAmount);
+            stroke.points = withJitter(stroke.points, stroke.id, jitterAmount);
             strokes.push(stroke);
           });
 
@@ -486,7 +485,7 @@ export async function compileBatchToStrokes(
             false,
           );
           asLatex.forEach((stroke) => {
-            stroke.points = withJitterAmount(stroke.points, stroke.id, 0.03);
+            stroke.points = withJitter(stroke.points, stroke.id, 0.03);
             strokes.push(stroke);
           });
           recovered = asLatex.length > 0;
@@ -514,7 +513,7 @@ export async function compileBatchToStrokes(
           element.displayMode ?? true,
         );
         latexStrokes.forEach((stroke) => {
-          stroke.points = withJitterAmount(stroke.points, stroke.id, 0.03);
+          stroke.points = withJitter(stroke.points, stroke.id, 0.03);
           strokes.push(stroke);
         });
       } catch {

@@ -24,9 +24,7 @@ interface WhiteboardCanvasProps {
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 
-function clamp(v: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, v));
-}
+import { clamp } from '@/lib/whiteboard/geometry';
 
 function drawStroke(
   ctx: CanvasRenderingContext2D,
@@ -108,6 +106,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
     const process = async () => {
       for (const batch of batches) {
+        if (cancelled) return;
         if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
         processedBatchIdsRef.current.add(batch.batch_id);
 

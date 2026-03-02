@@ -21,9 +21,7 @@ function choosePreset(style: StylePreset | undefined): StylePreset {
   return style ?? 'clean_pen_sketch';
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+import { clamp } from '@/lib/whiteboard/geometry';
 
 function clamp01(value: number): number {
   return clamp(value, 0, 1);

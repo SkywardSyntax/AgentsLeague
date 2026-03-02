@@ -76,9 +76,7 @@ const ANCHOR_ALIAS_MAP: Record<string, string> = {
   se: 'bottom-right',
 };
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+import { clamp } from './geometry';
 
 function toNumber(input: string | undefined): number | null {
   if (!input) return null;

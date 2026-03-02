@@ -60,7 +60,7 @@ export function partialPolylineByLength(
 }
 
 export function resamplePolyline(points: Point[], spacing: number): Point[] {
-  if (points.length <= 1) return points;
+  if (points.length <= 1 || spacing <= 0) return points;
   const sampled: Point[] = [points[0]!];
 
   let carry = 0;
