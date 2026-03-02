@@ -16,6 +16,7 @@ import {
   getModel,
 } from '@/lib/server/openai';
 import { sseHeaders, createSSESender, formatSSEComment } from '@/lib/server/sse';
+import { logStreamEvent } from '@/lib/server/logger';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
@@ -323,6 +324,8 @@ function estimateProvisionalAdvance(chunk: { kind: 'latex' | 'text'; value: stri
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const requestId = randomUUID();
+
   // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
   if (isMockMode()) {
     let json: unknown;
@@ -341,6 +344,7 @@ export async function POST(request: Request): Promise<Response> {
   // Request body size guard — reject oversized payloads before parsing
   const contentLength = request.headers.get('content-length');
   if (contentLength && parseInt(contentLength, 10) > 512 * 1024) {
+    logStreamEvent('warn', 'stream_rejected', { requestId, reason: 'PAYLOAD_TOO_LARGE', status: 413 });
     return new Response(
       JSON.stringify({ error: 'PAYLOAD_TOO_LARGE', message: 'Request too large' }),
       { status: 413, headers: { 'Content-Type': 'application/json' } },
@@ -351,6 +355,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     json = await request.json();
   } catch {
+    logStreamEvent('warn', 'stream_rejected', { requestId, reason: 'BAD_REQUEST', status: 400 });
     return new Response(
       JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
       { status: 400, headers: { 'Content-Type': 'application/json' } },
@@ -359,6 +364,7 @@ export async function POST(request: Request): Promise<Response> {
 
   const parsed = AgentStreamRequestSchema.safeParse(json);
   if (!parsed.success) {
+    logStreamEvent('warn', 'stream_rejected', { requestId, reason: 'VALIDATION_ERROR', status: 400 });
     return new Response(
       JSON.stringify({ error: 'VALIDATION_ERROR', issues: parsed.error.issues }),
       { status: 400, headers: { 'Content-Type': 'application/json' } },
@@ -369,6 +375,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // Concurrent stream guard — reject if this session already has an active stream
   if (activeStreams.has(sessionId)) {
+    logStreamEvent('warn', 'stream_rejected', { requestId, sessionId, reason: 'CONCURRENT_STREAM', status: 409 });
     return new Response(
       JSON.stringify({ error: 'CONCURRENT_STREAM', message: 'A stream is already active for this session' }),
       { status: 409, headers: { 'Content-Type': 'application/json' } },
@@ -406,7 +413,12 @@ export async function POST(request: Request): Promise<Response> {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = createSSESender(controller);
+      const rawSend = createSSESender(controller);
+      let eventCount = 0;
+      const send = (payload: Parameters<typeof rawSend>[0]) => {
+        eventCount++;
+        rawSend(payload);
+      };
       const heartbeatEncoder = new TextEncoder();
       const heartbeatInterval = setInterval(() => {
         try {
@@ -414,6 +426,15 @@ export async function POST(request: Request): Promise<Response> {
         } catch { /* stream already closed */ }
       }, 15_000);
       let lastIteration = 0;
+
+      logStreamEvent('info', 'stream_start', {
+        requestId,
+        sessionId,
+        turnId,
+        plannerMode,
+        messageLength: parsed.data.userMessage.length,
+        historyLength: parsed.data.history.length,
+      });
 
       try {
         let loopInput:
@@ -976,6 +997,15 @@ export async function POST(request: Request): Promise<Response> {
 
         send({ type: 'turn.done', turnId, usage: finalUsage });
 
+        logStreamEvent('info', 'stream_complete', {
+          requestId,
+          sessionId,
+          turnId,
+          durationMs: Date.now() - streamStartTime,
+          eventCount,
+          iterations: lastIteration,
+        });
+
         if (!sawTextInTurn) {
           send({
             type: 'warning',
@@ -987,12 +1017,14 @@ export async function POST(request: Request): Promise<Response> {
       } catch (error) {
         const classified = classifyStreamError(error, request.signal.aborted);
 
-        console.error('[agent/stream] Stream error', {
-          turnId,
+        logStreamEvent('error', 'stream_error', {
+          requestId,
           sessionId,
+          turnId,
           code: classified.code,
-          iteration: lastIteration,
+          phase: `iteration_${lastIteration}`,
           durationMs: Date.now() - streamStartTime,
+          eventCount,
           error: classified.message,
         });
 
