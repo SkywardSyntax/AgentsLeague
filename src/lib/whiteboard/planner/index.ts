@@ -1,7 +1,7 @@
 export { planSemanticBatch, fromLegacyDrawBatchToSemanticStub } from './templates';
 export { enforceDrawBatchConstraints } from './constraints';
 export { lowerPlannedLayoutToDrawBatch } from './lowerer';
-export { buildStructuredWhiteboardContext } from './context-v2';
+export { buildStructuredWhiteboardContext, extendStructuredWhiteboardContext } from './context-v2';
 export type {
   PlannedSemanticLayout,
   PlannerAnchor,

@@ -19,6 +19,7 @@ import { formatSSE, sseHeaders } from '@/lib/server/sse';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
+  extendStructuredWhiteboardContext,
   fromLegacyDrawBatchToSemanticStub,
   lowerPlannedLayoutToDrawBatch,
   planSemanticBatch,
@@ -357,6 +358,9 @@ export async function POST(request: Request): Promise<Response> {
         let streamTextBuffer = '';
         const provisionalSeen = new Set<string>();
         let provisionalIndex = 0;
+        let turnContextV2 = parsed.data.whiteboardContextV2
+          ? (JSON.parse(JSON.stringify(parsed.data.whiteboardContextV2)) as StructuredWhiteboardContext)
+          : undefined;
         const initialOrigin = parsed.data.whiteboardContextV2?.suggested_next_regions[0]
           ? {
               x: parsed.data.whiteboardContextV2.suggested_next_regions[0].x,
@@ -371,7 +375,7 @@ export async function POST(request: Request): Promise<Response> {
         let provisionalOrigin = { ...initialOrigin };
 
         const buildProvisionalContext = (): StructuredWhiteboardContext | undefined => {
-          const ctx = parsed.data.whiteboardContextV2;
+          const ctx = turnContextV2;
           if (!ctx) return undefined;
           const primary = ctx.suggested_next_regions[0] ?? {
             name: 'below_full',
@@ -605,7 +609,7 @@ export async function POST(request: Request): Promise<Response> {
                 });
               }
 
-              const planned = planSemanticBatch(parsedGraph.semanticBatch, parsed.data.whiteboardContextV2);
+              const planned = planSemanticBatch(parsedGraph.semanticBatch, turnContextV2);
               let drawBatch = lowerPlannedLayoutToDrawBatch(planned);
               const constrained = enforceDrawBatchConstraints(drawBatch);
               drawBatch = constrained.batch;
@@ -645,6 +649,11 @@ export async function POST(request: Request): Promise<Response> {
               });
               sawToolBatchInTurn = true;
               send({ type: 'whiteboard.batch', turnId, batch: drawBatch });
+              turnContextV2 = extendStructuredWhiteboardContext(turnContextV2, drawBatch, planned.semanticBatch);
+              const suggested = turnContextV2.suggested_next_regions[0];
+              if (suggested) {
+                provisionalOrigin = { x: suggested.x, y: suggested.y };
+              }
               functionOutputs.push({
                 type: 'function_call_output',
                 call_id: fnCall.callId,
@@ -713,7 +722,7 @@ export async function POST(request: Request): Promise<Response> {
 
               const planned = planSemanticBatch(
                 semanticPayload,
-                parsed.data.whiteboardContextV2,
+                turnContextV2,
               );
               let drawBatch = lowerPlannedLayoutToDrawBatch(planned);
               const constrained = enforceDrawBatchConstraints(drawBatch);
@@ -754,6 +763,11 @@ export async function POST(request: Request): Promise<Response> {
               });
               sawToolBatchInTurn = true;
               send({ type: 'whiteboard.batch', turnId, batch: drawBatch });
+              turnContextV2 = extendStructuredWhiteboardContext(turnContextV2, drawBatch, planned.semanticBatch);
+              const suggested = turnContextV2.suggested_next_regions[0];
+              if (suggested) {
+                provisionalOrigin = { x: suggested.x, y: suggested.y };
+              }
               functionOutputs.push({
                 type: 'function_call_output',
                 call_id: fnCall.callId,
@@ -821,6 +835,10 @@ export async function POST(request: Request): Promise<Response> {
                 });
               }
 
+              const legacySemantic = fromLegacyDrawBatchToSemanticStub(
+                constrained.batch.batch_id,
+                constrained.batch.elements,
+              );
               send({
                 type: 'whiteboard.layout.diagnostics',
                 turnId,
@@ -828,13 +846,19 @@ export async function POST(request: Request): Promise<Response> {
                 violationsFixed: constrained.violationsFixed,
                 templateUsed: 'legacy_draw_batch',
                 fallbackUsed: constrained.fallbackUsed,
-                semanticBatch: fromLegacyDrawBatchToSemanticStub(
-                  constrained.batch.batch_id,
-                  constrained.batch.elements,
-                ),
+                semanticBatch: legacySemantic,
               });
               sawToolBatchInTurn = true;
               send({ type: 'whiteboard.batch', turnId, batch: constrained.batch });
+              turnContextV2 = extendStructuredWhiteboardContext(
+                turnContextV2,
+                constrained.batch,
+                legacySemantic,
+              );
+              const suggested = turnContextV2.suggested_next_regions[0];
+              if (suggested) {
+                provisionalOrigin = { x: suggested.x, y: suggested.y };
+              }
               functionOutputs.push({
                 type: 'function_call_output',
                 call_id: fnCall.callId,
