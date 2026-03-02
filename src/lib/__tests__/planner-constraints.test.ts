@@ -22,6 +22,7 @@ describe('planner constraints', () => {
 
     expect(t2.y).toBeGreaterThan(t1.y + 8);
     expect(repaired.violationsFixed.length).toBeGreaterThan(0);
+    expect(repaired.violationsFixed.some(v => v.includes('shift'))).toBe(true);
   });
 
   it('clamps elements back into canvas bounds', () => {
@@ -42,6 +43,7 @@ describe('planner constraints', () => {
 
     expect(rect.x).toBeGreaterThanOrEqual(20);
     expect(rect.y).toBeGreaterThanOrEqual(20);
+    expect(repaired.violationsFixed.some(v => v.includes('shift'))).toBe(true);
   });
 
   it('handles oversized elements without contradictory corrections', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { lowerPlannedLayoutToDrawBatch, DEFAULT_MAX_LOWERED_ELEMENTS } from '@/lib/whiteboard/planner';
+import { lowerPlannedLayoutToDrawBatch, DEFAULT_MAX_LOWERED_ELEMENTS, planSemanticBatch } from '@/lib/whiteboard/planner';
 import type { PlannedSemanticLayout } from '@/lib/whiteboard/planner';
-import type { DrawElement } from '@/types/agent';
+import type { DrawElement, SemanticBatch } from '@/types/agent';
 
 function makeLayout(elements: DrawElement[], warnings: string[] = []): PlannedSemanticLayout {
   return {
@@ -174,5 +174,21 @@ describe('planner lowerer', () => {
     // since clear has no coords, boundsOf returns null, so it gets filtered
     expect(draw.elements.some((el) => el.type === 'clear')).toBe(false);
     expect(planned.warnings).toContain('elements_dropped_invalid');
+  });
+
+  it('planSemanticBatch output is accepted by lowerPlannedLayoutToDrawBatch', () => {
+    const semanticBatch: SemanticBatch = {
+      batch_id: 'contract-1',
+      template: 'equation_derivation_vertical',
+      blocks: [
+        { id: 'eq', kind: 'equation_stack', lines: [{ id: 'l1', tex: 'x^2=4' }] },
+        { id: 'cap', kind: 'caption', text: 'Solve for x' },
+      ],
+    };
+    const planned = planSemanticBatch(semanticBatch);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    expect(draw.batch_id).toBe('contract-1');
+    expect(draw.elements.length).toBeGreaterThan(0);
+    expect(draw.elements.every(e => 'id' in e && 'type' in e)).toBe(true);
   });
 });
