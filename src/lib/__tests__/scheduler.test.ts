@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createActiveBatch, strokeDurationMs } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, strokeDurationMs } from '@/lib/whiteboard/stroke-scheduler';
 
 describe('stroke scheduler', () => {
   it('uses same startedAt timestamp for a batch', () => {
@@ -37,5 +37,28 @@ describe('stroke scheduler', () => {
   it('clamps duration bounds', () => {
     expect(strokeDurationMs(1)).toBe(220);
     expect(strokeDurationMs(1_000_000)).toBe(2600);
+  });
+
+  it('createActiveBatch returns empty array for empty input', () => {
+    expect(createActiveBatch([])).toEqual([]);
+  });
+});
+
+describe('easeOutCubic', () => {
+  it('returns 0 at t=0', () => {
+    expect(easeOutCubic(0)).toBe(0);
+  });
+
+  it('returns 1 at t=1', () => {
+    expect(easeOutCubic(1)).toBe(1);
+  });
+
+  it('returns 0.875 at t=0.5', () => {
+    expect(easeOutCubic(0.5)).toBe(0.875);
+  });
+
+  it('clamps below-range and above-range values', () => {
+    expect(easeOutCubic(-1)).toBe(0);
+    expect(easeOutCubic(2)).toBe(1);
   });
 });
