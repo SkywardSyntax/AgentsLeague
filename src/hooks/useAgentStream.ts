@@ -8,6 +8,7 @@ import type {
   StructuredWhiteboardContext,
   WhiteboardContext,
 } from '@/types/agent';
+import { isValidAgentSSEEvent } from '@/lib/client/event-validator';
 
 export interface StreamHandlers {
   onEvent: (event: AgentSSEEvent) => void;
@@ -125,6 +126,8 @@ export function useAgentStream() {
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
+          let consecutiveFailures = 0;
+          const MAX_CONSECUTIVE_FAILURES = 5;
           const splitChunks = (raw: string) => raw.split(/\r?\n\r?\n/);
 
           while (true) {
@@ -145,11 +148,24 @@ export function useAgentStream() {
                 const json = line.slice(5).trim();
                 if (!json) continue;
                 try {
-                  const event = JSON.parse(json) as AgentSSEEvent;
-                  lastEvent = event;
-                  args.handlers.onEvent(event);
+                  const parsed = JSON.parse(json);
+                  if (!isValidAgentSSEEvent(parsed)) {
+                    consecutiveFailures++;
+                    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                      args.handlers.onError('Stream corrupted — too many malformed events');
+                      return;
+                    }
+                    continue;
+                  }
+                  consecutiveFailures = 0;
+                  lastEvent = parsed;
+                  args.handlers.onEvent(parsed);
                 } catch {
-                  args.handlers.onError('Invalid SSE JSON payload received');
+                  consecutiveFailures++;
+                  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    args.handlers.onError('Stream corrupted — too many malformed events');
+                    return;
+                  }
                 }
               }
             }
@@ -160,11 +176,13 @@ export function useAgentStream() {
             const json = trailing.slice(5).trim();
             if (json) {
               try {
-                const event = JSON.parse(json) as AgentSSEEvent;
-                lastEvent = event;
-                args.handlers.onEvent(event);
+                const parsed = JSON.parse(json);
+                if (isValidAgentSSEEvent(parsed)) {
+                  lastEvent = parsed;
+                  args.handlers.onEvent(parsed);
+                }
               } catch {
-                args.handlers.onError('Invalid trailing SSE JSON payload received');
+                // Ignore trailing parse error
               }
             }
           }

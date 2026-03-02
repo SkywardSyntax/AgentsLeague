@@ -332,6 +332,15 @@ export async function POST(request: Request): Promise<Response> {
     return mockAgentStream({ userMessage: body.userMessage ?? '', scenario: body.scenario as import('./__mocks__/mock-stream').MockScenario });
   }
 
+  // Request body size guard — reject oversized payloads before parsing
+  const contentLength = request.headers.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > 512 * 1024) {
+    return new Response(
+      JSON.stringify({ error: 'PAYLOAD_TOO_LARGE', message: 'Request too large' }),
+      { status: 413, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
   let json: unknown;
   try {
     json = await request.json();
