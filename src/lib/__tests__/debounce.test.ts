@@ -83,4 +83,68 @@ describe('debounce', () => {
     debounced.flush();
     expect(fn).not.toHaveBeenCalled();
   });
+
+  it('ms = 0 fires exactly once after timers advance', () => {
+    const fn = vi.fn();
+    const debounced = debounce(fn, 0);
+
+    debounced('x');
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith('x');
+  });
+
+  it('flush() immediately after debounced() with ms = 0 fires exactly once', () => {
+    const fn = vi.fn();
+    const debounced = debounce(fn, 0);
+
+    debounced('y');
+    debounced.flush();
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith('y');
+
+    // Advancing timers should not cause a second invocation
+    vi.advanceTimersByTime(10);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel() then flush() is a no-op', () => {
+    const fn = vi.fn();
+    const debounced = debounce(fn, 200);
+
+    debounced('a');
+    debounced.cancel();
+    debounced.flush();
+    expect(fn).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(300);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('rapid sequence: debounced → cancel → debounced → flush fires once with latest args', () => {
+    const fn = vi.fn();
+    const debounced = debounce(fn, 200);
+
+    debounced('a');
+    debounced.cancel();
+    debounced('b');
+    debounced.flush();
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith('b');
+
+    // No lingering timers
+    vi.advanceTimersByTime(300);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('ms = -1 does not crash and fn still fires', () => {
+    const fn = vi.fn();
+    const debounced = debounce(fn, -1);
+
+    debounced('neg');
+    vi.advanceTimersByTime(10);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith('neg');
+  });
 });

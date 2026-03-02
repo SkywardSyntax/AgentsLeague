@@ -845,4 +845,115 @@ describe('chatSessionReducer', () => {
       expect(buildRestoreBatch('chat-42', [])).toEqual([]);
     });
   });
+
+  describe('DELETE_CHAT resets turn when streamChatId matches', () => {
+    it('resets turn to idle when deleting the streaming chat', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      expect(s.turn.streamChatId).toBe(chat1.id);
+      s = chatSessionReducer(s, { type: 'DELETE_CHAT', chatId: chat1.id, activeChatId: chat1.id });
+      expect(s.turn.status).toBe('idle');
+      expect(s.turn.streamChatId).toBeNull();
+    });
+
+    it('preserves turn state when deleting a non-streaming chat', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      s = chatSessionReducer(s, { type: 'DELETE_CHAT', chatId: chat2.id, activeChatId: chat1.id });
+      expect(s.turn.status).toBe('thinking');
+      expect(s.turn.streamChatId).toBe(chat1.id);
+    });
+  });
+
+  describe('STORE_DIAGNOSTICS cap boundary', () => {
+    it('triggers cap when count exceeds 50 (off-by-one: capacity is 51)', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const entry: PendingDiagnosticsEntry = {
+        batchId: 'b0',
+        templateUsed: 'legacy_draw_batch',
+        fallbackUsed: false,
+        violationsFixed: [],
+      };
+      // Insert 51 entries (indices 0..50). The check is `> 50`, so capacity is effectively 51.
+      // After 51 entries, keys.length is 51, which IS > 50 → next insert triggers cap.
+      for (let i = 0; i <= 50; i++) {
+        s = chatSessionReducer(s, {
+          type: 'STORE_DIAGNOSTICS',
+          batchId: `b${i}`,
+          entry: { ...entry, batchId: `b${i}` },
+        });
+      }
+      expect(Object.keys(s.turn.pendingDiagnostics)).toHaveLength(51);
+
+      // The 52nd entry triggers cap: only b51 remains
+      s = chatSessionReducer(s, {
+        type: 'STORE_DIAGNOSTICS',
+        batchId: 'b51',
+        entry: { ...entry, batchId: 'b51' },
+      });
+      expect(Object.keys(s.turn.pendingDiagnostics)).toHaveLength(1);
+      expect(s.turn.pendingDiagnostics['b51']).toBeDefined();
+    });
+
+    it('does not cap at exactly 50 entries', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const entry: PendingDiagnosticsEntry = {
+        batchId: 'b0',
+        templateUsed: 'legacy_draw_batch',
+        fallbackUsed: false,
+        violationsFixed: [],
+      };
+      // Insert exactly 50 entries (indices 0..49). Length never exceeds 50.
+      for (let i = 0; i < 50; i++) {
+        s = chatSessionReducer(s, {
+          type: 'STORE_DIAGNOSTICS',
+          batchId: `b${i}`,
+          entry: { ...entry, batchId: `b${i}` },
+        });
+      }
+      expect(Object.keys(s.turn.pendingDiagnostics)).toHaveLength(50);
+    });
+  });
+
+  describe('RESTORE_SESSION with corrupt chatOrder', () => {
+    it('handles chatOrder containing IDs absent from chats', () => {
+      const chat = createEmptyChatSession(1);
+      const store = makeStore();
+      const next = chatSessionReducer(store, {
+        type: 'RESTORE_SESSION',
+        chats: { [chat.id]: chat },
+        chatOrder: [chat.id, 'ghost-id-1', 'ghost-id-2'],
+      });
+      expect(next.chatOrder).toEqual([chat.id, 'ghost-id-1', 'ghost-id-2']);
+      expect(next.chats['ghost-id-1']).toBeUndefined();
+      // selectChatMeta should not crash on missing chats — handled by selector guard
+    });
+
+    it('handles duplicate IDs in chatOrder', () => {
+      const chat = createEmptyChatSession(1);
+      const store = makeStore();
+      const next = chatSessionReducer(store, {
+        type: 'RESTORE_SESSION',
+        chats: { [chat.id]: chat },
+        chatOrder: [chat.id, chat.id],
+      });
+      expect(next.chatOrder).toEqual([chat.id, chat.id]);
+    });
+  });
 });
