@@ -40,6 +40,30 @@ describe('boundsOfElementInBatch', () => {
   it('returns null for clear element', () => {
     expect(boundsOfElementInBatch({ id: 'c', type: 'clear' })).toBeNull();
   });
+
+  it('handles multi-line text', () => {
+    const b = boundsOfElementInBatch({ id: 't', type: 'text', x: 10, y: 20, text: 'Line 1\nLine 2\nLine 3' });
+    expect(b).not.toBeNull();
+    // Height should account for 3 lines
+    const size = 18;
+    const expectedHeight = 3 * size * 1.3;
+    expect(b!.maxY - b!.minY).toBeCloseTo(expectedHeight, 1);
+  });
+
+  it('caps text width at 1200', () => {
+    const longText = 'A'.repeat(500);
+    const b = boundsOfElementInBatch({ id: 't', type: 'text', x: 0, y: 100, text: longText, size: 18 });
+    expect(b).not.toBeNull();
+    expect(b!.maxX - b!.minX).toBeLessThanOrEqual(1200);
+  });
+
+  it('single-line short text width unchanged', () => {
+    const b = boundsOfElementInBatch({ id: 't', type: 'text', x: 0, y: 100, text: 'Hi', size: 18 });
+    expect(b).not.toBeNull();
+    const size = 18;
+    const expectedWidth = Math.max(size * 0.45, 2 * size * 0.52);
+    expect(b!.maxX - b!.minX).toBeCloseTo(expectedWidth, 5);
+  });
 });
 
 describe('boundsOfBatch', () => {

@@ -13,6 +13,10 @@ describe('normalizeChunkKey', () => {
   it('prefixes with kind', () => {
     expect(normalizeChunkKey('latex', 'x^2')).toBe('latex:x^2');
   });
+
+  it('is case-insensitive and collapses multiple whitespace types', () => {
+    expect(normalizeChunkKey('text', '\tHELLO\n\nWORLD\t')).toBe('text:hello world');
+  });
 });
 
 describe('extractStableChunks', () => {
@@ -47,6 +51,38 @@ describe('extractStableChunks', () => {
   it('returns empty for plain text', () => {
     const chunks = extractStableChunks('just some paragraph text');
     expect(chunks).toHaveLength(0);
+  });
+
+  it('extracts $$...$$ display math', () => {
+    const content = 'Some text\n$$E = mc^2$$\nMore text\n';
+    const chunks = extractStableChunks(content);
+    expect(chunks).toEqual(
+      expect.arrayContaining([{ kind: 'latex', value: 'E = mc^2' }]),
+    );
+  });
+
+  it('extracts multiline $$...$$ display math', () => {
+    const content = '$$\nx^2 +\ny^2\n$$\n';
+    const chunks = extractStableChunks(content);
+    const latexChunks = chunks.filter((c) => c.kind === 'latex');
+    expect(latexChunks).toHaveLength(1);
+    expect(latexChunks[0]!.value).toContain('x^2');
+  });
+
+  it('skips content inside fenced code blocks', () => {
+    const content = '1. Before code\n```\n- Inside code block\n2. Also inside\n```\n3. After code\n';
+    const chunks = extractStableChunks(content);
+    const textChunks = chunks.filter((c) => c.kind === 'text');
+    expect(textChunks).toHaveLength(2);
+    expect(textChunks[0]!.value).toBe('1. Before code');
+    expect(textChunks[1]!.value).toBe('3. After code');
+  });
+
+  it('does not extract inline $...$ as standalone chunks', () => {
+    const content = 'The value $x^2$ is important\n';
+    const chunks = extractStableChunks(content);
+    const latexChunks = chunks.filter((c) => c.kind === 'latex');
+    expect(latexChunks).toHaveLength(0);
   });
 });
 

@@ -278,12 +278,18 @@ const TokenUsageSchema = z.object({
   total: z.number().int().nonnegative().optional(),
 });
 
+const SEMANTIC_TEMPLATES = [
+  'equation_derivation_vertical',
+  'jacobian_mapping_2panel',
+  'freeform_semantic',
+] as const;
+
 const SemanticBatchRefSchema = z.object({
   batch_id: z.string().min(1),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
-  template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic']),
-  blocks: z.array(z.any()).min(1),
-  relations: z.array(z.any()).optional(),
+  template: z.enum(SEMANTIC_TEMPLATES),
+  blocks: z.array(SemanticBlockSchema).min(1),
+  relations: z.array(SemanticRelationSchema).optional(),
   intent: z.enum(['teach', 'derive', 'compare', 'summarize']).optional(),
 });
 
@@ -308,7 +314,7 @@ export const AgentSSEEventSchema = z.discriminatedUnion('type', [
     turnId: z.string().min(1),
     batchId: z.string().min(1),
     violationsFixed: z.array(z.string()),
-    templateUsed: z.string().min(1),
+    templateUsed: z.enum([...SEMANTIC_TEMPLATES, 'legacy_draw_batch']),
     fallbackUsed: z.boolean(),
     semanticBatch: SemanticBatchRefSchema.optional(),
   }),

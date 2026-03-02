@@ -318,5 +318,6 @@ export function handleToolCall(
   if (name === 'emit_graph_script') return handleGraphScript(parsedArgs, ctx);
   if (name === 'emit_semantic_batch') return handleSemanticBatch(parsedArgs, ctx);
   if (name === 'emit_draw_batch') return handleDrawBatch(parsedArgs, ctx);
+  ctx.log.warn('unknown_tool_call', { name: String(name).slice(0, 120), turnId: ctx.turnId });
   return null;
 }

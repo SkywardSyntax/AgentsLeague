@@ -7,6 +7,7 @@ export function normalizeChunkKey(kind: 'latex' | 'text', value: string): string
 export function extractStableChunks(content: string): Array<{ kind: 'latex' | 'text'; value: string }> {
   const chunks: Array<{ kind: 'latex' | 'text'; value: string }> = [];
 
+  // Extract \[...\] block LaTeX
   const blockRegex = /\\\[((?:.|\n)*?)\\\]/g;
   let blockMatch: RegExpExecArray | null = null;
   while ((blockMatch = blockRegex.exec(content)) !== null) {
@@ -14,10 +15,25 @@ export function extractStableChunks(content: string): Array<{ kind: 'latex' | 't
     if (tex) chunks.push({ kind: 'latex', value: tex });
   }
 
+  // Extract $$...$$ display math
+  const displayMathRegex = /\$\$((?:.|\n)*?)\$\$/g;
+  let displayMatch: RegExpExecArray | null = null;
+  while ((displayMatch = displayMathRegex.exec(content)) !== null) {
+    const tex = displayMatch[1]?.trim();
+    if (tex) chunks.push({ kind: 'latex', value: tex });
+  }
+
+  // Stateful line scanner: track fenced code blocks and skip their content
   const lines = content.split('\n');
   const completeLines = content.endsWith('\n') ? lines : lines.slice(0, -1);
+  let inFencedBlock = false;
   for (const line of completeLines) {
     const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      inFencedBlock = !inFencedBlock;
+      continue;
+    }
+    if (inFencedBlock) continue;
     if (!trimmed) continue;
     if (/^(\d+[\.)]\s+|step\s+\d+|[-*]\s+)/i.test(trimmed)) {
       chunks.push({ kind: 'text', value: trimmed });

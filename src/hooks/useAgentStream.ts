@@ -2,16 +2,15 @@
 
 import { useCallback, useRef } from 'react';
 import type {
-  AgentSSEEvent,
   ChatMessage,
   PlannerMode,
   StructuredWhiteboardContext,
   WhiteboardContext,
 } from '@/types/agent';
-import { validateSSEEvent } from '@/lib/schema';
+import { validateSSEEvent, type ValidatedAgentSSEEvent } from '@/lib/schema';
 
 export interface StreamHandlers {
-  onEvent: (event: AgentSSEEvent) => void;
+  onEvent: (event: ValidatedAgentSSEEvent) => void;
   onError: (message: string) => void;
 }
 
@@ -87,7 +86,7 @@ export function useAgentStream() {
                 const parsed = JSON.parse(json);
                 const event = validateSSEEvent(parsed);
                 if (event) {
-                  args.handlers.onEvent(event as AgentSSEEvent);
+                  args.handlers.onEvent(event);
                 } else {
                   args.handlers.onError('SSE event failed schema validation');
                 }
@@ -106,7 +105,7 @@ export function useAgentStream() {
               const parsed = JSON.parse(json);
               const event = validateSSEEvent(parsed);
               if (event) {
-                args.handlers.onEvent(event as AgentSSEEvent);
+                args.handlers.onEvent(event);
               } else {
                 args.handlers.onError('Trailing SSE event failed schema validation');
               }

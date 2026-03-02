@@ -98,6 +98,59 @@ export function compose(...middlewares: Middleware[]): Middleware {
   return (handler: Handler) => middlewares.reduceRight((h, mw) => mw(h), handler);
 }
 
+export interface RateLimitConfig {
+  maxRequests: number;
+  windowMs: number;
+  /** Extract session key from request. Defaults to X-Session-Id header. */
+  keyExtractor?: (request: Request) => string | null;
+}
+
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+/**
+ * Sliding-window rate limiter. Configurable via RateLimitConfig.
+ * Uses an in-memory Map keyed by session identifier.
+ */
+export function withRateLimit(config: RateLimitConfig): Middleware {
+  const buckets = new Map<string, RateLimitEntry>();
+  const { maxRequests, windowMs, keyExtractor } = config;
+
+  // Periodic eviction to prevent unbounded growth
+  const EVICTION_INTERVAL = Math.max(windowMs * 2, 60_000);
+  let lastEviction = Date.now();
+
+  function evictExpired(now: number): void {
+    if (now - lastEviction < EVICTION_INTERVAL) return;
+    lastEviction = now;
+    for (const [key, entry] of buckets) {
+      if (now >= entry.resetAt) buckets.delete(key);
+    }
+  }
+
+  return (handler: Handler) => async (request: Request, ctx: HandlerContext) => {
+    const extractKey = keyExtractor ?? ((req: Request) => req.headers.get('X-Session-Id'));
+    const sessionKey = extractKey(request) ?? 'anonymous';
+    const now = Date.now();
+
+    evictExpired(now);
+
+    const entry = buckets.get(sessionKey);
+    if (entry && now < entry.resetAt) {
+      if (entry.count >= maxRequests) {
+        return apiError(429, 'RATE_LIMITED', `Rate limit exceeded. Try again later.`, ctx.requestId);
+      }
+      entry.count++;
+    } else {
+      buckets.set(sessionKey, { count: 1, resetAt: now + windowMs });
+    }
+
+    return handler(request, ctx);
+  };
+}
+
 /** Wraps a Next.js route handler with middleware, injecting context. */
 export function applyMiddleware(
   middleware: Middleware,

@@ -14,8 +14,12 @@ export function boundsOfElementInBatch(el: DrawBatch['elements'][number]): White
   }
   if (el.type === 'text') {
     const size = el.size ?? 18;
-    const width = Math.max(size * 0.45, el.text.length * size * 0.52);
-    return { minX: el.x, minY: el.y - size * 0.9, maxX: el.x + width, maxY: el.y + size * 0.5 };
+    const lines = el.text.split('\n');
+    const maxLineLen = Math.max(...lines.map((l: string) => l.length));
+    const TEXT_WIDTH_CAP = 1200;
+    const width = Math.min(Math.max(size * 0.45, maxLineLen * size * 0.52), TEXT_WIDTH_CAP);
+    const height = lines.length * size * 1.3;
+    return { minX: el.x, minY: el.y - size * 0.9, maxX: el.x + width, maxY: el.y - size * 0.9 + height };
   }
   if (el.type === 'latex') {
     const size = el.fontSize ?? 20;

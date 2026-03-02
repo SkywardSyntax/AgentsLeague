@@ -5,6 +5,7 @@ import {
   withErrorBoundary,
   withValidation,
   withBodySizeLimit,
+  withRateLimit,
   compose,
 } from '@/lib/server/api-middleware';
 import type { HandlerContext } from '@/lib/server/api-middleware';
@@ -112,5 +113,74 @@ describe('compose', () => {
     const composed = compose(mw1, mw2)(async () => { order.push('handler'); return Response.json({}); });
     await composed(makeRequest(), ctx);
     expect(order).toEqual(['mw1-before', 'mw2-before', 'handler', 'mw2-after', 'mw1-after']);
+  });
+});
+
+describe('withRateLimit', () => {
+  it('allows requests under the limit', async () => {
+    const mw = withRateLimit({ maxRequests: 3, windowMs: 60_000 });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req = () => new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Session-Id': 'sess-1' },
+    });
+    const r1 = await handler(req(), ctx);
+    const r2 = await handler(req(), ctx);
+    const r3 = await handler(req(), ctx);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect(r3.status).toBe(200);
+  });
+
+  it('returns 429 when limit exceeded', async () => {
+    const mw = withRateLimit({ maxRequests: 2, windowMs: 60_000 });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req = () => new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Session-Id': 'sess-2' },
+    });
+    await handler(req(), ctx);
+    await handler(req(), ctx);
+    const r3 = await handler(req(), ctx);
+    expect(r3.status).toBe(429);
+    const body = await r3.json();
+    expect(body.error).toBe('RATE_LIMITED');
+  });
+
+  it('resets after window expires', async () => {
+    const mw = withRateLimit({ maxRequests: 1, windowMs: 50 });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req = () => new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Session-Id': 'sess-3' },
+    });
+    await handler(req(), ctx);
+    const r2 = await handler(req(), ctx);
+    expect(r2.status).toBe(429);
+    // Wait for window to expire
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const r3 = await handler(req(), ctx);
+    expect(r3.status).toBe(200);
+  });
+
+  it('uses custom keyExtractor', async () => {
+    const mw = withRateLimit({
+      maxRequests: 1,
+      windowMs: 60_000,
+      keyExtractor: (req) => req.headers.get('X-Custom-Key'),
+    });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req1 = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Custom-Key': 'key-a' },
+    });
+    const req2 = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Custom-Key': 'key-b' },
+    });
+    const r1 = await handler(req1, ctx);
+    const r2 = await handler(req2, ctx);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
   });
 });
