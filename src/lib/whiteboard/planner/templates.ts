@@ -12,6 +12,8 @@ import type {
   StylePreset,
 } from '@/types/agent';
 import type { PlannedSemanticLayout, PlannerAnchor, PlannerRegion } from './types';
+import type { PlannerTraceContext } from './trace';
+import { validateSemanticBatchInput } from './validate-input';
 
 const MAX_BLOCKS = 8;
 const MAX_EQUATION_LINES = 6;
@@ -979,17 +981,29 @@ function buildAdaptiveLayout(
 export function planSemanticBatch(
   semanticBatch: SemanticBatch,
   context?: StructuredWhiteboardContext,
+  trace?: PlannerTraceContext,
 ): PlannedSemanticLayout {
-  const regions = buildDefaultRegions(context);
+  const { repaired, warnings: validationWarnings } = trace
+    ? trace.span('validate', 'validateSemanticBatchInput', () => validateSemanticBatchInput(semanticBatch))
+    : validateSemanticBatchInput(semanticBatch);
+  const regions = trace
+    ? trace.span('region', 'buildDefaultRegions', () => buildDefaultRegions(context))
+    : buildDefaultRegions(context);
   const state: BuildState = {
     elements: [],
     anchors: [],
-    warnings: [],
+    warnings: [...validationWarnings],
   };
-  const normalizedSemantic = compactSemanticBatchForLegibility(semanticBatch, state.warnings);
+  const normalizedSemantic = trace
+    ? trace.span('template', 'compactSemanticBatchForLegibility', () => compactSemanticBatchForLegibility(repaired, state.warnings))
+    : compactSemanticBatchForLegibility(repaired, state.warnings);
 
   // Single adaptive planner path: no hardcoded situation templates, only semantic content + region hints.
-  buildAdaptiveLayout(normalizedSemantic, regions, state);
+  if (trace) {
+    trace.span('template', 'buildAdaptiveLayout', () => { buildAdaptiveLayout(normalizedSemantic, regions, state); return undefined; });
+  } else {
+    buildAdaptiveLayout(normalizedSemantic, regions, state);
+  }
 
   return {
     batchId: normalizedSemantic.batch_id,

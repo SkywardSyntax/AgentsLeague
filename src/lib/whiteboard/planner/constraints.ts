@@ -1,5 +1,6 @@
 import type { DrawBatch, DrawElement, WhiteboardBounds } from '@/types/agent';
 import type { PlannerConfig, PlannerConstraintResult } from './types';
+import type { PlannerTraceContext } from './trace';
 import { DEFAULT_PLANNER_CONFIG } from './types';
 import { boundsOf } from './bounds';
 
@@ -354,42 +355,47 @@ function enforceArrowLegibility(
 export function enforceDrawBatchConstraints(
   batch: DrawBatch,
   partialConfig?: Partial<PlannerConfig>,
+  trace?: PlannerTraceContext,
 ): PlannerConstraintResult {
-  const config = { ...DEFAULT_PLANNER_CONFIG, ...partialConfig };
-  const fixes = new Set<string>();
-  const cache = new BoundsCache();
+  const run = (): PlannerConstraintResult => {
+    const config = { ...DEFAULT_PLANNER_CONFIG, ...partialConfig };
+    const fixes = new Set<string>();
+    const cache = new BoundsCache();
 
-  let elements = [...batch.elements];
-  let prevElementHash = '';
-  for (let i = 0; i < config.maxRepairIterations; i++) {
-    cache.clear();
-    elements = enforceArrowLegibility(elements, fixes);
-    elements = resolveTextSpacing(elements, config, fixes, cache);
-    elements = resolveLabelShapeSpacing(elements, config, fixes, cache);
-    elements = resolveShapeSpacing(elements, config, fixes, cache);
-    elements = ensureCanvasBounds(elements, config, fixes, cache);
+    let elements = [...batch.elements];
+    let prevElementHash = '';
+    for (let i = 0; i < config.maxRepairIterations; i++) {
+      cache.clear();
+      elements = enforceArrowLegibility(elements, fixes);
+      elements = resolveTextSpacing(elements, config, fixes, cache);
+      elements = resolveLabelShapeSpacing(elements, config, fixes, cache);
+      elements = resolveShapeSpacing(elements, config, fixes, cache);
+      elements = ensureCanvasBounds(elements, config, fixes, cache);
 
-    if (!hasTextOverlap(elements, cache)) {
-      return {
-        batch: { ...batch, elements },
-        violationsFixed: [...fixes],
-        fallbackUsed: false,
-      };
+      if (!hasTextOverlap(elements, cache)) {
+        return {
+          batch: { ...batch, elements },
+          violationsFixed: [...fixes],
+          fallbackUsed: false,
+        };
+      }
+
+      // Fixed-point detection: hash from element properties directly (not cache)
+      const curHash = elements.map((el) => JSON.stringify(el)).join('|');
+      if (curHash === prevElementHash) break;
+      prevElementHash = curHash;
     }
 
-    // Fixed-point detection: hash from element properties directly (not cache)
-    const curHash = elements.map((el) => JSON.stringify(el)).join('|');
-    if (curHash === prevElementHash) break;
-    prevElementHash = curHash;
-  }
+    cache.clear();
+    elements = fallbackVerticalReflow(elements, config, fixes, cache);
+    elements = ensureCanvasBounds(elements, config, fixes, cache);
 
-  cache.clear();
-  elements = fallbackVerticalReflow(elements, config, fixes, cache);
-  elements = ensureCanvasBounds(elements, config, fixes, cache);
-
-  return {
-    batch: { ...batch, elements },
-    violationsFixed: [...fixes],
-    fallbackUsed: true,
+    return {
+      batch: { ...batch, elements },
+      violationsFixed: [...fixes],
+      fallbackUsed: true,
+    };
   };
+
+  return trace ? trace.span('constrain', 'enforceDrawBatchConstraints', run) : run();
 }
