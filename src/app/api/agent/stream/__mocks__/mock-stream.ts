@@ -58,6 +58,11 @@ const DOMAIN_KEYWORDS: Record<string, string[]> = {
   physics: ['free-body', 'circuit', 'projectile', 'wave', 'pendulum', 'magnetic', 'lens', 'heat', 'spring', 'capacitor', 'standing', 'physics'],
 };
 
+let passthroughTurnCounter = 0;
+let passthroughMsgCounter = 0;
+let mockTurnCounter = 0;
+let mockMsgCounter = 0;
+
 function detectDomain(query: string): string {
   const lower = query.toLowerCase();
   let bestDomain = 'math';
@@ -91,8 +96,8 @@ export function passthroughAgentStream(body: {
   passthroughBatch?: Record<string, unknown>;
   passthroughError?: string;
 }): Response {
-  const turnId = `passthrough-turn-${Date.now()}`;
-  const messageId = `passthrough-msg-${Date.now()}`;
+  const turnId = `passthrough-turn-${++passthroughTurnCounter}`;
+  const messageId = `passthrough-msg-${++passthroughMsgCounter}`;
   const textReply = `Passthrough response for: ${body.userMessage.slice(0, 80)}`;
 
   const encoder = new TextEncoder();
@@ -134,8 +139,8 @@ export function mockAgentStream(body: { userMessage: string }): Response {
   const domain = detectDomain(body.userMessage);
   const batch = MOCK_BATCHES[domain] ?? MOCK_BATCHES['math']!;
   const textReply = `Here is a ${domain} diagram for: ${body.userMessage.slice(0, 80)}`;
-  const turnId = `mock-turn-${Date.now()}`;
-  const messageId = `mock-msg-${Date.now()}`;
+  const turnId = `mock-turn-${++mockTurnCounter}`;
+  const messageId = `mock-msg-${++mockMsgCounter}`;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
