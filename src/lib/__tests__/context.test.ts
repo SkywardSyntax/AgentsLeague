@@ -163,6 +163,18 @@ describe('buildWhiteboardContextV2', () => {
     expect(ctx.scene_summary.element_count).toBe(3);
   });
 
+  it('elements with NaN coordinates do not throw', () => {
+    const elements: DrawElement[] = [
+      { id: 'r1', type: 'rect', x: NaN, y: NaN, w: 100, h: 50 },
+      { id: 'r2', type: 'rect', x: 50, y: 50, w: 200, h: 100 },
+    ];
+    // NaN propagates into bounds — function should not throw
+    expect(() => buildWhiteboardContextV2(elements, [])).not.toThrow();
+    const ctx = buildWhiteboardContextV2(elements, []);
+    expect(ctx.scene_summary.element_count).toBe(2);
+    expect(ctx.occupied_regions.length).toBeGreaterThan(0);
+  });
+
   it('suggested_next_regions has deterministic ordering', () => {
     const ctx1 = buildWhiteboardContextV2(sceneFixture, semanticFixture);
     const ctx2 = buildWhiteboardContextV2(sceneFixture, semanticFixture);
