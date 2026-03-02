@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createActiveBatch, strokeDurationMs, staggeredStartTimes, MAX_TOTAL_STAGGER_MS } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, strokeDurationMs, staggeredStartTimes, MAX_TOTAL_STAGGER_MS } from '@/lib/whiteboard/stroke-scheduler';
 
 describe('stroke scheduler', () => {
   it('uses same startedAt timestamp for a batch', () => {
@@ -82,6 +82,39 @@ describe('staggeredStartTimes', () => {
     const times = staggeredStartTimes(3, 1000, Infinity);
     expect(times.length).toBe(3);
     expect(times[1]! - times[0]!).toBe(60);
+  });
+});
+
+describe('easeOutCubic', () => {
+  it('returns 0 at t=0', () => {
+    expect(easeOutCubic(0)).toBe(0);
+  });
+
+  it('returns 1 at t=1', () => {
+    expect(easeOutCubic(1)).toBe(1);
+  });
+
+  it('returns 0.875 at t=0.5 per formula 1-(1-t)^3', () => {
+    expect(easeOutCubic(0.5)).toBeCloseTo(0.875, 10);
+  });
+
+  it('clamps negative input to 0', () => {
+    expect(easeOutCubic(-0.1)).toBe(0);
+    expect(easeOutCubic(-100)).toBe(0);
+  });
+
+  it('clamps input above 1 to 1', () => {
+    expect(easeOutCubic(1.5)).toBe(1);
+    expect(easeOutCubic(999)).toBe(1);
+  });
+
+  it('is monotonically increasing for t in [0, 1]', () => {
+    let prev = easeOutCubic(0);
+    for (let t = 0.01; t <= 1; t += 0.01) {
+      const cur = easeOutCubic(t);
+      expect(cur).toBeGreaterThanOrEqual(prev);
+      prev = cur;
+    }
   });
 });
 

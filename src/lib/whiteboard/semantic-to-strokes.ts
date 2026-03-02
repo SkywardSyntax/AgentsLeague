@@ -61,7 +61,7 @@ export function rectPoints(el: Extract<DrawElement, { type: 'rect' }>): Point[] 
   ];
 }
 
-function ellipsePoints(el: Extract<DrawElement, { type: 'ellipse' }>): Point[] {
+export function ellipsePoints(el: Extract<DrawElement, { type: 'ellipse' }>): Point[] {
   const circumference = Math.PI * (3 * (el.rx + el.ry) - Math.sqrt((3 * el.rx + el.ry) * (el.rx + 3 * el.ry)));
   const steps = Math.max(36, Math.ceil(circumference / 5));
   const pts: Point[] = [];
@@ -75,11 +75,11 @@ function ellipsePoints(el: Extract<DrawElement, { type: 'ellipse' }>): Point[] {
   return pts;
 }
 
-function linePoints(el: Extract<DrawElement, { type: 'line' } | { type: 'arrow' }>): Point[] {
+export function linePoints(el: Extract<DrawElement, { type: 'line' } | { type: 'arrow' }>): Point[] {
   return [el.from, el.to];
 }
 
-function arrowHeadPoints(el: Extract<DrawElement, { type: 'arrow' }>): Point[][] {
+export function arrowHeadPoints(el: Extract<DrawElement, { type: 'arrow' }>): Point[][] {
   const dx = el.to.x - el.from.x;
   const dy = el.to.y - el.from.y;
   const angle = Math.atan2(dy, dx);
@@ -123,11 +123,11 @@ async function compileTextLikeElement(
   });
 }
 
-function escapePlainTextForTex(input: string): string {
+export function escapePlainTextForTex(input: string): string {
   return input.replace(/([\\{}$&#_^%~])/g, '\\$1');
 }
 
-function looksMathLikeText(input: string): boolean {
+export function looksMathLikeText(input: string): boolean {
   const value = input.trim();
   if (!value) return false;
   if (/\\[a-zA-Z]+/.test(value)) return true;
@@ -136,7 +136,7 @@ function looksMathLikeText(input: string): boolean {
   return false;
 }
 
-function strokesBounds(strokes: StrokeTrajectory[]): {
+export function strokesBounds(strokes: StrokeTrajectory[]): {
   minX: number;
   maxX: number;
   minY: number;
