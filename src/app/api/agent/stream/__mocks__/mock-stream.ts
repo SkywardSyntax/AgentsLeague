@@ -4,7 +4,8 @@
  * Gated by server-only env AGENT_STREAM_MODE=mock (never NEXT_PUBLIC_*).
  */
 
-import { formatSSE, sseHeaders } from '@/lib/server/sse';
+import { createSSESender, sseHeaders } from '@/lib/server/sse';
+import type { DrawBatch } from '@/types/agent';
 
 interface MockElement {
   type: string;
@@ -78,17 +79,14 @@ export function isMockMode(): boolean {
 
 export function mockAgentStream(body: { userMessage: string }): Response {
   const domain = detectDomain(body.userMessage);
-  const batch = MOCK_BATCHES[domain] ?? MOCK_BATCHES['math']!;
+  const batch = (MOCK_BATCHES[domain] ?? MOCK_BATCHES['math']!) as unknown as DrawBatch;
   const textReply = `Here is a ${domain} diagram for: ${body.userMessage.slice(0, 80)}`;
   const turnId = `mock-turn-${Date.now()}`;
   const messageId = `mock-msg-${Date.now()}`;
 
-  const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (payload: unknown) => {
-        controller.enqueue(encoder.encode(formatSSE(payload)));
-      };
+      const send = createSSESender(controller);
 
       // Simulate realistic SSE sequence matching AgentSSEEvent types
       await delay(50);

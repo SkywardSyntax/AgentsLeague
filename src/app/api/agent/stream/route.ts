@@ -15,7 +15,7 @@ import {
   createOpenAIClient,
   getModel,
 } from '@/lib/server/openai';
-import { formatSSE, sseHeaders } from '@/lib/server/sse';
+import { sseHeaders, createSSESender } from '@/lib/server/sse';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
@@ -34,6 +34,9 @@ import type {
 } from '@/types/agent';
 
 export const runtime = 'nodejs';
+
+/** Concurrent stream guard — at most one active stream per sessionId */
+const activeStreams = new Set<string>();
 
 type FunctionCall = {
   callId: string;
@@ -312,9 +315,21 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  const sessionId = parsed.data.sessionId;
+
+  // Concurrent stream guard — reject if this session already has an active stream
+  if (activeStreams.has(sessionId)) {
+    return new Response(
+      JSON.stringify({ error: 'CONCURRENT_STREAM', message: 'A stream is already active for this session' }),
+      { status: 409, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+  activeStreams.add(sessionId);
+
   const client = createOpenAIClient();
   const turnId = randomUUID();
   const plannerMode = parsed.data.plannerMode ?? 'semantic_preferred';
+  const streamStartTime = Date.now();
 
   const initialInput = [
     ...(parsed.data.whiteboardContextV2
@@ -341,10 +356,8 @@ export async function POST(request: Request): Promise<Response> {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const encoder = new TextEncoder();
-      const send = (payload: unknown) => {
-        controller.enqueue(encoder.encode(formatSSE(payload)));
-      };
+      const send = createSSESender(controller);
+      let lastIteration = 0;
 
       try {
         let loopInput:
@@ -470,6 +483,17 @@ export async function POST(request: Request): Promise<Response> {
         };
 
         for (let iteration = 0; iteration < 6; iteration++) {
+          lastIteration = iteration;
+
+          // Abort early if client disconnected between iterations
+          if (request.signal.aborted) break;
+
+          // Combine client disconnect + 120s stall timeout for the entire create+stream lifecycle
+          const iterationSignal = AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(120_000),
+          ]);
+
           const modelStream = await client.responses.create(
             {
               model: getModel(),
@@ -487,7 +511,7 @@ export async function POST(request: Request): Promise<Response> {
               temperature: 0.6,
             },
             {
-              signal: AbortSignal.timeout(30_000),
+              signal: iterationSignal,
             },
           );
 
@@ -897,15 +921,33 @@ export async function POST(request: Request): Promise<Response> {
           });
         }
       } catch (error) {
+        const isAbort = error instanceof Error && error.name === 'AbortError';
         const message = error instanceof Error ? error.message : 'Unexpected stream failure';
-        send({
-          type: 'error',
+        const code = isAbort ? 'STREAM_ABORTED' : 'STREAM_FAILURE';
+
+        console.error('[agent/stream] Stream error', {
           turnId,
-          code: 'STREAM_FAILURE',
-          message,
-          retryable: true,
+          sessionId,
+          code,
+          iteration: lastIteration,
+          durationMs: Date.now() - streamStartTime,
+          error: message,
         });
+
+        // Only send error events if the client is still connected
+        if (!request.signal.aborted) {
+          send({
+            type: 'error',
+            turnId,
+            code,
+            message,
+            retryable: !isAbort,
+          });
+          // Terminal event contract: turn.done is always the last event
+          send({ type: 'turn.done', turnId, partial: true });
+        }
       } finally {
+        activeStreams.delete(sessionId);
         controller.close();
       }
     },

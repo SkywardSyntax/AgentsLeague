@@ -283,4 +283,4 @@ export type AgentSSEEvent =
       message: string;
       retryable: boolean;
     }
-  | { type: 'turn.done'; turnId: string; usage?: TokenUsage };
+  | { type: 'turn.done'; turnId: string; usage?: TokenUsage; partial?: boolean };
