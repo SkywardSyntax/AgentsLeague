@@ -270,8 +270,8 @@ export function extendStructuredWhiteboardContext(
 
   base.scene_summary.bounds = mergedBounds;
   base.suggested_next_regions = deriveSuggestedRegions(mergedBounds);
-  base.occupied_regions = base.occupied_regions.slice(-120);
-  base.anchors = base.anchors.slice(-160);
+  base.occupied_regions = base.occupied_regions.slice(-60);
+  base.anchors = base.anchors.slice(-80);
   base.recent_blocks = [...base.recent_blocks, ...appendedRecent].slice(-20);
   if (!base.token_budget_hint?.max_chars) {
     base.token_budget_hint = { max_chars: 2200 };

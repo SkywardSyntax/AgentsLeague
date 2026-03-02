@@ -35,6 +35,23 @@ interface ChatSessionState {
   warnings: string[];
 }
 
+interface ChatStore {
+  chatOrder: string[];
+  chats: Record<string, ChatSessionState>;
+}
+
+function updateChat(
+  store: ChatStore,
+  chatId: string,
+  updater: (chat: ChatSessionState) => ChatSessionState,
+): ChatStore {
+  const chat = store.chats[chatId];
+  if (!chat) return store;
+  const updated = updater(chat);
+  if (updated === chat) return store;
+  return { ...store, chats: { ...store.chats, [chatId]: updated } };
+}
+
 interface AgentAPI {
   submitQuery: (text: string) => Promise<void>;
   getStatus: () => 'idle' | 'thinking' | 'streaming' | 'drawing';
@@ -129,7 +146,10 @@ export function AppShell() {
   const [didRestoreSession, setDidRestoreSession] = useState(false);
   const [seedChat] = useState<ChatSessionState>(() => createEmptyChatSession(1));
 
-  const [chatSessions, setChatSessions] = useState<ChatSessionState[]>([seedChat]);
+  const [chatStore, setChatStore] = useState<ChatStore>(() => ({
+    chatOrder: [seedChat.id],
+    chats: { [seedChat.id]: seedChat },
+  }));
   const [activeChatId, setActiveChatId] = useState<string>(seedChat.id);
 
   const [sessionId] = useState(() => createId());
@@ -157,8 +177,8 @@ export function AppShell() {
   const { run, cancel } = useAgentStream();
 
   const activeChat = useMemo(
-    () => chatSessions.find((chat) => chat.id === activeChatId) ?? chatSessions[0] ?? null,
-    [activeChatId, chatSessions],
+    () => chatStore.chats[activeChatId] ?? chatStore.chats[chatStore.chatOrder[0]!] ?? null,
+    [activeChatId, chatStore],
   );
 
   useEffect(() => {
@@ -177,24 +197,30 @@ export function AppShell() {
   useEffect(() => {
     const restored = loadSession();
     if (restored && restored.chats.length > 0) {
-      const restoredChats: ChatSessionState[] = restored.chats.map((chat) => ({
-        id: chat.id,
-        title: chat.title,
-        createdAt: chat.createdAt,
-        updatedAt: chat.updatedAt,
-        messages: chat.messages,
-        scene: chat.scene,
-        semanticScene: chat.semanticScene ?? [],
-        plannerMeta: chat.plannerMeta ?? [],
-        batches: buildRestoreBatch(chat.id, chat.scene),
-        warnings: [],
-      }));
+      const activeExists = restored.chats.some((chat) => chat.id === restored.activeChatId);
+      const activeId = activeExists ? restored.activeChatId : restored.chats[0]!.id;
 
-      setChatSessions(restoredChats);
+      const newChats: Record<string, ChatSessionState> = {};
+      const newOrder: string[] = [];
+      for (const chat of restored.chats) {
+        newOrder.push(chat.id);
+        newChats[chat.id] = {
+          id: chat.id,
+          title: chat.title,
+          createdAt: chat.createdAt,
+          updatedAt: chat.updatedAt,
+          messages: chat.messages,
+          scene: chat.scene,
+          semanticScene: chat.semanticScene ?? [],
+          plannerMeta: chat.plannerMeta ?? [],
+          batches: chat.id === activeId ? buildRestoreBatch(chat.id, chat.scene) : [],
+          warnings: [],
+        };
+      }
+
+      setChatStore({ chatOrder: newOrder, chats: newChats });
       setPanelSizes(restored.prefs.panelSizes);
-
-      const activeExists = restoredChats.some((chat) => chat.id === restored.activeChatId);
-      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]!.id);
+      setActiveChatId(activeId);
     }
 
     setDidRestoreSession(true);
@@ -206,21 +232,24 @@ export function AppShell() {
     if (persistTimeout.current) clearTimeout(persistTimeout.current);
 
     persistTimeout.current = setTimeout(() => {
-      if (chatSessions.length === 0) return;
+      if (chatStore.chatOrder.length === 0) return;
       saveSession({
         version: 3,
         updatedAt: Date.now(),
-        activeChatId: activeChat?.id ?? chatSessions[0]!.id,
-        chats: chatSessions.map((chat) => ({
-          id: chat.id,
-          title: chat.title,
-          createdAt: chat.createdAt,
-          updatedAt: chat.updatedAt,
-          messages: chat.messages,
-          scene: chat.scene,
-          semanticScene: chat.semanticScene,
-          plannerMeta: chat.plannerMeta,
-        })),
+        activeChatId: activeChat?.id ?? chatStore.chatOrder[0]!,
+        chats: chatStore.chatOrder.map((id) => {
+          const chat = withoutStreamOverlay(chatStore.chats[id]!);
+          return {
+            id: chat.id,
+            title: chat.title,
+            createdAt: chat.createdAt,
+            updatedAt: chat.updatedAt,
+            messages: chat.messages,
+            scene: chat.scene,
+            semanticScene: chat.semanticScene,
+            plannerMeta: chat.plannerMeta,
+          };
+        }),
         prefs: { panelSizes },
       });
     }, 500);
@@ -228,15 +257,14 @@ export function AppShell() {
     return () => {
       if (persistTimeout.current) clearTimeout(persistTimeout.current);
     };
-  }, [activeChat?.id, chatSessions, didRestoreSession, panelSizes]);
+  }, [activeChat?.id, chatStore, didRestoreSession, panelSizes]);
 
   const pushWarning = useCallback((warning: string, chatIdOverride?: string) => {
     const targetChatId = chatIdOverride ?? streamChatIdRef.current ?? activeChatIdRef.current;
     if (!targetChatId) return;
 
-    setChatSessions((prev) =>
-      prev.map((chat) => {
-        if (chat.id !== targetChatId) return chat;
+    setChatStore((prev) =>
+      updateChat(prev, targetChatId, (chat) => {
         if (chat.warnings[chat.warnings.length - 1] === warning) return chat;
         return {
           ...chat,
@@ -249,6 +277,7 @@ export function AppShell() {
 
   const handleEvent = useCallback(
     (event: AgentSSEEvent) => {
+      try {
       lastTurnEventsRef.current.push(event.type);
       if (lastTurnEventsRef.current.length > 80) {
         lastTurnEventsRef.current = lastTurnEventsRef.current.slice(-80);
@@ -259,10 +288,8 @@ export function AppShell() {
       if (event.type === 'assistant.text.delta') {
         turnHadRenderableOutputRef.current = true;
         setStatus('streaming');
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
-
+        setChatStore((prev) =>
+          updateChat(prev, targetChatId, (chat) => {
             const currentId = currentAssistantMessageId.current;
             if (!currentId) {
               const nextMsg = createMessage('assistant', event.delta);
@@ -312,9 +339,8 @@ export function AppShell() {
         const diagnostics = pendingDiagnosticsRef.current.get(event.batch.batch_id);
         if (diagnostics) pendingDiagnosticsRef.current.delete(event.batch.batch_id);
         setStatus('drawing');
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
+        setChatStore((prev) =>
+          updateChat(prev, targetChatId, (chat) => {
             const baseChat = firstToolBatch ? withoutStreamOverlay(chat) : chat;
             const hasClear = event.batch.elements.some((el) => el.type === 'clear');
             const baseScene = hasClear ? [] : [...baseChat.scene];
@@ -374,24 +400,19 @@ export function AppShell() {
         setStatus('idle');
         turnSawToolBatchRef.current = false;
         pendingDiagnosticsRef.current.clear();
-        setChatSessions((prev) =>
-          prev.map((chat) =>
-            chat.id === targetChatId
-              ? {
-                  ...chat,
-                  updatedAt: Date.now(),
-                  messages: [...chat.messages, createMessage('assistant', `Error: ${event.message}`)],
-                }
-              : chat,
-          ),
+        setChatStore((prev) =>
+          updateChat(prev, targetChatId, (chat) => ({
+            ...chat,
+            updatedAt: Date.now(),
+            messages: [...chat.messages, createMessage('assistant', `Error: ${event.message}`)],
+          })),
         );
         return;
       }
 
       if (event.type === 'turn.done') {
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
+        setChatStore((prev) =>
+          updateChat(prev, targetChatId, (chat) => {
             if (turnHadRenderableOutputRef.current) return chat;
             return {
               ...chat,
@@ -410,6 +431,10 @@ export function AppShell() {
         pendingDiagnosticsRef.current.clear();
         setStatus('idle');
       }
+      } catch (err) {
+        console.error('[handleEvent] Error processing event:', event?.type, err);
+        pushWarning(`Event processing error: ${err instanceof Error ? err.message : String(err)}`);
+      }
     },
     [pushWarning],
   );
@@ -426,9 +451,8 @@ export function AppShell() {
       const whiteboardContext = buildWhiteboardContext(activeChat.scene);
       const whiteboardContextV2 = buildWhiteboardContextV2(activeChat.scene, activeChat.semanticScene);
 
-      setChatSessions((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== chatId) return chat;
+      setChatStore((prev) =>
+        updateChat(prev, chatId, (chat) => {
           const nextTitle =
             chat.messages.length === 0 || looksDefaultTitle(chat.title)
               ? buildChatTitleFromMessage(message)
@@ -469,16 +493,12 @@ export function AppShell() {
             lastTurnEventsRef.current.push('error');
             if (!targetChatId) return;
 
-            setChatSessions((prev) =>
-              prev.map((chat) =>
-                chat.id === targetChatId
-                  ? {
-                      ...chat,
-                      updatedAt: Date.now(),
-                      messages: [...chat.messages, createMessage('assistant', `Stream error: ${msg}`)],
-                    }
-                  : chat,
-              ),
+            setChatStore((prev) =>
+              updateChat(prev, targetChatId, (chat) => ({
+                ...chat,
+                updatedAt: Date.now(),
+                messages: [...chat.messages, createMessage('assistant', `Stream error: ${msg}`)],
+              })),
             );
           },
         },
@@ -495,8 +515,11 @@ export function AppShell() {
 
   const createChat = useCallback(() => {
     if (status !== 'idle') return;
-    const nextChat = createEmptyChatSession(chatSessions.length + 1);
-    setChatSessions((prev) => [nextChat, ...prev]);
+    const nextChat = createEmptyChatSession(chatStore.chatOrder.length + 1);
+    setChatStore((prev) => ({
+      chatOrder: [nextChat.id, ...prev.chatOrder],
+      chats: { ...prev.chats, [nextChat.id]: nextChat },
+    }));
     setActiveChatId(nextChat.id);
     setInput('');
     currentAssistantMessageId.current = null;
@@ -504,12 +527,24 @@ export function AppShell() {
     turnSawToolBatchRef.current = false;
     streamChatIdRef.current = null;
     pendingDiagnosticsRef.current.clear();
-  }, [chatSessions.length, status]);
+  }, [chatStore.chatOrder.length, status]);
 
   const selectChat = useCallback(
     (chatId: string) => {
       if (status !== 'idle') return;
       if (chatId === activeChatId) return;
+      // Lazily build restore batch for chats not yet selected
+      setChatStore((prev) => {
+        const chat = prev.chats[chatId];
+        if (!chat) return prev;
+        if (chat.batches.length === 0 && chat.scene.length > 0) {
+          return updateChat(prev, chatId, (c) => ({
+            ...c,
+            batches: buildRestoreBatch(chatId, c.scene),
+          }));
+        }
+        return prev;
+      });
       setActiveChatId(chatId);
       setInput('');
       currentAssistantMessageId.current = null;
@@ -526,21 +561,25 @@ export function AppShell() {
       if (status !== 'idle') return;
 
       let nextActiveId: string | null = null;
-      setChatSessions((prev) => {
-        const index = prev.findIndex((chat) => chat.id === chatId);
+      setChatStore((prev) => {
+        const index = prev.chatOrder.indexOf(chatId);
         if (index === -1) return prev;
 
-        if (prev.length === 1) {
+        if (prev.chatOrder.length === 1) {
           const replacement = createEmptyChatSession(1);
           nextActiveId = replacement.id;
-          return [replacement];
+          return {
+            chatOrder: [replacement.id],
+            chats: { [replacement.id]: replacement },
+          };
         }
 
-        const remaining = prev.filter((chat) => chat.id !== chatId);
+        const nextOrder = prev.chatOrder.filter((id) => id !== chatId);
+        const { [chatId]: _, ...remainingChats } = prev.chats;
         if (activeChatIdRef.current === chatId) {
-          nextActiveId = remaining[Math.max(0, index - 1)]?.id ?? remaining[0]!.id;
+          nextActiveId = nextOrder[Math.max(0, index - 1)] ?? nextOrder[0]!;
         }
-        return remaining;
+        return { chatOrder: nextOrder, chats: remainingChats };
       });
 
       if (streamChatIdRef.current === chatId) {
@@ -575,21 +614,17 @@ export function AppShell() {
       elements: [{ id: `clear-${createId()}`, type: 'clear' }],
     };
 
-    setChatSessions((prev) =>
-      prev.map((chat) =>
-        chat.id === activeChat.id
-          ? {
-              ...chat,
-              updatedAt: Date.now(),
-              messages: [],
-              scene: [],
-              semanticScene: [],
-              plannerMeta: [],
-              warnings: [],
-              batches: [clearBatch],
-            }
-          : chat,
-      ),
+    setChatStore((prev) =>
+      updateChat(prev, activeChat.id, () => ({
+        ...activeChat,
+        updatedAt: Date.now(),
+        messages: [],
+        scene: [],
+        semanticScene: [],
+        plannerMeta: [],
+        warnings: [],
+        batches: [clearBatch],
+      })),
     );
   }, [activeChat, status]);
 
@@ -607,7 +642,7 @@ export function AppShell() {
     if (status !== 'idle') return;
 
     // Auto-clear scene only (preserve domain progress) when crowded
-    if (activeChat.scene.length > AGENT_SCENE_LIMIT) {
+    if (activeChat && activeChat.scene.length > AGENT_SCENE_LIMIT) {
       agentDelayRef.current = setTimeout(() => {
         agentDelayRef.current = null;
         clearForAgent();
@@ -638,7 +673,7 @@ export function AppShell() {
         agentDelayRef.current = null;
       }
     };
-  }, [activeChat.scene.length, agentDomainIndex, agentRunning, clearForAgent, isAgentMode, sendMessage, status]);
+  }, [activeChat?.scene.length, agentDomainIndex, agentRunning, clearForAgent, isAgentMode, sendMessage, status]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isAgentMode || !activeChat) return;
@@ -672,17 +707,20 @@ export function AppShell() {
 
   const chatMeta = useMemo<ChatThreadMeta[]>(
     () =>
-      chatSessions.map((chat) => ({
-        id: chat.id,
-        title: chat.title,
-        messageCount: chat.messages.length,
-      })),
-    [chatSessions],
+      chatStore.chatOrder.map((id) => {
+        const chat = chatStore.chats[id]!;
+        return {
+          id: chat.id,
+          title: chat.title,
+          messageCount: chat.messages.length,
+        };
+      }),
+    [chatStore],
   );
 
   const warningsUI = useMemo(
     () =>
-      (activeChat?.warnings.length ?? 0) > 0 ? (
+      (activeChat?.warnings?.length ?? 0) > 0 ? (
         <div className="absolute bottom-4 left-4 z-20 max-w-md space-y-2">
           {activeChat?.warnings.map((warning, i) => (
             <p
@@ -694,7 +732,7 @@ export function AppShell() {
           ))}
         </div>
       ) : null,
-    [activeChat.warnings],
+    [activeChat?.warnings],
   );
 
   const statusLabel =
@@ -801,16 +839,12 @@ export function AppShell() {
                   if (currentAssistantMessageId.current === messageId) {
                     currentAssistantMessageId.current = null;
                   }
-                  setChatSessions((prev) =>
-                    prev.map((chat) =>
-                      chat.id === activeChat.id
-                        ? {
-                            ...chat,
-                            updatedAt: Date.now(),
-                            messages: chat.messages.filter((m) => m.id !== messageId),
-                          }
-                        : chat,
-                    ),
+                  setChatStore((prev) =>
+                    updateChat(prev, activeChat.id, (chat) => ({
+                      ...chat,
+                      updatedAt: Date.now(),
+                      messages: chat.messages.filter((m) => m.id !== messageId),
+                    })),
                   );
                 }}
                 onClearChat={clearActiveChat}

@@ -170,5 +170,9 @@ export function loadSession(): PersistedSessionV3 | null {
 
 export function saveSession(session: PersistedSessionV3): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  } catch (err) {
+    console.error('[saveSession] localStorage quota exceeded or unavailable:', err);
+  }
 }
