@@ -1,0 +1,15 @@
+
+> agentsleague-app@0.1.0 dev
+> next dev --port 4310
+
+⨯ Failed to start server
+Error: listen EADDRINUSE: address already in use :::4310
+    at <unknown> (Error: listen EADDRINUSE: address already in use :::4310)
+    at new Promise (<anonymous>) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 4310
+}
+[?25h

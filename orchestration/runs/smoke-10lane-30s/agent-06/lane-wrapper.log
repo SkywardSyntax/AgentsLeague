@@ -1,0 +1,4 @@
+[2026-03-02T04:58:45Z] lane.start agent=06 worktree=/Users/nb29255/Desktop/GitHubRepos/AgentsLeague_worktrees/agent-06 port=5106
+[2026-03-02T04:58:45Z] starting next dev on port 5106
+[2026-03-02T05:02:37Z] lane.end agent=06 exit=0
+./scripts/orchestration/worktree-lane-runner.sh: line 108: ep: command not found

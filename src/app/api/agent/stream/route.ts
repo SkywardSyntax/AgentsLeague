@@ -1,6 +1,13 @@
 import { randomUUID } from 'crypto';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
-import { AgentStreamRequestSchema } from '@/lib/schema';
+import { z } from 'zod';
+import {
+  AgentStreamRequestSchema,
+  DrawBatchSchema,
+  SemanticBatchSchema,
+  normalizeDrawBatchPayload,
+  normalizeSemanticBatchPayload,
+} from '@/lib/schema';
 import {
   AGENT_SYSTEM_PROMPT,
   DRAW_TOOL_DEFINITION,
@@ -9,8 +16,8 @@ import {
   createOpenAIClient,
   getModel,
 } from '@/lib/server/openai';
-import { formatSSE, sseHeaders, createSSEHeartbeat, safeEnqueue } from '@/lib/server/sse';
-import { createLogger } from '@/lib/server/logger';
+import { formatSSE, sseHeaders, createSSEHeartbeat, safeEnqueue, formatSSEComment } from '@/lib/server/sse';
+import { createLogger, logStreamEvent } from '@/lib/server/logger';
 import {
   applyMiddleware,
   compose,
@@ -39,6 +46,56 @@ import type {
 
 export const runtime = 'nodejs';
 
+/** Concurrent stream guard — at most one active stream per sessionId */
+const activeStreams = new Set<string>();
+
+export interface ClassifiedError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number;
+}
+
+export function classifyStreamError(error: unknown, requestAborted: boolean): ClassifiedError {
+  if (error == null || typeof error !== 'object') {
+    const message = typeof error === 'string' ? error : 'Unexpected stream failure';
+    return { code: 'STREAM_FAILURE', message, retryable: true };
+  }
+  const errObj = error as Record<string, unknown>;
+
+  const errName = typeof errObj.name === 'string' ? errObj.name : undefined;
+  if (errName === 'AbortError') {
+    if (requestAborted) {
+      return { code: 'CLIENT_DISCONNECTED', message: 'Client disconnected', retryable: false };
+    }
+    return { code: 'TURN_TIMEOUT', message: 'Turn timed out', retryable: true };
+  }
+
+  // OpenAI SDK error detection via status code (safe across SDK versions)
+  const status = typeof errObj.status === 'number' ? errObj.status : undefined;
+  if (status === 429) {
+    const headers = errObj.headers as Record<string, string> | undefined;
+    const retryAfterSec = headers?.['retry-after'];
+    const rawMs = retryAfterSec ? Math.ceil(Number(retryAfterSec) * 1000) : undefined;
+    const retryAfterMs = Number.isFinite(rawMs) ? rawMs : undefined;
+    return { code: 'RATE_LIMIT', message: 'Rate limited by upstream', retryable: true, retryAfterMs };
+  }
+  if (status === 401 || status === 403) {
+    return { code: 'AUTH_ERROR', message: 'Authentication failed', retryable: false };
+  }
+  if (error instanceof Error && /Connection error|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EAI_AGAIN|socket hang up/i.test(error.message)) {
+    return { code: 'API_CONNECTION_ERROR', message: error.message, retryable: true };
+  }
+  const errorCode = typeof errObj.code === 'string' ? errObj.code : undefined;
+  if (typeof errorCode === 'string' && /^(ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EAI_AGAIN)$/.test(errorCode)) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    return { code: 'API_CONNECTION_ERROR', message, retryable: true };
+  }
+
+  const message = error instanceof Error ? error.message : 'Unexpected stream failure';
+  return { code: 'STREAM_FAILURE', message, retryable: true };
+}
+
 export async function parseRequestJson(
   request: Request,
   requestId: string,
@@ -46,6 +103,7 @@ export async function parseRequestJson(
   try {
     return { json: await request.json() };
   } catch {
+    logStreamEvent('warn', 'stream_rejected', { requestId, reason: 'BAD_REQUEST', status: 400 });
     return new Response(
       JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
       { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
@@ -80,8 +138,20 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
     );
   }
 
+  const sessionId = parsed.data.sessionId;
+
+  // Concurrent stream guard — reject if this session already has an active stream
+  if (activeStreams.has(sessionId)) {
+    log.warn('stream_rejected', { sessionId, reason: 'CONCURRENT_STREAM', status: 409 });
+    return Response.json(
+      { error: 'CONCURRENT_STREAM', message: 'A stream is already active for this session', requestId },
+      { status: 409, headers: { 'X-Request-Id': requestId } },
+    );
+  }
+  activeStreams.add(sessionId);
+
   log.info('stream_start', {
-    sessionId: parsed.data.sessionId,
+    sessionId,
     plannerMode: parsed.data.plannerMode,
     messageCount: parsed.data.history.length + 1,
     hasHistory: parsed.data.history.length > 0,
@@ -90,6 +160,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   const client = createOpenAIClient();
   const turnId = randomUUID();
   const plannerMode = parsed.data.plannerMode ?? 'semantic_preferred';
+  const streamStartTime = Date.now();
 
   const initialInput = [
     ...(parsed.data.whiteboardContextV2
@@ -118,12 +189,30 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
     async start(controller) {
       const encoder = new TextEncoder();
       let clientDisconnected = false;
+      let eventCount = 0;
       const send = (payload: unknown) => {
         if (clientDisconnected) return;
+        eventCount++;
         if (!safeEnqueue(controller, formatSSE(payload), encoder)) {
           clientDisconnected = true;
         }
       };
+      const heartbeatEncoder = new TextEncoder();
+      const heartbeatInterval = setInterval(() => {
+        try {
+          controller.enqueue(heartbeatEncoder.encode(formatSSEComment('heartbeat')));
+        } catch { /* stream already closed */ }
+      }, 15_000);
+      let lastIteration = 0;
+
+      logStreamEvent('info', 'stream_start', {
+        requestId,
+        sessionId,
+        turnId,
+        plannerMode,
+        messageLength: parsed.data.userMessage.length,
+        historyLength: parsed.data.history.length,
+      });
 
       let turnTimer: ReturnType<typeof setTimeout> | undefined;
       const heartbeat = createSSEHeartbeat(controller);
@@ -181,9 +270,17 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
           };
         };
 
-        const emitProvisionalFromStream = () => {
+        let lastProvisionalEmitTime = 0;
+        const PROVISIONAL_THROTTLE_MS = 300;
+
+        const emitProvisionalFromStream = (force = false) => {
           if (plannerMode === 'legacy_draw_only') return;
           if (sawToolBatchInTurn) return;
+          if (!force) {
+            const now = Date.now();
+            if (now - lastProvisionalEmitTime < PROVISIONAL_THROTTLE_MS) return;
+            lastProvisionalEmitTime = now;
+          }
           const chunks = extractStableChunks(streamTextBuffer);
           const MAX_PROVISIONAL_CHUNKS_PER_TURN = 10;
           for (const chunk of chunks) {
@@ -257,10 +354,23 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
         turnTimer = setTimeout(() => turnAbort.abort(), TURN_TIMEOUT_MS);
 
         for (let iteration = 0; iteration < 6; iteration++) {
+          lastIteration = iteration;
+
           if (turnAbort.signal.aborted) {
             send({ type: 'error', turnId, code: 'TURN_TIMEOUT', message: 'Turn exceeded 90s timeout', retryable: true });
             break;
           }
+
+          // Abort early if client disconnected between iterations
+          if (request.signal.aborted) break;
+
+          // Combine client disconnect + turn timeout + 120s stall timeout
+          const iterationSignal = AbortSignal.any([
+            request.signal,
+            turnAbort.signal,
+            AbortSignal.timeout(120_000),
+          ]);
+
           const modelStream = await client.responses.create(
             {
               model: getModel(),
@@ -278,7 +388,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
               temperature: 0.6,
             },
             {
-              signal: turnAbort.signal,
+              signal: iterationSignal,
             },
           );
 
@@ -355,7 +465,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
 
           if (sawTextThisIteration) {
             send({ type: 'assistant.text.done', turnId, messageId: textMessageId });
-            emitProvisionalFromStream();
+            emitProvisionalFromStream(true);
             textMessageId = randomUUID();
           }
 
@@ -410,6 +520,15 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
         send({ type: 'turn.done', turnId, usage: finalUsage });
         log.info('stream_end', { turnId, durationMs: Date.now() - startTime, usage: finalUsage });
 
+        logStreamEvent('info', 'stream_complete', {
+          requestId,
+          sessionId,
+          turnId,
+          durationMs: Date.now() - streamStartTime,
+          eventCount,
+          iterations: lastIteration,
+        });
+
         if (!sawTextInTurn) {
           send({
             type: 'warning',
@@ -419,18 +538,38 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
           });
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unexpected stream failure';
-        log.error('stream_failure', { turnId, error: message, durationMs: Date.now() - startTime });
-        send({
-          type: 'error',
+        const classified = classifyStreamError(error, request.signal.aborted);
+        log.error('stream_failure', { turnId, code: classified.code, error: classified.message, durationMs: Date.now() - startTime });
+
+        logStreamEvent('error', 'stream_error', {
+          requestId,
+          sessionId,
           turnId,
-          code: 'STREAM_FAILURE',
-          message,
-          retryable: true,
+          code: classified.code,
+          phase: `iteration_${lastIteration}`,
+          durationMs: Date.now() - streamStartTime,
+          eventCount,
+          error: classified.message,
         });
+
+        // Only send error events if the client is still connected
+        if (!request.signal.aborted) {
+          send({
+            type: 'error',
+            turnId,
+            code: classified.code,
+            message: classified.message,
+            retryable: classified.retryable,
+            ...(classified.retryAfterMs != null ? { retryAfterMs: classified.retryAfterMs } : {}),
+          });
+          // Terminal event contract: turn.done is always the last event
+          send({ type: 'turn.done', turnId, partial: true });
+        }
       } finally {
         heartbeat.stop();
         clearTimeout(turnTimer);
+        clearInterval(heartbeatInterval);
+        activeStreams.delete(sessionId);
         controller.close();
       }
     },

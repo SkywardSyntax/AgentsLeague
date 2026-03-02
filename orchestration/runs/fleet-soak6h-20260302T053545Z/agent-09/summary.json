@@ -1,0 +1,5 @@
+{
+  "ts": "2026-03-02T05:37:06.974Z",
+  "type": "run.failure",
+  "message": "page.waitForFunction: Timeout 30000ms exceeded."
+}

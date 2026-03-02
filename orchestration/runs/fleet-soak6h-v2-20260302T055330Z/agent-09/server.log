@@ -1,0 +1,15 @@
+
+> agentsleague-app@0.1.0 dev
+> next dev --port 4309
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:4309
+- Network:       http://192.168.1.55:4309
+
+✓ Starting...
+✓ Finished writing to filesystem cache in 37.5s
+✓ Finished writing to filesystem cache in 10.3s
+✓ Ready in 233.7s
+○ Compiling /api/health ...
+ GET /api/health 200 in 53s (compile: 53s, render: 209ms)
+ GET /api/health 200 in 720ms (compile: 484ms, render: 236ms)

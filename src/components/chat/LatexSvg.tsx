@@ -9,8 +9,8 @@ interface LatexSvgProps {
   displayMode: boolean;
 }
 
-const svgCache = new Map<string, string>();
-const MAX_SVG_CACHE = 300;
+export const svgCache = new Map<string, string>();
+export const MAX_SVG_CACHE = 300;
 
 export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
@@ -27,9 +27,10 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
       try {
         const rendered = await renderTexToSvg(prepared.tex, prepared.displayMode);
         if (!cancelled) {
-          if (svgCache.size > MAX_SVG_CACHE) {
-            const oldest = svgCache.keys().next().value as string | undefined;
-            if (oldest) svgCache.delete(oldest);
+          while (svgCache.size >= MAX_SVG_CACHE) {
+            const oldest = svgCache.keys().next().value;
+            if (typeof oldest === 'string') svgCache.delete(oldest);
+            else break;
           }
           svgCache.set(cacheKey, rendered);
           setSvg(rendered);

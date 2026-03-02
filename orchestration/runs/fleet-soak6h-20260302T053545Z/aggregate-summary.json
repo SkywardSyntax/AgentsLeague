@@ -1,0 +1,58 @@
+{
+  "runDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z",
+  "generatedAt": "2026-03-02T05:52:54.179Z",
+  "totals": {
+    "agents": 10,
+    "successfulAgents": 0,
+    "failedAgents": 10,
+    "totalTurns": 0,
+    "totalRecoveries": 0,
+    "totalScreenshots": 0
+  },
+  "lanes": [
+    {
+      "agentName": "agent-01",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-01/summary.json'"
+    },
+    {
+      "agentName": "agent-02",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-02/summary.json'"
+    },
+    {
+      "agentName": "agent-03",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-03/summary.json'"
+    },
+    {
+      "agentName": "agent-04",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-04/summary.json'"
+    },
+    {
+      "agentName": "agent-05",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-05/summary.json'"
+    },
+    {
+      "agentName": "agent-06",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-06/summary.json'"
+    },
+    {
+      "agentName": "agent-07",
+      "ts": "2026-03-02T05:37:16.697Z",
+      "type": "run.failure",
+      "message": "page.waitForFunction: Timeout 30000ms exceeded."
+    },
+    {
+      "agentName": "agent-08",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-08/summary.json'"
+    },
+    {
+      "agentName": "agent-09",
+      "ts": "2026-03-02T05:37:06.974Z",
+      "type": "run.failure",
+      "message": "page.waitForFunction: Timeout 30000ms exceeded."
+    },
+    {
+      "agentName": "agent-10",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-10/summary.json'"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+[2026-03-02T05:53:32Z] lane.start agent=06 worktree=/Users/nb29255/Desktop/GitHubRepos/AgentsLeague_worktrees/agent-06 port=4306
+[2026-03-02T05:53:33Z] starting next dev on port 4306 (mock stream mode)
+[2026-03-02T05:53:40Z] server healthy
+[2026-03-02T05:53:43Z] starting playwright loop
+[2026-03-02T06:01:31Z] lane.end agent=06 exit=1

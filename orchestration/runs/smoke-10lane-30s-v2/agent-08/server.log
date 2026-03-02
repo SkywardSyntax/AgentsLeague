@@ -1,0 +1,137 @@
+
+> agentsleague-app@0.1.0 dev
+> next dev --port 5208
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:5208
+- Network:       http://192.168.1.55:5208
+
+✓ Starting...
+✓ Ready in 6s
+ GET /api/health 200 in 334ms (compile: 308ms, render: 25ms)
+ GET /api/health 200 in 9ms (compile: 5ms, render: 4ms)
+○ Compiling / ...
+ GET /?mode=agent 200 in 5.5s (compile: 5.1s, render: 465ms)
+⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 2.6s (compile: 2.3s, render: 228ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 281ms (compile: 9ms, render: 272ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 801ms (compile: 496ms, render: 305ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 204ms (compile: 9ms, render: 196ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 207ms (compile: 7ms, render: 200ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 172ms (compile: 17ms, render: 155ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 204ms (compile: 5ms, render: 198ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 268ms (compile: 23ms, render: 245ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 116ms (compile: 3ms, render: 114ms)
+⨯ Error: Invalid environment: OPENAI_API_KEY: Invalid input: expected string, received undefined
+    at getServerEnv (src/lib/server/env.ts:30:11)
+    at createOpenAIClient (src/lib/server/openai.ts:5:27)
+    at POST (src/app/api/agent/stream/route.ts:315:36)
+  28 |   if (!parsed.success) {
+  29 |     const errors = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+> 30 |     throw new Error(`Invalid environment: ${errors}`);
+     |           ^
+  31 |   }
+  32 |
+  33 |   return {
+ POST /api/agent/stream 500 in 85ms (compile: 2ms, render: 83ms)
+[?25h

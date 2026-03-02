@@ -1,0 +1,2 @@
+{"ts":"2026-03-02T05:35:50.119Z","type":"run.start","config":{"agentId":"07","baseUrl":"http://127.0.0.1:4307","runDir":"/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-07","durationMs":21600000,"pollMs":5000,"screenshotEveryTurns":1,"progressTimeoutMs":120000,"maxRecoveries":32}}
+{"ts":"2026-03-02T05:37:16.697Z","type":"run.failure","message":"page.waitForFunction: Timeout 30000ms exceeded."}

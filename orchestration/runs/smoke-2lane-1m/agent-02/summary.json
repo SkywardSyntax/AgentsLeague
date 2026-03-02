@@ -1,0 +1,14 @@
+{
+  "agentId": "02",
+  "startedAt": "2026-03-02T04:55:30.782Z",
+  "endedAt": "2026-03-02T04:56:34.209Z",
+  "durationMs": 63427,
+  "completedTurns": 11,
+  "recoveries": 0,
+  "failedSnapshots": 0,
+  "stalledIntervals": 1,
+  "screenshots": 11,
+  "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-2lane-1m/agent-02/events.jsonl",
+  "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-2lane-1m/agent-02/screenshots",
+  "baseUrl": "http://127.0.0.1:4802"
+}

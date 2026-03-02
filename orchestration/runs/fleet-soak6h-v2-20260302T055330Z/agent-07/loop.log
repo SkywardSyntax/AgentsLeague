@@ -1,0 +1,13 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4307/?mode=agent
+Call log:
+[2m  - navigating to "http://127.0.0.1:4307/?mode=agent", waiting until "domcontentloaded"[22m
+
+    at /Users/nb29255/Desktop/GitHubRepos/AgentsLeague/scripts/orchestration/agent-playwright-loop.mjs:73:14 {
+  name: 'Error'
+}
+
+Node.js v24.11.1

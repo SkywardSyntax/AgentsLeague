@@ -2,6 +2,7 @@
 
 import type { ChatMessage } from '@/types/agent';
 import { MessageContent } from './MessageContent';
+import { StreamProgress, type StreamPhase } from './StreamProgress';
 
 export interface ChatThreadMeta {
   id: string;
@@ -15,6 +16,9 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   input: string;
   status: 'idle' | 'thinking' | 'streaming' | 'drawing';
+  streamPhase?: StreamPhase;
+  retryAttempt?: number;
+  maxRetries?: number;
   onInput: (value: string) => void;
   onSend: () => void;
   onCancel: () => void;
@@ -32,6 +36,9 @@ export function ChatPanel({
   messages,
   input,
   status,
+  streamPhase,
+  retryAttempt,
+  maxRetries,
   onInput,
   onSend,
   onCancel,
@@ -119,6 +126,10 @@ export function ChatPanel({
           Clear Chat
         </button>
       </div>
+
+      {status !== 'idle' && streamPhase && (
+        <StreamProgress phase={streamPhase} retryAttempt={retryAttempt} maxRetries={maxRetries} />
+      )}
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (

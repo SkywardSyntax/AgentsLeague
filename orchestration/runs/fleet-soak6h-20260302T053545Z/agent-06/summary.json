@@ -1,0 +1,14 @@
+{
+  "agentId": "06",
+  "startedAt": "2026-03-02T05:35:50.552Z",
+  "endedAt": "2026-03-02T11:35:54.854Z",
+  "durationMs": 21604302,
+  "completedTurns": 19,
+  "recoveries": 9,
+  "failedSnapshots": 4013,
+  "stalledIntervals": 209,
+  "screenshots": 19,
+  "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-06/events.jsonl",
+  "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-20260302T053545Z/agent-06/screenshots",
+  "baseUrl": "http://127.0.0.1:4306"
+}

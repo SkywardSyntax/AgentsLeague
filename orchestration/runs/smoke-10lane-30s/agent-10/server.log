@@ -1,0 +1,5 @@
+
+> agentsleague-app@0.1.0 dev
+> next dev --port 5110
+
+sh: next: command not found

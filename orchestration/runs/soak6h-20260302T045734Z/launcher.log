@@ -1,0 +1,15 @@
+Launching 10 lanes
+- worktree root: /Users/nb29255/Desktop/GitHubRepos/AgentsLeague_worktrees
+- run dir: orchestration/runs/soak6h-20260302T045734Z
+- duration ms: 21600000
+Starting agent-01 on port 5001
+Starting agent-02 on port 5002
+Starting agent-03 on port 5003
+Starting agent-04 on port 5004
+Starting agent-05 on port 5005
+Starting agent-06 on port 5006
+Starting agent-07 on port 5007
+Starting agent-08 on port 5008
+Starting agent-09 on port 5009
+Starting agent-10 on port 5010
+[2026-03-02T04:57:34Z] active lanes: 10

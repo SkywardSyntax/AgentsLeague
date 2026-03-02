@@ -1,0 +1,9 @@
+
+> agentsleague-app@0.1.0 dev
+> next dev --port 5001
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:5001
+- Network:       http://192.168.1.55:5001
+
+✓ Starting...

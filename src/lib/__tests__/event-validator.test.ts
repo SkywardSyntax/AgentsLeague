@@ -1,0 +1,248 @@
+import { describe, it, expect } from 'vitest';
+import { isValidAgentSSEEvent } from '@/lib/client/event-validator';
+
+describe('isValidAgentSSEEvent', () => {
+  it('accepts valid assistant.text.delta', () => {
+    expect(isValidAgentSSEEvent({ type: 'assistant.text.delta', turnId: 't1', delta: 'hello' })).toBe(true);
+  });
+
+  it('accepts valid assistant.text.done', () => {
+    expect(isValidAgentSSEEvent({ type: 'assistant.text.done', turnId: 't1', messageId: 'm1' })).toBe(true);
+  });
+
+  it('accepts valid whiteboard.batch', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [] } })).toBe(true);
+  });
+
+  it('accepts valid whiteboard.layout.diagnostics', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.layout.diagnostics',
+      turnId: 't1',
+      batchId: 'b1',
+      violationsFixed: [],
+      templateUsed: 'legacy_draw_batch',
+      fallbackUsed: false,
+    })).toBe(true);
+  });
+
+  it('accepts valid warning', () => {
+    expect(isValidAgentSSEEvent({ type: 'warning', turnId: 't1', code: 'W1', message: 'msg' })).toBe(true);
+  });
+
+  it('accepts valid error', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'error', turnId: 't1', code: 'E1', message: 'fail', retryable: true,
+    })).toBe(true);
+  });
+
+  it('accepts valid turn.done', () => {
+    expect(isValidAgentSSEEvent({ type: 'turn.done', turnId: 't1' })).toBe(true);
+  });
+
+  it('accepts turn.done with optional usage', () => {
+    expect(isValidAgentSSEEvent({ type: 'turn.done', turnId: 't1', usage: { total: 42 } })).toBe(true);
+  });
+
+  it('rejects null', () => {
+    expect(isValidAgentSSEEvent(null)).toBe(false);
+  });
+
+  it('rejects non-object', () => {
+    expect(isValidAgentSSEEvent('hello')).toBe(false);
+  });
+
+  it('rejects unknown event type', () => {
+    expect(isValidAgentSSEEvent({ type: 'unknown.type', turnId: 't1' })).toBe(false);
+  });
+
+  it('rejects missing turnId', () => {
+    expect(isValidAgentSSEEvent({ type: 'turn.done' })).toBe(false);
+  });
+
+  it('rejects text.delta without delta field', () => {
+    expect(isValidAgentSSEEvent({ type: 'assistant.text.delta', turnId: 't1' })).toBe(false);
+  });
+
+  it('rejects text.done without messageId', () => {
+    expect(isValidAgentSSEEvent({ type: 'assistant.text.done', turnId: 't1' })).toBe(false);
+  });
+
+  it('rejects error without retryable boolean', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'error', turnId: 't1', code: 'E1', message: 'fail',
+    })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch without batch object', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1' })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with batch_id as number', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 123, elements: [] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with elements as string', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: 'not-array' } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch when batch is an array', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: [1, 2, 3] })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with null element in elements', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [null] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with undefined element in elements', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [undefined] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with array element in elements', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [[]] } })).toBe(false);
+  });
+
+  it('accepts whiteboard.batch with valid element objects', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ type: 'rect', id: 'r1' }] } })).toBe(true);
+  });
+
+  it('rejects whiteboard.batch element missing id', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ type: 'rect' }] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch element missing type', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ id: 'r1' }] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch element with numeric id', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ id: 123, type: 'rect' }] } })).toBe(false);
+  });
+
+  it('accepts whiteboard.batch elements with extra fields', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ id: 'r1', type: 'rect', x: 10, y: 20, custom: true }] } })).toBe(true);
+  });
+
+  it('accepts whiteboard.batch with empty elements array', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [] } })).toBe(true);
+  });
+
+  it('rejects diagnostics without violationsFixed array', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.layout.diagnostics', turnId: 't1', batchId: 'b1',
+    })).toBe(false);
+  });
+
+  it('rejects diagnostics without templateUsed', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.layout.diagnostics', turnId: 't1', batchId: 'b1',
+      violationsFixed: [], fallbackUsed: false,
+    })).toBe(false);
+  });
+
+  it('rejects diagnostics without fallbackUsed boolean', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.layout.diagnostics', turnId: 't1', batchId: 'b1',
+      violationsFixed: [], templateUsed: 'legacy_draw_batch', fallbackUsed: 'yes',
+    })).toBe(false);
+  });
+});
+
+describe('strict field-type validation', () => {
+  it('rejects whiteboard.batch with batch as string', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.batch', turnId: 't1', batch: 'string',
+    })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with batch.elements as non-array', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: 'not-array' },
+    })).toBe(false);
+  });
+
+  it('rejects assistant.text.delta with delta as number', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'assistant.text.delta', turnId: 't1', delta: 42,
+    })).toBe(false);
+  });
+
+  it('rejects error with retryable as string', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'error', turnId: 't1', code: 'E1', message: 'fail', retryable: 'yes',
+    })).toBe(false);
+  });
+
+  it('accepts valid events with extra unknown fields (forward-compatible)', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'turn.done', turnId: 't1', futureField: 'v2-data', anotherField: 123,
+    })).toBe(true);
+    expect(isValidAgentSSEEvent({
+      type: 'assistant.text.delta', turnId: 't1', delta: 'hi', newMeta: { x: 1 },
+    })).toBe(true);
+  });
+
+  it('accepts whiteboard.batch elements with extra unknown fields', () => {
+    expect(isValidAgentSSEEvent({
+      type: 'whiteboard.batch', turnId: 't1',
+      batch: { batch_id: 'b1', elements: [{ id: 'r1', type: 'rect', unknownProp: true }] },
+    })).toBe(true);
+  });
+});
+
+// Circuit breaker behavior is tested via the parse loop in useAgentStream.
+// Here we add a focused integration-style test using the validator.
+describe('circuit breaker pattern', () => {
+  it('detects 5 consecutive malformed events', () => {
+    let consecutiveFailures = 0;
+    const MAX_CONSECUTIVE_FAILURES = 5;
+    const malformedEvents = [
+      '{"bad": true}',
+      '{"type": "unknown"}',
+      'not json at all',
+      '{"type": "error"}',  // missing turnId, code, message, retryable
+      '42',
+    ];
+
+    let aborted = false;
+    for (const raw of malformedEvents) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (!isValidAgentSSEEvent(parsed)) {
+          consecutiveFailures++;
+        } else {
+          consecutiveFailures = 0;
+        }
+      } catch {
+        consecutiveFailures++;
+      }
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        aborted = true;
+        break;
+      }
+    }
+    expect(aborted).toBe(true);
+    expect(consecutiveFailures).toBe(5);
+  });
+
+  it('resets counter on valid event', () => {
+    let consecutiveFailures = 0;
+    const events = [
+      '{"bad": true}',
+      '{"type": "turn.done", "turnId": "t1"}',
+      '{"bad": true}',
+    ];
+
+    for (const raw of events) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (!isValidAgentSSEEvent(parsed)) {
+          consecutiveFailures++;
+        } else {
+          consecutiveFailures = 0;
+        }
+      } catch {
+        consecutiveFailures++;
+      }
+    }
+    expect(consecutiveFailures).toBe(1);
+  });
+});

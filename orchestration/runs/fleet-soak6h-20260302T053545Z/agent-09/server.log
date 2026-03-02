@@ -1,0 +1,19 @@
+
+> agentsleague-app@0.1.0 dev
+> next dev --port 4309
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:4309
+- Network:       http://192.168.1.55:4309
+
+✓ Starting...
+✓ Ready in 1652ms
+ GET /api/health 200 in 1068ms (compile: 1049ms, render: 19ms)
+ GET /api/health 200 in 6ms (compile: 3ms, render: 4ms)
+○ Compiling / ...
+ GET /?mode=agent 200 in 37.6s (compile: 11.3s, render: 26.4s)
+✓ Finished writing to filesystem cache in 27.4s
+⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+✓ Finished writing to filesystem cache in 12.8s
+[?25h

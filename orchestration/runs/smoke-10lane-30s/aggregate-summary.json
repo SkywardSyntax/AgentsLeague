@@ -1,0 +1,120 @@
+{
+  "runDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s",
+  "generatedAt": "2026-03-02T05:03:05.360Z",
+  "totals": {
+    "agents": 10,
+    "successfulAgents": 6,
+    "failedAgents": 4,
+    "totalTurns": 24,
+    "totalRecoveries": 0,
+    "totalScreenshots": 24
+  },
+  "lanes": [
+    {
+      "agentName": "agent-01",
+      "agentId": "01",
+      "startedAt": "2026-03-02T04:58:47.843Z",
+      "endedAt": "2026-03-02T04:59:21.124Z",
+      "durationMs": 33281,
+      "completedTurns": 5,
+      "recoveries": 0,
+      "failedSnapshots": 0,
+      "stalledIntervals": 1,
+      "screenshots": 5,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-01/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-01/screenshots",
+      "baseUrl": "http://127.0.0.1:5101"
+    },
+    {
+      "agentName": "agent-02",
+      "agentId": "02",
+      "startedAt": "2026-03-02T04:58:47.843Z",
+      "endedAt": "2026-03-02T04:59:20.624Z",
+      "durationMs": 32781,
+      "completedTurns": 5,
+      "recoveries": 0,
+      "failedSnapshots": 0,
+      "stalledIntervals": 1,
+      "screenshots": 5,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-02/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-02/screenshots",
+      "baseUrl": "http://127.0.0.1:5102"
+    },
+    {
+      "agentName": "agent-03",
+      "agentId": "03",
+      "startedAt": "2026-03-02T04:58:48.140Z",
+      "endedAt": "2026-03-02T04:59:23.361Z",
+      "durationMs": 35221,
+      "completedTurns": 5,
+      "recoveries": 0,
+      "failedSnapshots": 0,
+      "stalledIntervals": 1,
+      "screenshots": 5,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-03/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-03/screenshots",
+      "baseUrl": "http://127.0.0.1:5103"
+    },
+    {
+      "agentName": "agent-04",
+      "agentId": "04",
+      "startedAt": "2026-03-02T04:58:54.653Z",
+      "endedAt": "2026-03-02T04:59:27.034Z",
+      "durationMs": 32381,
+      "completedTurns": 1,
+      "recoveries": 0,
+      "failedSnapshots": 0,
+      "stalledIntervals": 2,
+      "screenshots": 1,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-04/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-04/screenshots",
+      "baseUrl": "http://127.0.0.1:5104"
+    },
+    {
+      "agentName": "agent-05",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-05/summary.json'"
+    },
+    {
+      "agentName": "agent-06",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-06/summary.json'"
+    },
+    {
+      "agentName": "agent-07",
+      "agentId": "07",
+      "startedAt": "2026-03-02T04:58:48.129Z",
+      "endedAt": "2026-03-02T04:59:22.373Z",
+      "durationMs": 34244,
+      "completedTurns": 5,
+      "recoveries": 0,
+      "failedSnapshots": 0,
+      "stalledIntervals": 1,
+      "screenshots": 5,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-07/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-07/screenshots",
+      "baseUrl": "http://127.0.0.1:5107"
+    },
+    {
+      "agentName": "agent-08",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-08/summary.json'"
+    },
+    {
+      "agentName": "agent-09",
+      "agentId": "09",
+      "startedAt": "2026-03-02T04:58:52.329Z",
+      "endedAt": "2026-03-02T04:59:25.485Z",
+      "durationMs": 33156,
+      "completedTurns": 3,
+      "recoveries": 0,
+      "failedSnapshots": 0,
+      "stalledIntervals": 1,
+      "screenshots": 3,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-09/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-09/screenshots",
+      "baseUrl": "http://127.0.0.1:5109"
+    },
+    {
+      "agentName": "agent-10",
+      "error": "ENOENT: no such file or directory, open '/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s/agent-10/summary.json'"
+    }
+  ]
+}

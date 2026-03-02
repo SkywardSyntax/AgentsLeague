@@ -1,0 +1,29 @@
+{
+  "runDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-1lane-1m-v2",
+  "generatedAt": "2026-03-02T04:55:15.409Z",
+  "totals": {
+    "agents": 1,
+    "successfulAgents": 1,
+    "failedAgents": 0,
+    "totalTurns": 11,
+    "totalRecoveries": 0,
+    "totalScreenshots": 11
+  },
+  "lanes": [
+    {
+      "agentName": "agent-01",
+      "agentId": "01",
+      "startedAt": "2026-03-02T04:53:58.798Z",
+      "endedAt": "2026-03-02T04:55:02.807Z",
+      "durationMs": 64009,
+      "completedTurns": 11,
+      "recoveries": 0,
+      "failedSnapshots": 0,
+      "stalledIntervals": 1,
+      "screenshots": 11,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-1lane-1m-v2/agent-01/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-1lane-1m-v2/agent-01/screenshots",
+      "baseUrl": "http://127.0.0.1:4701"
+    }
+  ]
+}

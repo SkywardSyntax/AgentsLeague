@@ -1,3 +1,6 @@
+import type { AgentSSEEvent } from '@/types/agent';
+
+/** Returns HTTP headers for a Server-Sent Events response (text/event-stream, no-cache, keep-alive). */
 export function sseHeaders(): HeadersInit {
   return {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -37,7 +40,6 @@ export function createSSEHeartbeat(
     try {
       controller.enqueue(encoder.encode(':heartbeat\n\n'));
     } catch {
-      // controller may be closed
       clearInterval(id);
     }
   }, intervalMs);
@@ -61,4 +63,19 @@ export function safeEnqueue(
   } catch {
     return false;
   }
+}
+
+/**
+ * Create a typed send helper bound to a ReadableStream controller.
+ * Ensures every SSE payload is a valid AgentSSEEvent at compile time.
+ */
+export function createSSESender(controller: ReadableStreamDefaultController<Uint8Array>) {
+  const encoder = new TextEncoder();
+  return (payload: AgentSSEEvent) => {
+    controller.enqueue(encoder.encode(formatSSE(payload)));
+  };
+}
+
+export function formatSSEComment(text: string): string {
+  return `: ${text}\n\n`;
 }

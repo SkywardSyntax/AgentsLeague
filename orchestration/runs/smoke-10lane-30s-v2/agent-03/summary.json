@@ -1,0 +1,14 @@
+{
+  "agentId": "03",
+  "startedAt": "2026-03-02T05:03:28.455Z",
+  "endedAt": "2026-03-02T05:04:03.640Z",
+  "durationMs": 35185,
+  "completedTurns": 5,
+  "recoveries": 0,
+  "failedSnapshots": 0,
+  "stalledIntervals": 1,
+  "screenshots": 5,
+  "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s-v2/agent-03/events.jsonl",
+  "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/smoke-10lane-30s-v2/agent-03/screenshots",
+  "baseUrl": "http://127.0.0.1:5203"
+}
