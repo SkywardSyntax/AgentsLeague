@@ -28,8 +28,8 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
         const rendered = await renderTexToSvg(prepared.tex, prepared.displayMode);
         if (!cancelled) {
           if (svgCache.size > MAX_SVG_CACHE) {
-            const oldest = svgCache.keys().next().value as string | undefined;
-            if (oldest) svgCache.delete(oldest);
+            const oldest = svgCache.keys().next().value;
+            if (oldest !== undefined) svgCache.delete(oldest);
           }
           svgCache.set(cacheKey, rendered);
           setSvg(rendered);

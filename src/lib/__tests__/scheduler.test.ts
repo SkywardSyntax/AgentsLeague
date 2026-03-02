@@ -48,6 +48,24 @@ describe('stroke scheduler', () => {
   });
 });
 
+describe('strokeDurationMs guards', () => {
+  it('returns 220 for NaN', () => {
+    expect(strokeDurationMs(NaN)).toBe(220);
+  });
+
+  it('returns 220 for Infinity', () => {
+    expect(strokeDurationMs(Infinity)).toBe(220);
+  });
+
+  it('returns 220 for -Infinity', () => {
+    expect(strokeDurationMs(-Infinity)).toBe(220);
+  });
+
+  it('returns 220 for negative length', () => {
+    expect(strokeDurationMs(-10)).toBe(220);
+  });
+});
+
 describe('createStaggeredBatch', () => {
   it('offsets startedAt by staggerMs per stroke', () => {
     const active = createStaggeredBatch(makeStrokes(3), 50, 1000);

@@ -4,6 +4,7 @@ import { cumulativeLengths, distance, totalLength } from './geometry';
 export const STROKE_SPEED_PX_PER_SECOND = 180;
 
 export function strokeDurationMs(length: number): number {
+  if (!Number.isFinite(length) || length < 0) return 220;
   const raw = (length / STROKE_SPEED_PX_PER_SECOND) * 1000;
   return Math.min(2600, Math.max(220, raw));
 }
