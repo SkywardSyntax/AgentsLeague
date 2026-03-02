@@ -31,10 +31,11 @@ export function createActiveBatch(
   startedAt = performance.now(),
   stagger = false,
 ): ActiveStroke[] {
+  const valid = strokes.filter((s) => s.points.length >= 2);
   const times = stagger
-    ? staggeredStartTimes(strokes.length, startedAt)
+    ? staggeredStartTimes(valid.length, startedAt)
     : null;
-  return strokes.map((stroke, i) => {
+  return valid.map((stroke, i) => {
     const cumulative = cumulativeLengths(stroke.points);
     const length = totalLength(stroke.points);
     return {

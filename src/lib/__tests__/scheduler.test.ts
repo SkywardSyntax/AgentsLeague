@@ -77,6 +77,12 @@ describe('staggeredStartTimes', () => {
     expect(times.length).toBe(3);
     expect(times[1]! - times[0]!).toBe(60);
   });
+
+  it('handles Infinity staggerMs by using default', () => {
+    const times = staggeredStartTimes(3, 1000, Infinity);
+    expect(times.length).toBe(3);
+    expect(times[1]! - times[0]!).toBe(60);
+  });
 });
 
 describe('createActiveBatch with stagger', () => {
@@ -96,5 +102,30 @@ describe('createActiveBatch with stagger', () => {
     const active = createActiveBatch(strokes, 1000);
     expect(active[0]?.startedAt).toBe(1000);
     expect(active[1]?.startedAt).toBe(1000);
+  });
+
+  it('silently drops strokes with fewer than 2 points', () => {
+    const strokes = [
+      makeStroke('valid'),
+      { id: 'empty', elementId: 'e-empty', color: '#000', baseWidth: 1, points: [] },
+      { id: 'single', elementId: 'e-single', color: '#000', baseWidth: 1, points: [{ x: 5, y: 5 }] },
+    ];
+    const active = createActiveBatch(strokes, 1000);
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe('valid');
+  });
+
+  it('returns empty array for all-degenerate input', () => {
+    const strokes = [
+      { id: 'empty', elementId: 'e-empty', color: '#000', baseWidth: 1, points: [] },
+      { id: 'single', elementId: 'e-single', color: '#000', baseWidth: 1, points: [{ x: 0, y: 0 }] },
+    ];
+    const active = createActiveBatch(strokes, 1000);
+    expect(active).toEqual([]);
+  });
+
+  it('returns empty array for empty strokes input with stagger', () => {
+    const active = createActiveBatch([], 1000, true);
+    expect(active).toEqual([]);
   });
 });

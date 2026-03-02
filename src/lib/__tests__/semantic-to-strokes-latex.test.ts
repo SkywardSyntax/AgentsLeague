@@ -244,4 +244,51 @@ describe('semantic latex compilation', () => {
     },
     20_000,
   );
+
+  it(
+    'truncates text elements exceeding 50 lines with warning',
+    async () => {
+      const manyLines = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n');
+      const batch: DrawBatch = {
+        batch_id: 'trunc',
+        elements: [
+          { id: 'big', type: 'text', x: 10, y: 10, text: manyLines, size: 14 },
+        ],
+      };
+
+      const result = await compileBatchToStrokes(batch);
+      expect(result.warnings).toContain('Text element big truncated from 200 to 50 lines');
+
+      const lineIndices = new Set<number>();
+      for (const stroke of result.strokes) {
+        const match = stroke.elementId.match(/-ln-(\d+)$/);
+        if (match) lineIndices.add(Number(match[1]));
+      }
+      expect(Math.max(...lineIndices) + 1).toBeLessThanOrEqual(50);
+    },
+    30_000,
+  );
+
+  it(
+    'normalizeTextVerticalSpacing handles 80+ text groups without quadratic blowup',
+    async () => {
+      const elements = Array.from({ length: 80 }, (_, i) => ({
+        id: `t${i}`,
+        type: 'text' as const,
+        x: 60,
+        y: 100 + i * 2,
+        text: `Group ${i}`,
+        size: 14,
+      }));
+      const batch: DrawBatch = { batch_id: 'perf', elements };
+
+      const start = performance.now();
+      const result = await compileBatchToStrokes(batch);
+      const elapsed = performance.now() - start;
+
+      expect(elapsed).toBeLessThan(1000);
+      expect(result.strokes.length).toBeGreaterThan(0);
+    },
+    30_000,
+  );
 });

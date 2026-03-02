@@ -12,6 +12,7 @@ import { resamplePolyline } from './geometry';
 
 const DEFAULT_COLOR = '#1f2a44';
 const DEFAULT_BASE_WIDTH = 1.45;
+const MAX_TEXT_LINES = 50;
 
 function strokeWidthForPreset(preset: StylePreset | undefined, base: number): number {
   switch (preset) {
@@ -403,7 +404,11 @@ export async function compileBatchToStrokes(
           const segment = segments[i]!;
 
           if (segment.kind === 'text') {
-            const lines = segment.value.split('\n');
+            const allLines = segment.value.replace(/\r\n/g, '\n').split('\n');
+            const lines = allLines.slice(0, MAX_TEXT_LINES);
+            if (allLines.length > MAX_TEXT_LINES) {
+              warnings.push(`Text element ${element.id} truncated from ${allLines.length} to ${MAX_TEXT_LINES} lines`);
+            }
             for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
               const line = lines[lineIdx]!;
               if (line.length > 0) {
