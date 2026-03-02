@@ -161,3 +161,102 @@ describe('computeDelay', () => {
     expect(d).toBeGreaterThan(100);
   });
 });
+
+describe('retrySleep', () => {
+  // Replicate retrySleep from useAgentStream for direct unit testing
+  function retrySleep(delayMs: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, delayMs);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  it('resolves after delay when not aborted', async () => {
+    const controller = new AbortController();
+    const start = Date.now();
+    await retrySleep(50, controller.signal);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(40);
+  });
+
+  it('rejects immediately if signal already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(retrySleep(1000, controller.signal)).rejects.toThrow('Aborted');
+  });
+
+  it('rejects with AbortError when aborted during sleep', async () => {
+    const controller = new AbortController();
+    const promise = retrySleep(5000, controller.signal);
+    // Abort after a short delay
+    setTimeout(() => controller.abort(), 30);
+    await expect(promise).rejects.toThrow('Aborted');
+  });
+});
+
+describe('trailing SSE buffer handling', () => {
+  // Simulate the trailing buffer parsing logic from useAgentStream
+
+  function isValidAgentSSEEvent(data: unknown): data is AgentSSEEvent {
+    if (!data || typeof data !== 'object') return false;
+    const obj = data as Record<string, unknown>;
+    return typeof obj.type === 'string';
+  }
+
+  function parseTrailingBuffer(buffer: string): { event: AgentSSEEvent | null; parseError: boolean } {
+    const trailing = buffer.trim();
+    if (!trailing.startsWith('data:')) return { event: null, parseError: false };
+    const json = trailing.slice(5).trim();
+    if (!json) return { event: null, parseError: false };
+    try {
+      const parsed = JSON.parse(json);
+      if (isValidAgentSSEEvent(parsed)) {
+        return { event: parsed, parseError: false };
+      }
+      return { event: null, parseError: false };
+    } catch {
+      return { event: null, parseError: true };
+    }
+  }
+
+  it('parses final event when stream ends without trailing double-newline', () => {
+    // A stream that ends with a single \n instead of \n\n
+    const buffer = 'data: {"type":"turn.done","turnId":"t1"}\n';
+    const result = parseTrailingBuffer(buffer);
+    expect(result.event).not.toBeNull();
+    expect(result.event!.type).toBe('turn.done');
+  });
+
+  it('parses final event from buffer with no trailing newline at all', () => {
+    const buffer = 'data: {"type":"turn.done","turnId":"t1"}';
+    const result = parseTrailingBuffer(buffer);
+    expect(result.event).not.toBeNull();
+    expect(result.event!.type).toBe('turn.done');
+  });
+
+  it('returns parseError for truncated JSON in trailing buffer', () => {
+    const buffer = 'data: {"type":"tur';
+    const result = parseTrailingBuffer(buffer);
+    expect(result.event).toBeNull();
+    expect(result.parseError).toBe(true);
+  });
+
+  it('returns null event for empty trailing buffer', () => {
+    const result = parseTrailingBuffer('');
+    expect(result.event).toBeNull();
+    expect(result.parseError).toBe(false);
+  });
+
+  it('returns null event for non-data trailing buffer', () => {
+    const result = parseTrailingBuffer(':heartbeat');
+    expect(result.event).toBeNull();
+    expect(result.parseError).toBe(false);
+  });
+});

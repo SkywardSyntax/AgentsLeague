@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type {
   AgentSSEEvent,
   ChatMessage,
@@ -63,6 +63,14 @@ function computeDelay(attempt: number, reason: string, retryAfterMs?: number): n
 
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  const handlersRef = useRef<StreamHandlers | null>(null);
+  const onRetryRef = useRef<((attempt: number, delayMs: number, reason: string) => void) | undefined>(undefined);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
@@ -82,11 +90,14 @@ export function useAgentStream() {
       onRetry?: (attempt: number, delayMs: number, reason: string) => void;
     }) => {
       cancel();
+      handlersRef.current = args.handlers;
+      onRetryRef.current = args.onRetry;
       const controller = new AbortController();
       abortRef.current = controller;
       const maxRetries = args.maxRetries ?? 2;
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (!mountedRef.current) return;
         let lastEvent: AgentSSEEvent | null = null;
         let httpStatus: number | null = null;
         let caughtError: unknown = null;
@@ -113,15 +124,16 @@ export function useAgentStream() {
           httpStatus = res.status;
 
           if (!res.ok || !res.body) {
-            // Check if retryable at HTTP level
             const decision = shouldRetry(null, httpStatus, null);
             if (decision.retry && attempt < maxRetries) {
               const delayMs = computeDelay(attempt, decision.reason);
-              args.onRetry?.(attempt + 1, delayMs, decision.reason);
+              onRetryRef.current?.(attempt + 1, delayMs, decision.reason);
               await retrySleep(delayMs, controller.signal);
               continue;
             }
-            args.handlers.onError(`Stream request failed with status ${res.status}`);
+            if (mountedRef.current) {
+              handlersRef.current?.onError(`Stream request failed with status ${res.status}`);
+            }
             return;
           }
 
@@ -154,18 +166,24 @@ export function useAgentStream() {
                   if (!isValidAgentSSEEvent(parsed)) {
                     consecutiveFailures++;
                     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                      args.handlers.onError('Stream corrupted — too many malformed events');
+                      if (mountedRef.current) {
+                        handlersRef.current?.onError('Stream corrupted — too many malformed events');
+                      }
                       return;
                     }
                     continue;
                   }
                   consecutiveFailures = 0;
                   lastEvent = parsed;
-                  args.handlers.onEvent(parsed);
+                  if (mountedRef.current) {
+                    handlersRef.current?.onEvent(parsed);
+                  }
                 } catch {
                   consecutiveFailures++;
                   if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                    args.handlers.onError('Stream corrupted — too many malformed events');
+                    if (mountedRef.current) {
+                      handlersRef.current?.onError('Stream corrupted — too many malformed events');
+                    }
                     return;
                   }
                 }
@@ -181,7 +199,9 @@ export function useAgentStream() {
                 const parsed = JSON.parse(json);
                 if (isValidAgentSSEEvent(parsed)) {
                   lastEvent = parsed;
-                  args.handlers.onEvent(parsed);
+                  if (mountedRef.current) {
+                    handlersRef.current?.onEvent(parsed);
+                  }
                 }
               } catch {
                 // Ignore trailing parse error
@@ -194,7 +214,7 @@ export function useAgentStream() {
           if (decision.retry && attempt < maxRetries) {
             const retryAfterMs = lastEvent?.type === 'error' ? lastEvent.retryAfterMs : undefined;
             const delayMs = computeDelay(attempt, decision.reason, retryAfterMs);
-            args.onRetry?.(attempt + 1, delayMs, decision.reason);
+            onRetryRef.current?.(attempt + 1, delayMs, decision.reason);
             await retrySleep(delayMs, controller.signal);
             continue;
           }
@@ -207,7 +227,7 @@ export function useAgentStream() {
           const decision = shouldRetry(lastEvent, httpStatus, error);
           if (decision.retry && attempt < maxRetries) {
             const delayMs = computeDelay(attempt, decision.reason);
-            args.onRetry?.(attempt + 1, delayMs, decision.reason);
+            onRetryRef.current?.(attempt + 1, delayMs, decision.reason);
             try {
               await retrySleep(delayMs, controller.signal);
             } catch {
@@ -215,7 +235,9 @@ export function useAgentStream() {
             }
             continue;
           }
-          args.handlers.onError(caughtError instanceof Error ? caughtError.message : 'Stream aborted unexpectedly');
+          if (mountedRef.current) {
+            handlersRef.current?.onError(caughtError instanceof Error ? caughtError.message : 'Stream aborted unexpectedly');
+          }
           return;
         }
       }
