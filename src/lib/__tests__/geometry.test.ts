@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clamp,
+  distance,
   partialPolylineByLength,
+  resamplePolyline,
   screenStrokePx,
 } from '@/lib/whiteboard/geometry';
 import { rectPoints, withJitter } from '@/lib/whiteboard/semantic-to-strokes';
@@ -44,5 +47,44 @@ describe('geometry + sketch behavior', () => {
   it('clamps stroke width across zoom levels', () => {
     expect(screenStrokePx(0.8, 0.1, 1)).toBeGreaterThanOrEqual(1.25);
     expect(screenStrokePx(10, 2, 2)).toBeLessThanOrEqual(5.5);
+  });
+
+  it('clamp returns value when within range, min when below, max when above', () => {
+    expect(clamp(5, 0, 10)).toBe(5);
+    expect(clamp(-1, 0, 10)).toBe(0);
+    expect(clamp(15, 0, 10)).toBe(10);
+  });
+
+  it('clamp handles min === max boundary', () => {
+    expect(clamp(5, 5, 5)).toBe(5);
+  });
+
+  it('distance returns correct value for 3-4-5 triangle', () => {
+    expect(distance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+  });
+
+  it('distance returns 0 for same point', () => {
+    expect(distance({ x: 1, y: 1 }, { x: 1, y: 1 })).toBe(0);
+  });
+
+  it('resamplePolyline with single point returns that point', () => {
+    const single = [{ x: 5, y: 5 }];
+    expect(resamplePolyline(single, 1)).toEqual(single);
+  });
+
+  it('resamplePolyline with collinear points and spacing=1 produces evenly-spaced output', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+      { x: 4, y: 0 },
+    ];
+    const result = resamplePolyline(points, 1);
+    // Should produce points at x=0,1,2,3,4 along y=0
+    for (let i = 0; i < result.length - 1; i++) {
+      const d = distance(result[i]!, result[i + 1]!);
+      expect(d).toBeCloseTo(1, 5);
+    }
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(result[result.length - 1]).toEqual({ x: 4, y: 0 });
   });
 });
