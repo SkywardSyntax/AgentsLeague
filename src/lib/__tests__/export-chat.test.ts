@@ -180,6 +180,18 @@ describe('wrapDisplayLatex edge cases', () => {
   });
 });
 
+// --- iter10 03-A: additional edge cases ---
+
+describe('exportChatToMarkdown system role', () => {
+  it('labels non-user non-assistant roles as System', () => {
+    const messages: ChatMessage[] = [
+      { id: 'm1', role: 'system' as ChatMessage['role'], content: 'You are helpful', createdAt: 1000 },
+    ];
+    const md = exportChatToMarkdown(messages, 'Test');
+    expect(md).toContain('## System');
+  });
+});
+
 describe('exportChatToJson', () => {
   it('returns valid JSON with meta and messages', () => {
     const json = exportChatToJson(msgs, meta);
@@ -206,5 +218,19 @@ describe('exportChatToJson', () => {
       expect(m).toHaveProperty('content');
       expect(m).toHaveProperty('createdAt');
     }
+  });
+
+  it('handles empty messages array', () => {
+    const json = exportChatToJson([], meta);
+    const parsed = JSON.parse(json);
+    expect(parsed.messages).toEqual([]);
+    expect(parsed.meta.id).toBe('c1');
+    expect(parsed.meta.messageCount).toBe(3);
+  });
+
+  it('includes messageCount from meta', () => {
+    const json = exportChatToJson(msgs, { id: 'c2', title: 'T', messageCount: 42 });
+    const parsed = JSON.parse(json);
+    expect(parsed.meta.messageCount).toBe(42);
   });
 });

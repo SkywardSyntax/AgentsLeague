@@ -304,4 +304,22 @@ describe('sanitizeHref', () => {
   it('blocks data:', () => expect(sanitizeHref('data:text/html,x')).toBe(''));
   it('blocks vbscript:', () => expect(sanitizeHref('vbscript:foo')).toBe(''));
   it('allows relative paths', () => expect(sanitizeHref('./foo')).toBe('./foo'));
+
+  // --- iter10 03-B: additional sanitizeHref edge cases ---
+  it('returns empty for empty string', () => expect(sanitizeHref('')).toBe(''));
+  it('trims whitespace before checking protocol', () => expect(sanitizeHref('  https://x.com  ')).toBe('https://x.com'));
+  it('blocks JAVASCRIPT: (case-insensitive check via protocol match)', () => expect(sanitizeHref('JAVASCRIPT:void(0)')).toBe(''));
+  it('allows path without protocol', () => expect(sanitizeHref('/path/to/file')).toBe('/path/to/file'));
+  it('allows fragment-only href', () => expect(sanitizeHref('#section')).toBe('#section'));
+});
+
+describe('parseInline token limit flushes remainder as text', () => {
+  it('remainder after token cap is a single text token', () => {
+    const parts: string[] = [];
+    for (let i = 0; i < 600; i++) parts.push(`**b${i}** `);
+    const tokens = parseInline(parts.join(''));
+    const lastToken = tokens[tokens.length - 1];
+    expect(lastToken.kind).toBe('text');
+    expect((lastToken as { kind: 'text'; value: string }).value.length).toBeGreaterThan(0);
+  });
 });
