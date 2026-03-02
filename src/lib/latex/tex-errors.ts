@@ -1,5 +1,9 @@
 const ERROR_PATTERNS: Array<{ pattern: RegExp; format: (match: RegExpMatchArray) => string }> = [
   {
+    pattern: /TeX rendering timed out after (\d+)ms/,
+    format: (m) => `Rendering timed out (${Math.round(Number(m[1]) / 1000)}s) — expression may be too complex`,
+  },
+  {
     pattern: /Unknown control sequence\s*(\\[a-zA-Z]+)?/,
     format: (m) => `Unknown command: ${m[1] ?? '(unknown)'}`,
   },
@@ -10,6 +14,7 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; format: (match: RegExpMatchArray)
   { pattern: /Double subscript/, format: () => 'Double subscript — use {a_b}_c' },
   { pattern: /Misplaced &/, format: () => "'&' used outside of table/alignment environment" },
   { pattern: /Missing \$ inserted/, format: () => 'Math mode delimiter missing' },
+  { pattern: /exceeds maximum length/, format: () => 'Expression too long to render' },
 ];
 
 export function formatTexError(error: unknown, _tex: string): string {
@@ -22,4 +27,10 @@ export function formatTexError(error: unknown, _tex: string): string {
   }
 
   return message || 'Rendering failed';
+}
+
+export function isTimeoutError(error: unknown): boolean {
+  if (error instanceof Error && error.name === 'RenderTimeoutError') return true;
+  const msg = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return /timed out/i.test(msg);
 }

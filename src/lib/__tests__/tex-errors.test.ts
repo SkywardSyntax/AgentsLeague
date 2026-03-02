@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatTexError } from '@/lib/latex/tex-errors';
+import { formatTexError, isTimeoutError } from '@/lib/latex/tex-errors';
+import { RenderTimeoutError } from '@/lib/latex/mathjax-client';
 
 describe('formatTexError', () => {
   it('maps unknown control sequence errors', () => {
@@ -36,5 +37,33 @@ describe('formatTexError', () => {
     expect(formatTexError('string error', 'x')).toBe('string error');
     expect(formatTexError(42, 'x')).toBe('Rendering failed');
     expect(formatTexError(null, 'x')).toBe('Rendering failed');
+  });
+
+  it('maps timeout errors', () => {
+    const err = new RenderTimeoutError(5000);
+    expect(formatTexError(err, 'x')).toBe(
+      'Rendering timed out (5s) — expression may be too complex',
+    );
+  });
+
+  it('maps max length errors', () => {
+    const err = new Error('TeX input exceeds maximum length of 10000 characters');
+    expect(formatTexError(err, 'x')).toBe('Expression too long to render');
+  });
+});
+
+describe('isTimeoutError', () => {
+  it('detects RenderTimeoutError instances', () => {
+    expect(isTimeoutError(new RenderTimeoutError(5000))).toBe(true);
+  });
+
+  it('detects timeout errors by message', () => {
+    expect(isTimeoutError(new Error('TeX rendering timed out after 5000ms'))).toBe(true);
+  });
+
+  it('returns false for non-timeout errors', () => {
+    expect(isTimeoutError(new Error('Missing close brace'))).toBe(false);
+    expect(isTimeoutError(null)).toBe(false);
+    expect(isTimeoutError('some string')).toBe(false);
   });
 });

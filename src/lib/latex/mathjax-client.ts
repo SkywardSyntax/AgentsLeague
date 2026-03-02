@@ -172,6 +172,24 @@ async function getMathJaxContext(): Promise<MathJaxContext> {
 }
 
 const MAX_TEX_LENGTH = 10_000;
+const RENDER_TIMEOUT_MS = 5_000;
+
+export class RenderTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`TeX rendering timed out after ${timeoutMs}ms`);
+    this.name = 'RenderTimeoutError';
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new RenderTimeoutError(ms)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 
 export function getCachedSvg(tex: string, displayMode: boolean): string | undefined {
   const prepared = prepareTexForMathJax(tex, displayMode);
@@ -184,7 +202,11 @@ export function getCachedSvg(tex: string, displayMode: boolean): string | undefi
   return cached;
 }
 
-export async function renderTexToSvg(tex: string, displayMode: boolean): Promise<string> {
+export async function renderTexToSvg(
+  tex: string,
+  displayMode: boolean,
+  timeoutMs: number = RENDER_TIMEOUT_MS,
+): Promise<string> {
   if (tex.length > MAX_TEX_LENGTH) {
     throw new Error(`TeX input exceeds maximum length of ${MAX_TEX_LENGTH} characters`);
   }
@@ -198,6 +220,14 @@ export async function renderTexToSvg(tex: string, displayMode: boolean): Promise
     return cached;
   }
 
+  return withTimeout(renderTexToSvgInner(tex, prepared, cacheKey), timeoutMs);
+}
+
+async function renderTexToSvgInner(
+  tex: string,
+  prepared: { tex: string; displayMode: boolean },
+  cacheKey: string,
+): Promise<string> {
   const candidates = [prepared.tex];
   const rawTrimmed = tex.trim();
   if (rawTrimmed.length > 0 && rawTrimmed !== prepared.tex) {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { renderTexToSvg, getCachedSvg } from '@/lib/latex/mathjax-client';
-import { formatTexError } from '@/lib/latex/tex-errors';
+import { formatTexError, isTimeoutError } from '@/lib/latex/tex-errors';
 
 interface LatexSvgProps {
   tex: string;
@@ -24,6 +24,7 @@ function sanitizeSvg(raw: string): string {
 export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
   const cached = getCachedSvg(tex, displayMode);
 
   useEffect(() => {
@@ -36,10 +37,12 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
         if (!cancelled) {
           setSvg(rendered);
           setError(null);
+          setTimedOut(false);
         }
       } catch (err) {
         if (!cancelled) {
           setError(formatTexError(err, tex));
+          setTimedOut(isTimeoutError(err));
           setSvg('');
         }
       }
@@ -58,8 +61,10 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
       <code
         className="rounded-md bg-[var(--color-surface-soft)] px-1 py-0.5 text-[var(--color-danger)]"
         title={visibleError}
+        role="alert"
+        aria-label={`LaTeX error: ${visibleError}`}
       >
-        {tex}
+        {timedOut ? '⏱ ' : ''}{tex}
       </code>
     );
   }
