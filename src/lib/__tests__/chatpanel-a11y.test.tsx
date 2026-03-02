@@ -95,6 +95,41 @@ describe('ChatPanel accessibility', () => {
   });
 });
 
+describe('ChatPanel status announcements', () => {
+  it('status element has role="status"', () => {
+    render(
+      <ChatPanel chats={makeChats(1)} activeChatId="c0" messages={[]} {...baseProps} status="idle" />,
+    );
+    const statusEl = screen.getByRole('status');
+    expect(statusEl).toBeTruthy();
+    expect(statusEl.textContent).toBe('idle');
+  });
+
+  it('status text updates on re-render with new status', () => {
+    const { rerender } = render(
+      <ChatPanel chats={makeChats(1)} activeChatId="c0" messages={[]} {...baseProps} status="idle" />,
+    );
+    expect(screen.getByRole('status').textContent).toBe('idle');
+
+    rerender(
+      <ChatPanel chats={makeChats(1)} activeChatId="c0" messages={[]} {...baseProps} status="thinking" />,
+    );
+    expect(screen.getByRole('status').textContent).toBe('thinking');
+  });
+
+  it('each message is wrapped in an article element', () => {
+    const messages = [
+      { id: 'm1', role: 'user' as const, content: 'Hello', createdAt: 1 },
+      { id: 'm2', role: 'assistant' as const, content: 'Hi', createdAt: 2 },
+    ];
+    render(
+      <ChatPanel chats={makeChats(1)} activeChatId="c0" messages={messages} {...baseProps} />,
+    );
+    const articles = screen.getAllByRole('article');
+    expect(articles).toHaveLength(2);
+  });
+});
+
 describe('ChatPanel tab keyboard navigation', () => {
   it('ArrowRight moves to next tab', () => {
     const onSelectChat = vi.fn();

@@ -130,7 +130,7 @@ export function ChatPanel({
           <p className="font-[var(--font-display)] text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
             {activeChat?.title ?? 'Agent Channel'}
           </p>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+          <p role="status" className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
             {status}
           </p>
         </div>
