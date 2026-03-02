@@ -133,4 +133,54 @@ describe('parseBlocks', () => {
       { kind: 'paragraph', content: 'Line 1\nLine 2\nLine 3' },
     ]);
   });
+
+  it('parses a simple 2-column table with header separator', () => {
+    const input = '| Col A | Col B |\n| --- | --- |\n| val1 | val2 |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'table', headers: ['Col A', 'Col B'], rows: [['val1', 'val2']] },
+    ]);
+  });
+
+  it('parses a table with 3 rows of data', () => {
+    const input = '| Name | Age | City |\n|---|---|---|\n| Alice | 30 | NYC |\n| Bob | 25 | LA |\n| Carol | 35 | SF |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      {
+        kind: 'table',
+        headers: ['Name', 'Age', 'City'],
+        rows: [
+          ['Alice', '30', 'NYC'],
+          ['Bob', '25', 'LA'],
+          ['Carol', '35', 'SF'],
+        ],
+      },
+    ]);
+  });
+
+  it('treats | line without separator row as paragraph', () => {
+    const input = '| not a table |\nsome other line';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'paragraph', content: '| not a table |\nsome other line' },
+    ]);
+  });
+
+  it('parses table interspersed with paragraphs', () => {
+    const input = 'Before\n\n| H1 | H2 |\n|---|---|\n| a | b |\n\nAfter';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'paragraph', content: 'Before' },
+      { kind: 'table', headers: ['H1', 'H2'], rows: [['a', 'b']] },
+      { kind: 'paragraph', content: 'After' },
+    ]);
+  });
+
+  it('handles escaped pipes in table cells', () => {
+    const input = '| A | B |\n|---|---|\n| a\\|b | c |';
+    const result = parseBlocks(input);
+    expect(result).toEqual([
+      { kind: 'table', headers: ['A', 'B'], rows: [['a|b', 'c']] },
+    ]);
+  });
 });

@@ -2,6 +2,7 @@ export type InlineToken =
   | { kind: 'text'; value: string }
   | { kind: 'bold'; value: string }
   | { kind: 'italic'; value: string }
+  | { kind: 'strikethrough'; value: string }
   | { kind: 'inline_code'; value: string }
   | { kind: 'link'; text: string; href: string };
 
@@ -89,6 +90,34 @@ export function parseInline(text: string): InlineToken[] {
       continue;
     }
 
+    // --- Strikethrough: ~~...~~ ---
+    if (text[i] === '~' && text[i + 1] === '~') {
+      const closeIdx = text.indexOf('~~', i + 2);
+      if (closeIdx !== -1) {
+        flush();
+        tokens.push({ kind: 'strikethrough', value: text.slice(i + 2, closeIdx) });
+        i = closeIdx + 2;
+        continue;
+      }
+    }
+
+    // --- Bold italic: ***...*** or ___...___ ---
+    if (
+      (text[i] === '*' && text[i + 1] === '*' && text[i + 2] === '*') ||
+      (text[i] === '_' && text[i + 1] === '_' && text[i + 2] === '_')
+    ) {
+      const marker = text.slice(i, i + 3);
+      const closeIdx = text.indexOf(marker, i + 3);
+      if (closeIdx !== -1) {
+        flush();
+        const inner = text.slice(i + 3, closeIdx);
+        tokens.push({ kind: 'bold', value: inner });
+        tokens.push({ kind: 'italic', value: inner });
+        i = closeIdx + 3;
+        continue;
+      }
+    }
+
     // --- Bold: **...**  or __...__ ---
     if (
       (text[i] === '*' && text[i + 1] === '*') ||
@@ -105,14 +134,32 @@ export function parseInline(text: string): InlineToken[] {
     }
 
     // --- Italic: *...* or _..._ (single) ---
-    if ((text[i] === '*' || text[i] === '_') && text[i + 1] !== text[i]) {
-      const marker = text[i]!;
-      const closeIdx = text.indexOf(marker, i + 1);
+    if (text[i] === '*' && text[i + 1] !== '*') {
+      const closeIdx = text.indexOf('*', i + 1);
       if (closeIdx !== -1 && closeIdx > i + 1) {
         flush();
         tokens.push({ kind: 'italic', value: text.slice(i + 1, closeIdx) });
         i = closeIdx + 1;
         continue;
+      }
+    }
+
+    // Underscore italic: require word boundaries to avoid matching snake_case
+    if (text[i] === '_' && text[i + 1] !== '_') {
+      const prevChar = i > 0 ? text[i - 1] : undefined;
+      const isWordBoundaryBefore = prevChar === undefined || /\s|^$/.test(prevChar);
+      if (isWordBoundaryBefore) {
+        const closeIdx = text.indexOf('_', i + 1);
+        if (closeIdx !== -1 && closeIdx > i + 1) {
+          const afterClose = closeIdx + 1 < text.length ? text[closeIdx + 1] : undefined;
+          const isWordBoundaryAfter = afterClose === undefined || /\s/.test(afterClose);
+          if (isWordBoundaryAfter) {
+            flush();
+            tokens.push({ kind: 'italic', value: text.slice(i + 1, closeIdx) });
+            i = closeIdx + 1;
+            continue;
+          }
+        }
       }
     }
 

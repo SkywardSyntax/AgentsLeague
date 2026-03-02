@@ -92,6 +92,57 @@ describe('parseInline', () => {
       { kind: 'link', text: 'file', href: './readme.md' },
     ]);
   });
+
+  it('parses strikethrough with ~~', () => {
+    expect(parseInline('~~deleted~~')).toEqual([
+      { kind: 'strikethrough', value: 'deleted' },
+    ]);
+  });
+
+  it('parses strikethrough mixed with text', () => {
+    expect(parseInline('keep ~~removed~~ this')).toEqual([
+      { kind: 'text', value: 'keep ' },
+      { kind: 'strikethrough', value: 'removed' },
+      { kind: 'text', value: ' this' },
+    ]);
+  });
+
+  it('treats unclosed ~~ as plain text', () => {
+    expect(parseInline('~~no close')).toEqual([
+      { kind: 'text', value: '~~no close' },
+    ]);
+  });
+
+  it('handles ***bold italic*** by emitting bold and italic tokens', () => {
+    const tokens = parseInline('***bold italic***');
+    expect(tokens).toEqual([
+      { kind: 'bold', value: 'bold italic' },
+      { kind: 'italic', value: 'bold italic' },
+    ]);
+  });
+
+  it('does not parse _snake_case_ as italic (word boundary)', () => {
+    expect(parseInline('use_snake_case_here')).toEqual([
+      { kind: 'text', value: 'use_snake_case_here' },
+    ]);
+  });
+
+  it('parses _italic_ at word boundary with underscore', () => {
+    expect(parseInline('this is _italic_ text')).toEqual([
+      { kind: 'text', value: 'this is ' },
+      { kind: 'italic', value: 'italic' },
+      { kind: 'text', value: ' text' },
+    ]);
+  });
+
+  it('handles ~~~ as ~~ + remaining text', () => {
+    const tokens = parseInline('~~~strikethrough~~~');
+    // Greedy: first ~~ consumed, finds closing ~~ leaving trailing ~
+    expect(tokens).toEqual([
+      { kind: 'strikethrough', value: '~strikethrough' },
+      { kind: 'text', value: '~' },
+    ]);
+  });
 });
 
 describe('sanitizeHref', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { exportChatToMarkdown, exportChatToJson } from '@/lib/client/export-chat';
+import { exportChatToMarkdown, exportChatToJson, escapeStructuralMarkdown } from '@/lib/client/export-chat';
 import type { ChatMessage } from '@/types/agent';
 
 const msgs: ChatMessage[] = [
@@ -28,6 +28,36 @@ describe('exportChatToMarkdown', () => {
   it('includes export timestamp', () => {
     const md = exportChatToMarkdown([], 'Empty');
     expect(md).toMatch(/Exported: \d{4}-\d{2}-\d{2}/);
+  });
+
+  it('escapes --- in message content to prevent false HR', () => {
+    const messages: ChatMessage[] = [
+      { id: 'm1', role: 'user', content: 'before\n---\nafter', createdAt: 1000 },
+    ];
+    const md = exportChatToMarkdown(messages, 'Test');
+    expect(md).toContain('before\n\\---\nafter');
+    // The structural --- divider should still be present
+    const structuralHRCount = md.split('\n').filter(l => l === '---').length;
+    expect(structuralHRCount).toBeGreaterThanOrEqual(2); // header + message dividers
+  });
+
+  it('preserves ## Heading in message content verbatim', () => {
+    const messages: ChatMessage[] = [
+      { id: 'm1', role: 'user', content: '## My Heading', createdAt: 1000 },
+    ];
+    const md = exportChatToMarkdown(messages, 'Test');
+    expect(md).toContain('## My Heading');
+  });
+
+  it('escapes *** and ___ HR variants in content', () => {
+    expect(escapeStructuralMarkdown('***')).toBe('\\***');
+    expect(escapeStructuralMarkdown('___')).toBe('\\___');
+    expect(escapeStructuralMarkdown('- - -')).toBe('\\- - -');
+  });
+
+  it('does not escape non-HR content', () => {
+    expect(escapeStructuralMarkdown('normal text')).toBe('normal text');
+    expect(escapeStructuralMarkdown('-- not enough')).toBe('-- not enough');
   });
 });
 

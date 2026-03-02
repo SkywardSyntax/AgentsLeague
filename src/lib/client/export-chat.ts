@@ -21,13 +21,18 @@ function triggerDownload(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** Escape standalone HR patterns in content to prevent structural confusion in exports. */
+export function escapeStructuralMarkdown(content: string): string {
+  return content.replace(/^([-*_])(\s*\1){2,}\s*$/gm, (match) => `\\${match}`);
+}
+
 /** Format messages as Markdown. */
 export function exportChatToMarkdown(messages: ChatMessage[], title: string): string {
   const header = `# ${title}\n\nExported: ${new Date().toISOString()}\n\n---\n\n`;
   const body = messages
     .map((m) => {
       const role = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : 'System';
-      return `## ${role}\n\n${m.content}\n\n---\n`;
+      return `## ${role}\n\n${escapeStructuralMarkdown(m.content)}\n\n---\n`;
     })
     .join('\n');
   return header + body;

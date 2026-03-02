@@ -4,6 +4,7 @@ export type BlockSegment =
   | { kind: 'heading'; content: string; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { kind: 'list'; ordered: boolean; items: string[] }
   | { kind: 'blockquote'; content: string }
+  | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' };
 
 const CODE_FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
@@ -12,6 +13,41 @@ const HR_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 const UL_RE = /^[-*+]\s+(.*)$/;
 const OL_RE = /^\d+[.)]\s+(.*)$/;
 const BQ_RE = /^>\s?(.*)$/;
+const TABLE_ROW_RE = /^\|(.+)\|$/;
+const TABLE_SEP_RE = /^\|[\s:|-]+\|$/;
+
+/** Parse a table row into trimmed cells, handling escaped pipes. */
+function parseTableCells(row: string): string[] {
+  // Remove leading/trailing pipes
+  const inner = row.slice(1, -1);
+  const cells: string[] = [];
+  let cell = '';
+  let inCode = false;
+  for (let j = 0; j < inner.length; j++) {
+    const ch = inner[j]!;
+    if (ch === '`') {
+      inCode = !inCode;
+      cell += ch;
+    } else if (ch === '\\' && j + 1 < inner.length && inner[j + 1] === '|') {
+      cell += '|';
+      j++;
+    } else if (ch === '|' && !inCode) {
+      cells.push(cell.trim());
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
+function isTableStart(lines: string[], idx: number): boolean {
+  if (idx + 1 >= lines.length) return false;
+  const row = lines[idx]!;
+  const sep = lines[idx + 1]!;
+  return TABLE_ROW_RE.test(row) && TABLE_SEP_RE.test(sep);
+}
 
 export function parseBlocks(raw: string): BlockSegment[] {
   const lines = raw.split('\n');
@@ -79,6 +115,19 @@ export function parseBlocks(raw: string): BlockSegment[] {
       continue;
     }
 
+    // --- Table ---
+    if (isTableStart(lines, i)) {
+      const headers = parseTableCells(lines[i]!);
+      i += 2; // skip header + separator rows
+      const rows: string[][] = [];
+      while (i < lines.length && TABLE_ROW_RE.test(lines[i]!)) {
+        rows.push(parseTableCells(lines[i]!));
+        i++;
+      }
+      blocks.push({ kind: 'table', headers, rows });
+      continue;
+    }
+
     // --- Unordered list ---
     const ulMatch = line.match(UL_RE);
     if (ulMatch) {
@@ -126,6 +175,7 @@ export function parseBlocks(raw: string): BlockSegment[] {
         HEADING_RE.test(pl) ||
         HR_RE.test(pl.trim()) ||
         BQ_RE.test(pl) ||
+        isTableStart(lines, i) ||
         UL_RE.test(pl) ||
         OL_RE.test(pl)
       ) {

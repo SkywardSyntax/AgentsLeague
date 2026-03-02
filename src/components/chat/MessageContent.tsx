@@ -38,6 +38,8 @@ function renderInlineTokens(tokens: InlineToken[], keyPrefix: string): ReactNode
         return <strong key={key} className="font-semibold">{token.value}</strong>;
       case 'italic':
         return <em key={key}>{token.value}</em>;
+      case 'strikethrough':
+        return <del key={key}>{token.value}</del>;
       case 'inline_code':
         return (
           <code key={key} className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-[0.9em] font-mono">
@@ -111,6 +113,33 @@ function renderBlock(block: BlockSegment, idx: number): ReactNode {
       );
     case 'hr':
       return <hr key={key} className="my-3 border-[var(--color-border)]" />;
+    case 'table':
+      return (
+        <div key={key} className="my-2 overflow-x-auto">
+          <table className="min-w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                {block.headers.map((h, hi) => (
+                  <th key={`${key}-th-${hi}`} className="border border-[var(--color-border)] px-3 py-1.5 text-left font-semibold bg-[var(--color-surface)]">
+                    {renderInlineTokens(parseInline(h), `${key}-th-${hi}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, ri) => (
+                <tr key={`${key}-tr-${ri}`}>
+                  {row.map((cell, ci) => (
+                    <td key={`${key}-td-${ri}-${ci}`} className="border border-[var(--color-border)] px-3 py-1.5">
+                      {renderInlineTokens(parseInline(cell), `${key}-td-${ri}-${ci}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     case 'paragraph':
       return (
         <p key={key} className="my-1 whitespace-pre-wrap">
