@@ -3,6 +3,8 @@ import {
   ellipsePoints,
   arrowHeadPoints,
   linePoints,
+  rectPoints,
+  withJitter,
   escapePlainTextForTex,
   looksMathLikeText,
   strokesBounds,
@@ -102,6 +104,47 @@ describe('arrowHeadPoints', () => {
   });
 });
 
+describe('rectPoints', () => {
+  it('returns a 5-point closed polygon with correct corners', () => {
+    const el = { type: 'rect' as const, id: 'r1', x: 10, y: 20, w: 100, h: 50 };
+    const pts = rectPoints(el);
+    expect(pts).toHaveLength(5);
+    expect(pts[0]).toEqual({ x: 10, y: 20 });
+    expect(pts[1]).toEqual({ x: 110, y: 20 });
+    expect(pts[2]).toEqual({ x: 110, y: 70 });
+    expect(pts[3]).toEqual({ x: 10, y: 70 });
+    expect(pts[4]).toEqual(pts[0]);
+  });
+});
+
+describe('withJitter', () => {
+  it('preserves first and last points', () => {
+    const points = [{ x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 10 }];
+    const result = withJitter(points, 'test-seed', 'clean_pen_sketch');
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(result[result.length - 1]).toEqual({ x: 10, y: 10 });
+  });
+
+  it('produces deterministic output for same seed', () => {
+    const points = [{ x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 10 }];
+    const a = withJitter(points, 'seed-abc', 'clean_pen_sketch');
+    const b = withJitter(points, 'seed-abc', 'clean_pen_sketch');
+    expect(a).toEqual(b);
+  });
+
+  it('applies larger displacement for rough_sketch than clean_pen_sketch', () => {
+    const points = Array.from({ length: 50 }, (_, i) => ({ x: i * 2, y: i * 2 }));
+    const rough = withJitter(points, 'same-seed', 'rough_sketch');
+    const clean = withJitter(points, 'same-seed', 'clean_pen_sketch');
+    const sumDisplacement = (jittered: typeof points) =>
+      jittered.slice(1, -1).reduce((sum, p, i) => {
+        const orig = points[i + 1]!;
+        return sum + Math.abs(p.x - orig.x) + Math.abs(p.y - orig.y);
+      }, 0);
+    expect(sumDisplacement(rough)).toBeGreaterThan(sumDisplacement(clean));
+  });
+});
+
 describe('escapePlainTextForTex', () => {
   it('escapes special TeX characters including ~', () => {
     const input = '#$%&_{} ~^\\';
@@ -144,6 +187,15 @@ describe('looksMathLikeText', () => {
   it('returns false for empty/whitespace input', () => {
     expect(looksMathLikeText('')).toBe(false);
     expect(looksMathLikeText('   ')).toBe(false);
+  });
+
+  it('rejects lone backslash without following letter', () => {
+    expect(looksMathLikeText('\\')).toBe(false);
+    expect(looksMathLikeText('\\123')).toBe(false);
+  });
+
+  it('detects ± combined with operator as math-like', () => {
+    expect(looksMathLikeText('x ± y + z')).toBe(true);
   });
 });
 
