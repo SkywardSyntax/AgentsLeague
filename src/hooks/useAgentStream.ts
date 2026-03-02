@@ -14,6 +14,32 @@ export interface StreamHandlers {
   onError: (message: string) => void;
 }
 
+export interface ParsedSSEResult {
+  events: string[];
+  remainder: string;
+}
+
+export function parseSSEBuffer(buffer: string): ParsedSSEResult {
+  const parts = buffer.split(/\r?\n\r?\n/);
+  if (parts.length <= 1) {
+    return { events: [], remainder: buffer };
+  }
+
+  const remainder = parts.pop() ?? '';
+  const events: string[] = [];
+  for (const chunk of parts) {
+    const lines = chunk
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('data:'));
+    for (const line of lines) {
+      const json = line.slice(5).trim();
+      if (json) events.push(json);
+    }
+  }
+  return { events, remainder };
+}
+
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
 
@@ -63,31 +89,20 @@ export function useAgentStream() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        const splitChunks = (raw: string) => raw.split(/\r?\n\r?\n/);
 
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          const parts = splitChunks(buffer);
-          if (parts.length <= 1) continue;
-
-          buffer = parts.pop() ?? '';
-          for (const chunk of parts) {
-            const lines = chunk
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .filter((line) => line.startsWith('data:'));
-            for (const line of lines) {
-              const json = line.slice(5).trim();
-              if (!json) continue;
-              try {
-                const event = JSON.parse(json) as AgentSSEEvent;
-                args.handlers.onEvent(event);
-              } catch {
-                args.handlers.onError('Invalid SSE JSON payload received');
-              }
+          const { events, remainder } = parseSSEBuffer(buffer);
+          buffer = remainder;
+          for (const json of events) {
+            try {
+              const event = JSON.parse(json) as AgentSSEEvent;
+              args.handlers.onEvent(event);
+            } catch {
+              args.handlers.onError('Invalid SSE JSON payload received');
             }
           }
         }

@@ -177,7 +177,7 @@ export function AppShell() {
   useEffect(() => {
     const restored = loadSession();
     if (restored && restored.chats.length > 0) {
-      const restoredChats: ChatSessionState[] = restored.chats.map((chat) => ({
+      let restoredChats: ChatSessionState[] = restored.chats.map((chat) => ({
         id: chat.id,
         title: chat.title,
         createdAt: chat.createdAt,
@@ -190,11 +190,15 @@ export function AppShell() {
         warnings: [],
       }));
 
+      if (restoredChats.length === 0) {
+        restoredChats = [createEmptyChatSession(1)];
+      }
+
       setChatSessions(restoredChats);
       setPanelSizes(restored.prefs.panelSizes);
 
       const activeExists = restoredChats.some((chat) => chat.id === restored.activeChatId);
-      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]!.id);
+      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]?.id ?? '');
     }
 
     setDidRestoreSession(true);
@@ -210,7 +214,7 @@ export function AppShell() {
       saveSession({
         version: 3,
         updatedAt: Date.now(),
-        activeChatId: activeChat?.id ?? chatSessions[0]!.id,
+        activeChatId: activeChat?.id ?? chatSessions[0]?.id ?? '',
         chats: chatSessions.map((chat) => ({
           id: chat.id,
           title: chat.title,
