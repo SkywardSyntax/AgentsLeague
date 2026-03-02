@@ -1,16 +1,17 @@
 export type AppMode = 'interactive' | 'agent';
 
 /**
- * App mode precedence:
- * 1) URL query `?mode=agent`
- * 2) `NEXT_PUBLIC_MODE=agent`
- * 3) default `interactive`
+ * Server-safe initial mode (must be deterministic for SSR hydration).
  */
-export function getAppMode(): AppMode {
-  if (typeof window !== 'undefined') {
-    const urlMode = new URLSearchParams(window.location.search).get('mode');
-    if (urlMode === 'agent') return 'agent';
-  }
-
+export function getInitialAppMode(): AppMode {
   return process.env.NEXT_PUBLIC_MODE === 'agent' ? 'agent' : 'interactive';
+}
+
+/**
+ * Client-resolved mode with URL override.
+ */
+export function getClientAppMode(search: string): AppMode {
+  const urlMode = new URLSearchParams(search).get('mode');
+  if (urlMode === 'agent') return 'agent';
+  return getInitialAppMode();
 }

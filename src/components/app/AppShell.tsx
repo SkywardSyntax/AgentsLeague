@@ -6,7 +6,7 @@ import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
 import { loadSession, saveSession } from '@/lib/client/persistence';
-import { getAppMode } from '@/lib/mode';
+import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
 import { buildWhiteboardContext, buildWhiteboardContextV2 } from '@/lib/whiteboard/context';
 import {
   removeStreamOverlayFromBatches,
@@ -118,7 +118,7 @@ function withoutStreamOverlay(chat: ChatSessionState): ChatSessionState {
 }
 
 export function AppShell() {
-  const [appMode] = useState(() => getAppMode());
+  const [appMode, setAppMode] = useState<AppMode>(() => getInitialAppMode());
   const isAgentMode = appMode === 'agent';
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'thinking' | 'streaming' | 'drawing'>('idle');
@@ -160,6 +160,14 @@ export function AppShell() {
     () => chatSessions.find((chat) => chat.id === activeChatId) ?? chatSessions[0] ?? null,
     [activeChatId, chatSessions],
   );
+
+  useEffect(() => {
+    setAppMode(getClientAppMode(window.location.search));
+  }, []);
+
+  useEffect(() => {
+    if (isAgentMode) setAgentRunning(true);
+  }, [isAgentMode]);
 
   useEffect(() => {
     activeChatIdRef.current = activeChat?.id ?? '';
