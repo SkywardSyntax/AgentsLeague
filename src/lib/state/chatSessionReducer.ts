@@ -175,38 +175,45 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
     case 'APPEND_ASSISTANT_DELTA': {
       const nextStatus = transitionStatus(state.turn.status, 'streaming');
       const currentMsgId = state.turn.currentAssistantMessageId;
-      const base: ChatStore = {
-        ...state,
-        turn: {
-          ...state.turn,
-          status: nextStatus,
-          turnHadRenderableOutput: true,
-        },
+      const chat = state.chats[action.chatId];
+      if (!chat) return state;
+
+      const baseTurn = {
+        ...state.turn,
+        status: nextStatus,
+        turnHadRenderableOutput: true,
       };
 
-      return updateChat(base, action.chatId, (chat) => {
-        if (!currentMsgId) {
-          const nextMsg = createMessage('assistant', action.delta);
-          // Side-channel: the new message ID is stored via the returned turn state
-          base.turn = { ...base.turn, currentAssistantMessageId: nextMsg.id };
-          return { ...chat, updatedAt: Date.now(), messages: [...chat.messages, nextMsg] };
-        }
-
-        const hasTarget = chat.messages.some((msg) => msg.id === currentMsgId);
-        if (!hasTarget) {
-          const nextMsg = createMessage('assistant', action.delta);
-          base.turn = { ...base.turn, currentAssistantMessageId: nextMsg.id };
-          return { ...chat, updatedAt: Date.now(), messages: [...chat.messages, nextMsg] };
-        }
-
+      if (!currentMsgId || !chat.messages.some((msg) => msg.id === currentMsgId)) {
+        const nextMsg = createMessage('assistant', action.delta);
         return {
-          ...chat,
-          updatedAt: Date.now(),
-          messages: chat.messages.map((msg) =>
-            msg.id === currentMsgId ? { ...msg, content: `${msg.content}${action.delta}` } : msg,
-          ),
+          ...state,
+          turn: { ...baseTurn, currentAssistantMessageId: nextMsg.id },
+          chats: {
+            ...state.chats,
+            [action.chatId]: {
+              ...chat,
+              updatedAt: Date.now(),
+              messages: [...chat.messages, nextMsg],
+            },
+          },
         };
-      });
+      }
+
+      return {
+        ...state,
+        turn: baseTurn,
+        chats: {
+          ...state.chats,
+          [action.chatId]: {
+            ...chat,
+            updatedAt: Date.now(),
+            messages: chat.messages.map((msg) =>
+              msg.id === currentMsgId ? { ...msg, content: `${msg.content}${action.delta}` } : msg,
+            ),
+          },
+        },
+      };
     }
 
     case 'FINALIZE_ASSISTANT_MESSAGE':

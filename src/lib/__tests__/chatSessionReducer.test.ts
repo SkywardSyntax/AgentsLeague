@@ -505,4 +505,72 @@ describe('chatSessionReducer', () => {
       expect(next).toBe(store);
     });
   });
+
+  describe('APPEND_ASSISTANT_DELTA immutability', () => {
+    it('does not mutate the previous state turn object', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const s1 = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const turnBefore = s1.turn;
+      const s2 = chatSessionReducer(s1, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'hello' });
+      // s1.turn must be unchanged — no side-channel mutation
+      expect(s1.turn).toBe(turnBefore);
+      expect(s1.turn.currentAssistantMessageId).toBeNull();
+      // s2 must have the new message ID
+      expect(s2.turn.currentAssistantMessageId).not.toBeNull();
+      expect(s2.turn).not.toBe(s1.turn);
+    });
+
+    it('returns state unchanged for unknown chatId', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const next = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: 'nonexistent', delta: 'hi' });
+      expect(next.chats).toBe(s.chats);
+    });
+  });
+
+  describe('cross-chat state isolation', () => {
+    it('APPEND_ASSISTANT_DELTA to chat A does not affect chat B messages', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: chat1.id, delta: 'hello from A' });
+      expect(s.chats[chat1.id]!.messages).toHaveLength(1);
+      expect(s.chats[chat2.id]!.messages).toHaveLength(0);
+    });
+
+    it('PUSH_WARNING to chat A does not affect chat B warnings', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      const s = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: chat1.id, warning: 'oops' });
+      expect(s.chats[chat1.id]!.warnings).toEqual(['oops']);
+      expect(s.chats[chat2.id]!.warnings).toEqual([]);
+    });
+  });
+
+  describe('warnings eviction order', () => {
+    it('evicts oldest warnings when exceeding cap of 8', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = store;
+      for (let i = 0; i < 9; i++) {
+        s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: `w${i}` });
+      }
+      expect(s.chats[id]!.warnings).toHaveLength(8);
+      // First warning (w0) should be evicted; oldest remaining is w1
+      expect(s.chats[id]!.warnings[0]).toBe('w1');
+      expect(s.chats[id]!.warnings[7]).toBe('w8');
+    });
+  });
 });

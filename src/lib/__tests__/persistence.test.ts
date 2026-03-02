@@ -123,4 +123,69 @@ describe('persistence', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('large payload resilience', () => {
+    it('round-trips a session with 500 messages', () => {
+      const messages = Array.from({ length: 500 }, (_, i) => ({
+        id: `msg-${i}`,
+        role: 'user' as const,
+        content: `Message number ${i} with some content padding`,
+        createdAt: 1000 + i,
+      }));
+      const session = makeV3Session({
+        chats: [
+          {
+            id: 'chat-1',
+            title: 'Big Chat',
+            createdAt: 1000,
+            updatedAt: 2000,
+            messages,
+            semanticScene: [],
+            scene: [],
+            plannerMeta: [],
+          },
+        ],
+      });
+      saveSession(session);
+      const loaded = loadSession();
+      expect(loaded).not.toBeNull();
+      expect(loaded!.chats[0]!.messages).toHaveLength(500);
+      expect(loaded!.chats[0]!.messages[499]!.id).toBe('msg-499');
+    });
+  });
+
+  describe('concurrent save/load', () => {
+    it('latest save wins on subsequent load', () => {
+      const sessionA = makeV3Session({ activeChatId: 'chat-a', chats: [{ id: 'chat-a', title: 'A', createdAt: 1000, updatedAt: 2000, messages: [], semanticScene: [], scene: [], plannerMeta: [] }] });
+      const sessionB = makeV3Session({ activeChatId: 'chat-b', chats: [{ id: 'chat-b', title: 'B', createdAt: 1000, updatedAt: 3000, messages: [], semanticScene: [], scene: [], plannerMeta: [] }] });
+      saveSession(sessionA);
+      saveSession(sessionB);
+      const loaded = loadSession();
+      expect(loaded).not.toBeNull();
+      expect(loaded!.activeChatId).toBe('chat-b');
+    });
+  });
+
+  describe('localStorage.getItem failure', () => {
+    it('returns null when getItem throws', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const origGetItem = localStorage.getItem;
+      localStorage.getItem = () => { throw new DOMException('SecurityError'); };
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      localStorage.getItem = origGetItem;
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('corrupted JSON', () => {
+    it('returns null for invalid JSON', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      localStorage.setItem('agentsleague:session:v1', '{not valid json');
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      expect(consoleSpy).toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+  });
 });

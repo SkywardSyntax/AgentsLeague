@@ -156,10 +156,11 @@ function sanitizeSession(session: PersistedSessionV3): PersistedSessionV3 {
 
 export function loadSession(): PersistedSessionV3 | null {
   if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
 
   try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+
     const parsed = JSON.parse(raw);
 
     const v3 = PersistedSessionV3Schema.safeParse(parsed);
