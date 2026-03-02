@@ -1,16 +1,21 @@
 import type { Point } from '@/types/agent';
 
+/** Minimum screen-space stroke width in pixels, used to keep strokes visible at low zoom. */
 export const MIN_SCREEN_STROKE_PX = 1.25;
+/** Maximum screen-space stroke width in pixels, used to cap strokes at high zoom. */
 export const MAX_SCREEN_STROKE_PX = 5.5;
 
+/** Clamp `value` to the inclusive range [min, max]. */
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Euclidean distance between two 2D points. */
 export function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
+/** Compute cumulative arc-lengths along a polyline. Returns an array of the same length as `points`, starting at 0. */
 export function cumulativeLengths(points: Point[]): number[] {
   if (points.length === 0) return [];
   const out: number[] = [0];
@@ -20,11 +25,17 @@ export function cumulativeLengths(points: Point[]): number[] {
   return out;
 }
 
+/** Total arc-length of a polyline (sum of all segment lengths). Returns 0 for empty arrays. */
 export function totalLength(points: Point[]): number {
   const lengths = cumulativeLengths(points);
   return lengths[lengths.length - 1] ?? 0;
 }
 
+/**
+ * Walk `points` up to `targetLength` along the polyline defined by
+ * `cumulative` distances, returning the partial path including an
+ * interpolated endpoint. Used for progressive stroke reveal animation.
+ */
 export function partialPolylineByLength(
   points: Point[],
   cumulative: number[],
@@ -59,6 +70,10 @@ export function partialPolylineByLength(
   return out;
 }
 
+/**
+ * Resample a polyline so consecutive points are approximately `spacing`
+ * world-units apart. The first and last points are always preserved.
+ */
 export function resamplePolyline(points: Point[], spacing: number): Point[] {
   if (points.length <= 1) return points;
   if (!Number.isFinite(spacing) || spacing <= 0) return points.slice();
@@ -95,6 +110,10 @@ export function resamplePolyline(points: Point[], spacing: number): Point[] {
   return sampled;
 }
 
+/**
+ * Convert a base stroke width in world units to screen pixels, accounting
+ * for zoom and device pixel ratio, clamped to [minPx, maxPx].
+ */
 export function screenStrokePx(
   baseWorldWidth: number,
   zoom: number,

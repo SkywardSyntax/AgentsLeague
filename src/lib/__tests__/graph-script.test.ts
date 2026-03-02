@@ -21,9 +21,14 @@ describe('parseGraphScriptToSemanticBatch', () => {
 
     expect(result.semanticBatch).not.toBeNull();
     const batch = result.semanticBatch!;
+    expect(batch.blocks.length).toBeGreaterThanOrEqual(3);
     expect(batch.blocks.some((block) => block.kind === 'diagram_panel')).toBe(true);
     expect(batch.blocks.some((block) => block.kind === 'equation_stack')).toBe(true);
     expect(batch.blocks.some((block) => block.kind === 'caption')).toBe(true);
+    expect(
+      (batch.blocks.find((b) => b.kind === 'equation_stack') as { lines?: { tex?: string }[] })
+        ?.lines?.[0]?.tex,
+    ).toContain('J(u,v)');
     expect(batch.relations?.length).toBeGreaterThanOrEqual(1);
     expect(batch.relations?.[0]?.from_anchor).toBe('left-cell-right');
     expect(batch.relations?.[0]?.to_anchor).toBe('right-image-left');
@@ -46,6 +51,7 @@ describe('parseGraphScriptToSemanticBatch', () => {
     expect(result.semanticBatch).not.toBeNull();
     expect(result.warnings.length).toBeGreaterThan(0);
     expect(result.semanticBatch?.blocks.some((block) => block.kind === 'diagram_panel')).toBe(true);
+    expect(result.semanticBatch!.blocks.filter((b) => b.kind === 'diagram_panel').length).toBe(1);
   });
 
   it('supports graph/node/edge aliases with auto node placement and panel center refs', () => {
@@ -71,6 +77,7 @@ describe('parseGraphScriptToSemanticBatch', () => {
     expect(batch.template).toBe('freeform_semantic');
     expect(batch.style_preset).toBe('clean_pen_sketch');
     expect(batch.intent).toBe('teach');
+    expect(batch.blocks.filter((b) => b.kind === 'diagram_panel').length).toBe(2);
     expect(batch.relations?.length).toBe(2);
     expect(batch.relations?.[0]?.type).toBe('points_to');
     expect(batch.relations?.[0]?.from_anchor).toBe('g1-a-right');
