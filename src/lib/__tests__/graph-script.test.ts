@@ -76,4 +76,124 @@ describe('parseGraphScriptToSemanticBatch', () => {
     expect(batch.relations?.[0]?.from_anchor).toBe('g1-a-right');
     expect(batch.relations?.[1]?.from_anchor).toBe('g1-panel-center');
   });
+
+  describe('degenerate numeric inputs', () => {
+    it('clamps rotation_deg to [-360, 360]', () => {
+      const script = [
+        'panel id=p1 region=left',
+        'shape id=s1 panel=p1 type=rect x=0.5 y=0.5 w=0.2 h=0.2 rot=99999',
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'rot-1', script });
+      expect(result.semanticBatch).not.toBeNull();
+      const panel = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'diagram_panel',
+      ) as { shapes: { relative_pose?: { rotation_deg?: number } }[] };
+      expect(panel.shapes[0]!.relative_pose!.rotation_deg).toBe(360);
+    });
+
+    it('clamps negative rotation to -360', () => {
+      const script = [
+        'panel id=p1 region=left',
+        'shape id=s1 panel=p1 type=rect x=0.5 y=0.5 rot=-999',
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'rot-2', script });
+      const panel = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'diagram_panel',
+      ) as { shapes: { relative_pose?: { rotation_deg?: number } }[] };
+      expect(panel.shapes[0]!.relative_pose!.rotation_deg).toBe(-360);
+    });
+
+    it('passes through valid rotation unchanged', () => {
+      const script = [
+        'panel id=p1 region=left',
+        'shape id=s1 panel=p1 type=rect x=0.5 y=0.5 rot=45',
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'rot-3', script });
+      const panel = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'diagram_panel',
+      ) as { shapes: { relative_pose?: { rotation_deg?: number } }[] };
+      expect(panel.shapes[0]!.relative_pose!.rotation_deg).toBe(45);
+    });
+
+    it('rejects NaN/Infinity rotation via toNumber guard', () => {
+      const script = [
+        'panel id=p1 region=left',
+        'shape id=s1 panel=p1 type=rect x=0.5 y=0.5 rot=Infinity',
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'rot-4', script });
+      const panel = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'diagram_panel',
+      ) as { shapes: { relative_pose?: { rotation_deg?: number } }[] };
+      // toNumber returns null for non-finite, so rotation_deg should be absent
+      expect(panel.shapes[0]!.relative_pose!.rotation_deg).toBeUndefined();
+    });
+
+    it('truncates extremely long shape labels and emits warning', () => {
+      const longLabel = 'A'.repeat(1000);
+      const script = [
+        'panel id=p1 region=left',
+        `shape id=s1 panel=p1 type=rect x=0.5 y=0.5 label="${longLabel}"`,
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'label-1', script });
+      expect(result.semanticBatch).not.toBeNull();
+      const panel = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'diagram_panel',
+      ) as { shapes: { label?: string }[] };
+      expect(panel.shapes[0]!.label!.length).toBe(500);
+      expect(result.warnings.some((w) => w.includes('truncated'))).toBe(true);
+    });
+
+    it('does not truncate labels within limit', () => {
+      const label = 'Normal label';
+      const script = [
+        'panel id=p1 region=left',
+        `shape id=s1 panel=p1 type=rect x=0.5 y=0.5 label="${label}"`,
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'label-2', script });
+      const panel = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'diagram_panel',
+      ) as { shapes: { label?: string }[] };
+      expect(panel.shapes[0]!.label).toBe(label);
+      expect(result.warnings.some((w) => w.includes('truncated'))).toBe(false);
+    });
+
+    it('truncates long caption text and emits warning', () => {
+      const longText = 'B'.repeat(800);
+      const script = [
+        'panel id=p1 region=left',
+        `caption id=c1 text="${longText}"`,
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'cap-1', script });
+      expect(result.semanticBatch).not.toBeNull();
+      const caption = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'caption',
+      ) as { text: string };
+      expect(caption.text.length).toBe(500);
+      expect(result.warnings.some((w) => w.includes('truncated'))).toBe(true);
+    });
+
+    it('rejects NaN position values via existing toNumber guard', () => {
+      const script = [
+        'panel id=p1 region=left',
+        'shape id=s1 panel=p1 type=rect x=NaN y=NaN',
+      ].join('\n');
+
+      const result = parseGraphScriptToSemanticBatch({ batch_id: 'nan-1', script });
+      expect(result.semanticBatch).not.toBeNull();
+      const panel = result.semanticBatch!.blocks.find(
+        (b) => b.kind === 'diagram_panel',
+      ) as { shapes: { relative_pose?: { x: number; y: number } }[] };
+      // NaN rejected by toNumber → falls back to defaults, which are clamped [0,1]
+      const pose = panel.shapes[0]!.relative_pose!;
+      expect(Number.isFinite(pose.x)).toBe(true);
+      expect(Number.isFinite(pose.y)).toBe(true);
+    });
+  });
 });

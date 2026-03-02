@@ -40,6 +40,7 @@ const PANEL_REGION_SET = new Set(['left', 'right', 'center', 'auto']);
 const EQUATION_REGION_SET = new Set(['left', 'right', 'center', 'bottom', 'auto']);
 const CAPTION_REGION_SET = new Set(['bottom', 'center', 'auto']);
 const CAPTION_ANCHOR_SET = new Set(['top', 'bottom', 'left', 'right', 'center']);
+const MAX_LABEL_LENGTH = 500;
 const RELATION_TYPE_SET = new Set(['maps_to', 'explains', 'derived_from', 'points_to']);
 const COMMAND_PANEL_SET = new Set(['panel', 'graph', 'canvas']);
 const COMMAND_SHAPE_SET = new Set(['shape', 'node', 'item']);
@@ -90,6 +91,12 @@ function toInt(input: string | undefined): number | null {
   const parsed = toNumber(input);
   if (parsed == null) return null;
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function truncateLabel(text: string, warnings: string[], context: string): string {
+  if (text.length <= MAX_LABEL_LENGTH) return text;
+  warnings.push(`${context}: label truncated from ${text.length} to ${MAX_LABEL_LENGTH} chars`);
+  return text.slice(0, MAX_LABEL_LENGTH);
 }
 
 function stripComments(line: string): string {
@@ -340,7 +347,7 @@ function parseShapePose(
         ? {}
         : { h: clamp(defaultPose.h, 0, 1) }
       : { h: clamp(h, 0, 1) }),
-    ...(rot == null ? {} : { rotation_deg: rot }),
+    ...(rot == null ? {} : { rotation_deg: clamp(rot, -360, 360) }),
   };
 }
 
@@ -491,7 +498,7 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
       panel.shapes.push({
         id: shapeId,
         type: shapeType,
-        ...(kv.label ?? kv.text ? { label: kv.label ?? kv.text } : {}),
+        ...(kv.label ?? kv.text ? { label: truncateLabel(kv.label ?? kv.text!, warnings, `line ${lineIdx + 1}`) } : {}),
         ...(pose ? { relative_pose: pose } : {}),
       });
       if (shapeToPanel.has(shapeId) && shapeToPanel.get(shapeId) !== panelId) {
@@ -502,11 +509,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
     }
 
     if (COMMAND_CAPTION_SET.has(command)) {
-      const text = kv.text ?? kv.label ?? (positional.length > 1 ? positional.slice(1).join(' ') : positional[0]);
-      if (!text) {
+      const rawText = kv.text ?? kv.label ?? (positional.length > 1 ? positional.slice(1).join(' ') : positional[0]);
+      if (!rawText) {
         warnings.push(`line ${lineIdx + 1}: ${command} requires text`);
         continue;
       }
+      const text = truncateLabel(rawText, warnings, `line ${lineIdx + 1}`);
       const capId = kv.id ?? `${command}-${lineIdx + 1}`;
       const panelId = kv.panel ?? kv.graph ?? positional[0];
 
@@ -555,11 +563,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
     }
 
     if (COMMAND_NOTE_SET.has(command)) {
-      const text = kv.text ?? positional.slice(1).join(' ');
-      if (!text) {
+      const rawNoteText = kv.text ?? positional.slice(1).join(' ');
+      if (!rawNoteText) {
         warnings.push(`line ${lineIdx + 1}: ${command} requires text`);
         continue;
       }
+      const text = truncateLabel(rawNoteText, warnings, `line ${lineIdx + 1}`);
       const region = kv.region && CAPTION_REGION_SET.has(kv.region) ? kv.region : 'auto';
       captions.push({
         id: kv.id ?? `${command}-${lineIdx + 1}`,
@@ -598,7 +607,7 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
         to_block_id: toRef.blockId,
         from_anchor: fromRef.anchorId,
         to_anchor: toRef.anchorId,
-        ...(kv.label ? { label: kv.label } : {}),
+        ...(kv.label ? { label: truncateLabel(kv.label, warnings, `line ${lineIdx + 1}`) } : {}),
       });
       continue;
     }

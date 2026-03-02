@@ -135,7 +135,14 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
         processedBatchIdsRef.current.add(batch.batch_id);
 
-        const compiled = await compileBatchToStrokes(batch);
+        let compiled;
+        try {
+          compiled = await compileBatchToStrokes(batch);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          onWarningRef.current(`Failed to compile batch ${batch.batch_id}: ${msg}`);
+          continue;
+        }
         if (cancelled) return;
 
         if (compiled.clear) {
