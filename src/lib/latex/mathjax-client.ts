@@ -14,6 +14,10 @@ let mathJaxContextPromise: Promise<MathJaxContext> | undefined;
 const renderCache = new Map<string, string>();
 const MAX_RENDER_CACHE = 400;
 
+let cacheHits = 0;
+let cacheMisses = 0;
+const pendingRenders = new Map<string, Promise<string>>();
+
 function identityMatrix(): Matrix2D {
   return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 }
@@ -215,18 +219,30 @@ export function getCachedSvg(tex: string, displayMode: boolean): string | undefi
   const cacheKey = `render:${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
   const cached = renderCache.get(cacheKey);
   if (cached) {
+    cacheHits++;
     renderCache.delete(cacheKey);
     renderCache.set(cacheKey, cached);
+  } else {
+    cacheMisses++;
   }
   return cached;
 }
 
 export function clearRenderCache(): void {
   renderCache.clear();
+  cacheHits = 0;
+  cacheMisses = 0;
 }
 
-export function renderCacheStats(): { size: number; maxSize: number } {
-  return { size: renderCache.size, maxSize: MAX_RENDER_CACHE };
+export function renderCacheStats(): { size: number; maxSize: number; hits: number; misses: number; hitRate: number } {
+  const total = cacheHits + cacheMisses;
+  return {
+    size: renderCache.size,
+    maxSize: MAX_RENDER_CACHE,
+    hits: cacheHits,
+    misses: cacheMisses,
+    hitRate: total > 0 ? cacheHits / total : 0,
+  };
 }
 
 export async function renderTexToSvg(
@@ -242,12 +258,28 @@ export async function renderTexToSvg(
 
   const cached = renderCache.get(cacheKey);
   if (cached) {
+    cacheHits++;
     renderCache.delete(cacheKey);
     renderCache.set(cacheKey, cached);
     return cached;
   }
 
-  return withTimeout(renderTexToSvgInner(tex, prepared, cacheKey), timeoutMs);
+  // Deduplicate concurrent renders for the same cache key
+  const pending = pendingRenders.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  cacheMisses++;
+  const renderPromise = withTimeout(renderTexToSvgInner(tex, prepared, cacheKey), timeoutMs);
+  pendingRenders.set(cacheKey, renderPromise);
+
+  try {
+    const result = await renderPromise;
+    return result;
+  } finally {
+    pendingRenders.delete(cacheKey);
+  }
 }
 
 async function renderTexToSvgInner(
@@ -262,6 +294,7 @@ async function renderTexToSvgInner(
   }
 
   const remember = (rendered: string) => {
+    renderCache.delete(cacheKey);
     if (renderCache.size >= MAX_RENDER_CACHE) {
       const oldest = renderCache.keys().next().value as string | undefined;
       if (oldest) renderCache.delete(oldest);

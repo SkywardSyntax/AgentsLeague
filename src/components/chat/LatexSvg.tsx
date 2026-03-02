@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { renderTexToSvg, getCachedSvg } from '@/lib/latex/mathjax-client';
 import { formatTexError, isTimeoutError } from '@/lib/latex/tex-errors';
 
@@ -21,10 +21,39 @@ function sanitizeSvg(raw: string): string {
   return svg;
 }
 
+function copyToClipboard(text: string): void {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text: string): void {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } catch {
+    // silent fallback failure
+  }
+  document.body.removeChild(textarea);
+}
+
 export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retried, setRetried] = useState(false);
+  const texRef = useRef(tex);
+  texRef.current = tex;
   const cached = getCachedSvg(tex, displayMode);
 
   useEffect(() => {
@@ -38,6 +67,7 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
           setSvg(rendered);
           setError(null);
           setTimedOut(false);
+          setRetried(false);
         }
       } catch (err) {
         if (!cancelled) {
@@ -53,6 +83,28 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     };
   }, [cached, displayMode, tex]);
 
+  const handleRetry = useCallback(async () => {
+    if (retrying) return;
+    const currentTex = texRef.current;
+    setRetrying(true);
+    try {
+      const rendered = await renderTexToSvg(currentTex, displayMode, 10_000);
+      if (texRef.current === currentTex) {
+        setSvg(rendered);
+        setError(null);
+        setTimedOut(false);
+      }
+    } catch (err) {
+      if (texRef.current === currentTex) {
+        setError(formatTexError(err, currentTex));
+        setTimedOut(isTimeoutError(err));
+        setRetried(true);
+      }
+    } finally {
+      setRetrying(false);
+    }
+  }, [retrying, displayMode]);
+
   const visibleSvg = cached ?? svg;
   const visibleError = cached ? null : error;
 
@@ -65,6 +117,23 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
         aria-label={`LaTeX error: ${visibleError}`}
       >
         {timedOut ? '⏱ ' : ''}{tex}
+        {timedOut && !retried && (
+          <button
+            className="ml-1 text-xs underline"
+            onClick={handleRetry}
+            disabled={retrying}
+            aria-label="Retry rendering"
+          >
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
+        )}
+        <button
+          className="ml-1 text-xs underline"
+          onClick={() => copyToClipboard(tex)}
+          aria-label="Copy TeX to clipboard"
+        >
+          Copy
+        </button>
       </code>
     );
   }
