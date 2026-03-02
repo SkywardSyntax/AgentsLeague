@@ -264,4 +264,70 @@ describe('useSessionManager', () => {
     // Sessions unchanged
     expect(result.current.chatSessions).toHaveLength(4);
   });
+
+  it('double deleteChat in rapid succession leaves valid activeChatId', () => {
+    const { result } = renderHook(() => useSessionManager());
+
+    act(() => {
+      result.current.createChat();
+    });
+    act(() => {
+      result.current.createChat();
+    });
+    act(() => {
+      result.current.createChat();
+    });
+
+    expect(result.current.chatSessions).toHaveLength(4);
+    const firstId = result.current.chatSessions[1].id;
+    const secondId = result.current.chatSessions[2].id;
+
+    // Select the first so active is not the ones being deleted
+    act(() => {
+      result.current.selectChat(result.current.chatSessions[0].id);
+    });
+
+    // Rapid double-delete
+    act(() => {
+      result.current.deleteChat(firstId);
+      result.current.deleteChat(secondId);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+
+    expect(result.current.chatSessions).toHaveLength(2);
+    // activeChatId must exist in remaining sessions
+    expect(result.current.chatSessions.some((c) => c.id === result.current.activeChatId)).toBe(true);
+    // No stale IDs remain
+    expect(result.current.chatSessions.some((c) => c.id === firstId)).toBe(false);
+    expect(result.current.chatSessions.some((c) => c.id === secondId)).toBe(false);
+  });
+
+  it('selectChat with nonexistent chatId is a no-op', () => {
+    const { result } = renderHook(() => useSessionManager());
+    const originalId = result.current.activeChatId;
+
+    act(() => {
+      result.current.selectChat('nonexistent-id');
+    });
+
+    expect(result.current.activeChatId).toBe(originalId);
+  });
+
+  it('loadSession throwing does not crash the hook', () => {
+    // Arrange: put invalid JSON in storage so loadSession's JSON.parse throws
+    storageMock.setItem('agentsleague:session:v1', '{CORRUPT DATA!!!');
+
+    const { result } = renderHook(() => useSessionManager());
+
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+
+    expect(result.current.didRestoreSession).toBe(true);
+    expect(result.current.chatSessions).toHaveLength(1);
+    expect(result.current.chatSessions[0].messages).toHaveLength(0);
+  });
 });

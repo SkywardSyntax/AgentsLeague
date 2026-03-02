@@ -96,7 +96,13 @@ export function useSessionManager(): SessionManagerResult {
   // Restore session from localStorage on mount
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const restored = loadSession();
+    let restored: ReturnType<typeof loadSession> = null;
+    try {
+      restored = loadSession();
+    } catch (err) {
+      console.error('[useSessionManager] loadSession failed, falling back to seed chat:', err);
+    }
+
     if (restored && restored.chats.length > 0) {
       const restoredChats: ChatSessionState[] = restored.chats.map((chat) => ({
         id: chat.id,
@@ -112,10 +118,21 @@ export function useSessionManager(): SessionManagerResult {
       }));
 
       setChatSessions(restoredChats);
-      setPanelSizes(restored.prefs.panelSizes);
 
-      const activeExists = restoredChats.some((chat) => chat.id === restored.activeChatId);
-      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]!.id);
+      const prefs = restored.prefs;
+      if (
+        Array.isArray(prefs.panelSizes) &&
+        prefs.panelSizes.length === 2 &&
+        typeof prefs.panelSizes[0] === 'number' &&
+        typeof prefs.panelSizes[1] === 'number' &&
+        Number.isFinite(prefs.panelSizes[0]) &&
+        Number.isFinite(prefs.panelSizes[1])
+      ) {
+        setPanelSizes(prefs.panelSizes);
+      }
+
+      const activeExists = restoredChats.some((chat) => chat.id === restored!.activeChatId);
+      setActiveChatId(activeExists ? restored!.activeChatId : restoredChats[0]!.id);
     }
 
     setDidRestoreSession(true);
@@ -154,13 +171,6 @@ export function useSessionManager(): SessionManagerResult {
     };
   }, [activeChat.id, chatSessions, didRestoreSession, panelSizes]);
 
-  // Cleanup persist timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (persistTimeout.current) clearTimeout(persistTimeout.current);
-    };
-  }, []);
-
   const createChat = useCallback(() => {
     const nextChat = createEmptyChatSession(chatSessions.length + 1);
     setChatSessions((prev) => [nextChat, ...prev]);
@@ -170,6 +180,8 @@ export function useSessionManager(): SessionManagerResult {
   const selectChat = useCallback(
     (chatId: string, opts?: { cancel?: () => void; resetStreamState?: () => void; streamChatId?: string | null }) => {
       if (chatId === activeChatId) return;
+      // Guard: only switch if the target chat exists
+      if (!chatSessions.some((c) => c.id === chatId)) return;
       // Abort active stream when switching away from the streaming chat
       if (opts?.streamChatId === activeChatId) {
         opts.cancel?.();
@@ -177,37 +189,34 @@ export function useSessionManager(): SessionManagerResult {
       }
       setActiveChatId(chatId);
     },
-    [activeChatId],
+    [activeChatId, chatSessions],
   );
 
   const deleteChat = useCallback(
     (chatId: string, opts?: { cancel?: () => void; resetStreamState?: () => void; streamChatId?: string | null }) => {
-      let nextActiveId: string | null = null;
+      if (opts?.streamChatId === chatId) {
+        opts.cancel?.();
+        opts.resetStreamState?.();
+      }
+
       setChatSessions((prev) => {
         const index = prev.findIndex((chat) => chat.id === chatId);
         if (index === -1) return prev;
 
         if (prev.length === 1) {
           const replacement = createEmptyChatSession(1);
-          nextActiveId = replacement.id;
+          // Use functional setter to derive next active ID deterministically
+          setActiveChatId(replacement.id);
           return [replacement];
         }
 
         const remaining = prev.filter((chat) => chat.id !== chatId);
         if (activeChatIdRef.current === chatId) {
-          nextActiveId = remaining[Math.max(0, index - 1)]?.id ?? remaining[0]!.id;
+          const nextId = remaining[Math.max(0, index - 1)]?.id ?? remaining[0]!.id;
+          setActiveChatId(nextId);
         }
         return remaining;
       });
-
-      if (opts?.streamChatId === chatId) {
-        opts.cancel?.();
-        opts.resetStreamState?.();
-      }
-
-      if (nextActiveId) {
-        setActiveChatId(nextActiveId);
-      }
     },
     [],
   );

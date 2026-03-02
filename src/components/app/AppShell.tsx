@@ -626,6 +626,7 @@ export function AppShell() {
           style={{ ['--left-width' as string]: `${panelSizes[0]}%` }}
         >
           <section
+            id="panel-whiteboard"
             data-testid="whiteboard-canvas"
             tabIndex={-1}
             className={isAgentMode ? 'h-full w-full' : `w-full md:h-full md:w-[var(--left-width)] ${mobileActivePanel === 'whiteboard' ? 'h-full' : 'hidden'} md:!block`}
@@ -670,6 +671,7 @@ export function AppShell() {
 
           {!isAgentMode && (
             <section
+              id="panel-chat"
               data-testid="chat-panel"
               tabIndex={-1}
               className={`min-h-0 w-full md:h-full md:flex-1 ${mobileActivePanel === 'chat' ? 'h-full' : 'hidden'} md:!block`}

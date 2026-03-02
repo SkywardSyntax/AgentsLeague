@@ -1,9 +1,10 @@
 'use client';
 
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, createRef, type ErrorInfo, type ReactNode } from 'react';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  onRetry?: () => void;
 }
 
 interface ErrorBoundaryState {
@@ -12,6 +13,8 @@ interface ErrorBoundaryState {
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  private primaryButtonRef = createRef<HTMLButtonElement>();
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -24,6 +27,23 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('[ErrorBoundary] Uncaught error:', error, info.componentStack);
   }
+
+  componentDidMount(): void {
+    if (this.state.hasError) {
+      this.primaryButtonRef.current?.focus();
+    }
+  }
+
+  componentDidUpdate(_prevProps: ErrorBoundaryProps, prevState: ErrorBoundaryState): void {
+    if (this.state.hasError && !prevState.hasError) {
+      this.primaryButtonRef.current?.focus();
+    }
+  }
+
+  private handleRetry = (): void => {
+    this.setState({ hasError: false, error: null });
+    this.props.onRetry?.();
+  };
 
   render(): ReactNode {
     if (this.state.hasError) {
@@ -44,9 +64,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <p style={{ color: '#666', marginBottom: '1.5rem' }}>
               The application encountered an unexpected error. You can try reloading the page.
             </p>
-            <details style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
+            <details aria-label="Error details" style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
               <summary style={{ cursor: 'pointer', color: '#888' }}>Error details</summary>
               <pre
+                role="log"
                 style={{
                   marginTop: '0.5rem',
                   padding: '0.75rem',
@@ -61,20 +82,40 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 {this.state.error?.message}
               </pre>
             </details>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              style={{
-                padding: '0.5rem 1.5rem',
-                fontSize: '0.9rem',
-                borderRadius: '0.5rem',
-                border: '1px solid #ccc',
-                background: '#fff',
-                cursor: 'pointer',
-              }}
-            >
-              Reload
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              {this.props.onRetry && (
+                <button
+                  ref={this.primaryButtonRef}
+                  type="button"
+                  onClick={this.handleRetry}
+                  style={{
+                    padding: '0.5rem 1.5rem',
+                    fontSize: '0.9rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #ccc',
+                    background: '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Try Again
+                </button>
+              )}
+              <button
+                ref={this.props.onRetry ? undefined : this.primaryButtonRef}
+                type="button"
+                onClick={() => window.location.reload()}
+                style={{
+                  padding: '0.5rem 1.5rem',
+                  fontSize: '0.9rem',
+                  borderRadius: '0.5rem',
+                  border: '1px solid #ccc',
+                  background: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Reload
+              </button>
+            </div>
           </div>
         </div>
       );
