@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { exportChatToMarkdown, exportChatToJson, escapeStructuralMarkdown, wrapDisplayLatex, safeFilename } from '@/lib/client/export-chat';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  exportChatToMarkdown,
+  exportChatToJson,
+  escapeStructuralMarkdown,
+  wrapDisplayLatex,
+  safeFilename,
+  downloadChatAsMarkdown,
+  downloadChatAsJson,
+} from '@/lib/client/export-chat';
 import type { ChatMessage } from '@/types/agent';
 
 const msgs: ChatMessage[] = [
@@ -189,6 +197,56 @@ describe('exportChatToMarkdown system role', () => {
     ];
     const md = exportChatToMarkdown(messages, 'Test');
     expect(md).toContain('## System');
+  });
+});
+
+// --- iter11 03-B: export error handling ---
+
+describe('downloadChatAsMarkdown error handling', () => {
+  it('calls onError when URL.createObjectURL throws', () => {
+    const original = globalThis.URL.createObjectURL;
+    globalThis.URL.createObjectURL = () => { throw new Error('OOM'); };
+    try {
+      const onError = vi.fn();
+      downloadChatAsMarkdown(msgs, 'Test', onError);
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining('Export failed'));
+    } finally {
+      globalThis.URL.createObjectURL = original;
+    }
+  });
+
+  it('does not throw when onError is not provided', () => {
+    const original = globalThis.URL.createObjectURL;
+    globalThis.URL.createObjectURL = () => { throw new Error('OOM'); };
+    try {
+      expect(() => downloadChatAsMarkdown(msgs, 'Test')).not.toThrow();
+    } finally {
+      globalThis.URL.createObjectURL = original;
+    }
+  });
+});
+
+describe('downloadChatAsJson error handling', () => {
+  it('calls onError when URL.createObjectURL throws', () => {
+    const original = globalThis.URL.createObjectURL;
+    globalThis.URL.createObjectURL = () => { throw new Error('OOM'); };
+    try {
+      const onError = vi.fn();
+      downloadChatAsJson(msgs, meta, onError);
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining('Export failed'));
+    } finally {
+      globalThis.URL.createObjectURL = original;
+    }
+  });
+});
+
+describe('exportChatToMarkdown empty messages', () => {
+  it('returns header only for empty messages (no empty file)', () => {
+    const md = exportChatToMarkdown([], 'Empty Chat');
+    expect(md).toContain('# Empty Chat');
+    expect(md).toContain('Exported:');
+    // Must not be empty
+    expect(md.trim().length).toBeGreaterThan(10);
   });
 });
 

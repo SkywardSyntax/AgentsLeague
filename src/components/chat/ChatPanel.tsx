@@ -49,9 +49,32 @@ export function ChatPanel({
   const canManageChats = status === 'idle';
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const tablistRef = useRef<HTMLDivElement>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const currentIndex = chats.findIndex((c) => c.id === activeChatId);
+      if (currentIndex === -1) return;
+      const nextIndex =
+        e.key === 'ArrowRight'
+          ? (currentIndex + 1) % chats.length
+          : (currentIndex - 1 + chats.length) % chats.length;
+      const nextChat = chats[nextIndex];
+      if (nextChat && canManageChats) {
+        onSelectChat(nextChat.id);
+        // Focus the newly selected tab
+        const tabs = tablistRef.current?.querySelectorAll<HTMLElement>('[role="tab"]');
+        tabs?.[nextIndex]?.focus();
+      }
+    },
+    [chats, activeChatId, canManageChats, onSelectChat],
+  );
 
   const filteredMessages = useMemo(() => {
     if (!searchQuery) return messages;
@@ -89,27 +112,39 @@ export function ChatPanel({
     >
       <div className="border-b border-[var(--color-border)] px-3 py-2">
         <div className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-0.5">
-          {chats.map((chat) => {
-            const isActive = chat.id === activeChatId;
-            return (
-              <button
-                key={chat.id}
-                type="button"
-                onClick={() => onSelectChat(chat.id)}
-                disabled={!canManageChats || isActive}
-                className={`group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
-                  isActive
-                    ? 'border-[var(--color-accent)]/45 bg-[var(--color-accent-faint)] text-[var(--color-text-primary)]'
-                    : 'border-[var(--color-border)] bg-white/65 text-[var(--color-text-secondary)] hover:bg-white'
-                } disabled:cursor-not-allowed disabled:opacity-65`}
-              >
-                <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
-                <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] tabular-nums">
-                  {chat.messageCount}
-                </span>
-              </button>
-            );
-          })}
+          <div
+            ref={tablistRef}
+            role="tablist"
+            aria-label="Chat threads"
+            onKeyDown={handleTabKeyDown}
+            className="flex items-center gap-2"
+          >
+            {chats.map((chat) => {
+              const isActive = chat.id === activeChatId;
+              return (
+                <button
+                  key={chat.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls="chat-messages-panel"
+                  tabIndex={isActive ? 0 : -1}
+                  onClick={() => onSelectChat(chat.id)}
+                  disabled={!canManageChats}
+                  className={`group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
+                    isActive
+                      ? 'border-[var(--color-accent)]/45 bg-[var(--color-accent-faint)] text-[var(--color-text-primary)]'
+                      : 'border-[var(--color-border)] bg-white/65 text-[var(--color-text-secondary)] hover:bg-white'
+                  } disabled:cursor-not-allowed disabled:opacity-65`}
+                >
+                  <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
+                  <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] tabular-nums">
+                    {chat.messageCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
           <button
             type="button"
@@ -127,7 +162,11 @@ export function ChatPanel({
           <p className="font-[var(--font-display)] text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
             {activeChat?.title ?? 'Agent Channel'}
           </p>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]"
+          >
             {status}
           </p>
         </div>
@@ -157,14 +196,14 @@ export function ChatPanel({
             <div className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-white shadow-md">
               <button
                 type="button"
-                onClick={() => { downloadChatAsMarkdown(messages, activeChat?.title ?? 'Chat'); setShowExportMenu(false); }}
+                onClick={() => { downloadChatAsMarkdown(messages, activeChat?.title ?? 'Chat', setExportError); setShowExportMenu(false); }}
                 className="block w-full px-4 py-1.5 text-left text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
               >
                 Export as MD
               </button>
               <button
                 type="button"
-                onClick={() => { if (activeChat) downloadChatAsJson(messages, activeChat); setShowExportMenu(false); }}
+                onClick={() => { if (activeChat) downloadChatAsJson(messages, activeChat, setExportError); setShowExportMenu(false); }}
                 className="block w-full px-4 py-1.5 text-left text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
               >
                 Export as JSON
@@ -199,8 +238,22 @@ export function ChatPanel({
         onClose={() => { setSearchVisible(false); setSearchQuery(''); }}
       />
 
+      {exportError && (
+        <div role="alert" className="mx-4 mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {exportError}
+          <button
+            type="button"
+            onClick={() => setExportError(null)}
+            className="ml-2 font-medium underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div
         ref={messagesContainerRef}
+        id="chat-messages-panel"
         role="log"
         aria-label="Chat messages"
         aria-live="polite"
@@ -217,6 +270,7 @@ export function ChatPanel({
           return (
             <article
               key={message.id}
+              id={`msg-${message.id}`}
               className={`animate-rise-in rounded-2xl border px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${
                 isUser
                   ? 'ml-6 border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)]'
@@ -230,6 +284,7 @@ export function ChatPanel({
                 <button
                   type="button"
                   aria-label={`Delete ${isUser ? 'user' : 'assistant'} message`}
+                  aria-describedby={`msg-${message.id}`}
                   onClick={() => onDeleteMessage(message.id)}
                   disabled={status !== 'idle'}
                   className="rounded-full px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)] transition hover:bg-white/75 hover:text-[var(--color-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"

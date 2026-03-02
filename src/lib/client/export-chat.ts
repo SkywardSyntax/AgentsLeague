@@ -12,13 +12,16 @@ export function safeFilename(name: string): string {
 
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /** Escape standalone HR patterns in content to prevent structural confusion in exports. */
@@ -60,13 +63,29 @@ export function exportChatToJson(messages: ChatMessage[], meta: ChatThreadMeta):
 }
 
 /** Download chat as Markdown file. */
-export function downloadChatAsMarkdown(messages: ChatMessage[], title: string): void {
-  const md = exportChatToMarkdown(messages, title);
-  triggerDownload(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${safeFilename(title)}.md`);
+export function downloadChatAsMarkdown(
+  messages: ChatMessage[],
+  title: string,
+  onError?: (msg: string) => void,
+): void {
+  try {
+    const md = exportChatToMarkdown(messages, title);
+    triggerDownload(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${safeFilename(title)}.md`);
+  } catch {
+    onError?.('Export failed — chat may be too large. Try selecting fewer messages.');
+  }
 }
 
 /** Download chat as JSON file. */
-export function downloadChatAsJson(messages: ChatMessage[], meta: ChatThreadMeta): void {
-  const json = exportChatToJson(messages, meta);
-  triggerDownload(new Blob([json], { type: 'application/json;charset=utf-8' }), `${safeFilename(meta.title)}.json`);
+export function downloadChatAsJson(
+  messages: ChatMessage[],
+  meta: ChatThreadMeta,
+  onError?: (msg: string) => void,
+): void {
+  try {
+    const json = exportChatToJson(messages, meta);
+    triggerDownload(new Blob([json], { type: 'application/json;charset=utf-8' }), `${safeFilename(meta.title)}.json`);
+  } catch {
+    onError?.('Export failed — chat may be too large. Try selecting fewer messages.');
+  }
 }
