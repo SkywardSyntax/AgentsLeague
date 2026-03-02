@@ -39,9 +39,9 @@ describe('sanitizeUserMessage', () => {
     expect(result).toBe('<script>alert(1)</script>');
   });
 
-  it('handles unicode null bytes', () => {
+  it('strips null bytes from message', () => {
     const result = sanitizeUserMessage('hello\x00world');
-    expect(result).toBe('hello\x00world');
+    expect(result).toBe('helloworld');
   });
 
   it('accepts very long single line at exactly max length', () => {
@@ -55,5 +55,35 @@ describe('sanitizeUserMessage', () => {
 
   it('preserves tab characters', () => {
     expect(sanitizeUserMessage('hello\tworld')).toBe('hello\tworld');
+  });
+
+  it('strips BEL character (\\x07)', () => {
+    expect(sanitizeUserMessage('hello\x07world')).toBe('helloworld');
+  });
+
+  it('strips ESC character (\\x1B)', () => {
+    expect(sanitizeUserMessage('hello\x1Bworld')).toBe('helloworld');
+  });
+
+  it('preserves valid tab and newline', () => {
+    expect(sanitizeUserMessage('line1\n\tline2')).toBe('line1\n\tline2');
+  });
+
+  it('replaces lone surrogate \\uD800 with \\uFFFD', () => {
+    const result = sanitizeUserMessage('before\uD800after');
+    expect(result).toBe('before\uFFFDafter');
+  });
+
+  it('preserves valid surrogate pair (emoji)', () => {
+    const emoji = '😀';
+    expect(sanitizeUserMessage(`hello ${emoji} world`)).toBe(`hello ${emoji} world`);
+  });
+
+  it('strips multiple control chars in one message', () => {
+    expect(sanitizeUserMessage('a\x00b\x07c\x1Bd')).toBe('abcd');
+  });
+
+  it('preserves carriage return (\\r)', () => {
+    expect(sanitizeUserMessage('line1\r\nline2')).toBe('line1\r\nline2');
   });
 });

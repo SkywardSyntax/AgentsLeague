@@ -69,7 +69,7 @@ describe('drawSmoothStroke', () => {
     expect(ctx.bezierCurveTo).not.toHaveBeenCalled();
   });
 
-  it('uses bezierCurveTo for 4+ points', () => {
+  it('uses bezierCurveTo for 4+ points with per-segment modulation', () => {
     const ctx = mockCtx();
     const points = [
       { x: 0, y: 0 },
@@ -78,9 +78,10 @@ describe('drawSmoothStroke', () => {
       { x: 30, y: 5 },
     ];
     drawSmoothStroke(ctx, points, '#000', 1, camera, 1);
-    expect(ctx.beginPath).toHaveBeenCalledTimes(1);
-    expect(ctx.bezierCurveTo).toHaveBeenCalled();
-    expect(ctx.stroke).toHaveBeenCalledTimes(1);
+    // 3 Bézier segments for 4 points, each with its own beginPath/stroke
+    expect(ctx.beginPath).toHaveBeenCalledTimes(3);
+    expect(ctx.bezierCurveTo).toHaveBeenCalledTimes(3);
+    expect(ctx.stroke).toHaveBeenCalledTimes(3);
   });
 
   it('handles coincident (identical) points without error', () => {
@@ -155,5 +156,38 @@ describe('drawSmoothStroke — NaN/Infinity defense', () => {
       { x: 30, y: 5 },
     ];
     expect(() => drawSmoothStroke(ctx, points, '#000', 1, cam, 1)).not.toThrow();
+  });
+});
+
+describe('drawSmoothStroke — per-segment width modulation', () => {
+  it('6-point stroke uses per-segment rendering with multiple beginPath calls', () => {
+    const ctx = mockCtx();
+    const points = Array.from({ length: 6 }, (_, i) => ({ x: i * 10, y: (i % 2) * 5 }));
+    drawSmoothStroke(ctx, points, '#000', 2, camera, 1);
+    // 5 Bézier segments for 6 points — each gets its own beginPath/stroke
+    expect(ctx.beginPath).toHaveBeenCalledTimes(5);
+    expect(ctx.stroke).toHaveBeenCalledTimes(5);
+  });
+
+  it('lineWidth varies across segments for a 6-point stroke', () => {
+    const ctx = mockCtx();
+    const lineWidths: number[] = [];
+    Object.defineProperty(ctx, 'lineWidth', {
+      set(v: number) { lineWidths.push(v); },
+      get() { return lineWidths[lineWidths.length - 1] ?? 0; },
+    });
+    const points = Array.from({ length: 6 }, (_, i) => ({ x: i * 10, y: (i % 2) * 5 }));
+    drawSmoothStroke(ctx, points, '#000', 2, camera, 1);
+    expect(lineWidths.length).toBeGreaterThanOrEqual(2);
+    const unique = new Set(lineWidths);
+    expect(unique.size).toBeGreaterThan(1);
+  });
+
+  it('250-point stroke uses single-path fast-path (1 beginPath call)', () => {
+    const ctx = mockCtx();
+    const points = Array.from({ length: 250 }, (_, i) => ({ x: i, y: Math.sin(i) * 10 }));
+    drawSmoothStroke(ctx, points, '#000', 2, camera, 1);
+    expect(ctx.beginPath).toHaveBeenCalledTimes(1);
+    expect(ctx.stroke).toHaveBeenCalledTimes(1);
   });
 });

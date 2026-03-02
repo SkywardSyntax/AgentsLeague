@@ -45,9 +45,15 @@ export function drawStroke(
   }
 }
 
+/** Max segments for per-segment width modulation; beyond this use single-path fast-path. */
+const SMOOTH_STROKE_MODULATION_LIMIT = 200;
+
 /**
  * Draw a smooth stroke using Catmull-Rom → Bézier conversion.
  * Falls back to drawStroke for fewer than 4 points.
+ * Uses per-segment width modulation (matching drawStroke's sinusoidal style)
+ * for strokes with ≤ SMOOTH_STROKE_MODULATION_LIMIT segments, and a uniform
+ * single-path fast-path for longer strokes.
  */
 export function drawSmoothStroke(
   ctx: CanvasRenderingContext2D,
@@ -64,23 +70,49 @@ export function drawSmoothStroke(
   }
 
   const segs = catmullRomToBezier(points);
-  const px = screenStrokePx(baseWidth, camera.zoom, dpr);
-  const worldLineWidth = px / (camera.zoom * dpr);
 
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = worldLineWidth;
 
-  ctx.beginPath();
-  const start = points[0]!;
-  if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) return;
-  ctx.moveTo(start.x, start.y);
-  for (const seg of segs) {
-    if (!Number.isFinite(seg.cp1.x) || !Number.isFinite(seg.cp1.y) ||
+  if (segs.length > SMOOTH_STROKE_MODULATION_LIMIT) {
+    // Fast-path: single beginPath/stroke with uniform width
+    const px = screenStrokePx(baseWidth, camera.zoom, dpr);
+    const worldLineWidth = px / (camera.zoom * dpr);
+    ctx.lineWidth = worldLineWidth;
+
+    ctx.beginPath();
+    const start = points[0]!;
+    if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) return;
+    ctx.moveTo(start.x, start.y);
+    for (const seg of segs) {
+      if (!Number.isFinite(seg.cp1.x) || !Number.isFinite(seg.cp1.y) ||
+          !Number.isFinite(seg.cp2.x) || !Number.isFinite(seg.cp2.y) ||
+          !Number.isFinite(seg.p3.x) || !Number.isFinite(seg.p3.y)) continue;
+      ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
+    }
+    ctx.stroke();
+    return;
+  }
+
+  // Per-segment width modulation for visual consistency with drawStroke
+  const n = segs.length;
+  for (let i = 0; i < n; i++) {
+    const seg = segs[i]!;
+    if (!Number.isFinite(seg.p0.x) || !Number.isFinite(seg.p0.y) ||
+        !Number.isFinite(seg.cp1.x) || !Number.isFinite(seg.cp1.y) ||
         !Number.isFinite(seg.cp2.x) || !Number.isFinite(seg.cp2.y) ||
         !Number.isFinite(seg.p3.x) || !Number.isFinite(seg.p3.y)) continue;
+
+    const t = n > 1 ? i / (n - 1) : 0;
+    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
+    const px = screenStrokePx(baseWidth * widthMod, camera.zoom, dpr);
+    const worldLineWidth = px / (camera.zoom * dpr);
+
+    ctx.lineWidth = worldLineWidth;
+    ctx.beginPath();
+    ctx.moveTo(seg.p0.x, seg.p0.y);
     ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
+    ctx.stroke();
   }
-  ctx.stroke();
 }
