@@ -101,6 +101,15 @@ export function mockAgentStream(body: { userMessage: string }): Response {
       send({ type: 'assistant.text.done', turnId, messageId });
 
       await delay(100);
+      send({
+        type: 'whiteboard.layout.diagnostics',
+        turnId,
+        batchId: batch.batch_id,
+        violationsFixed: [],
+        templateUsed: 'legacy_draw_batch',
+        fallbackUsed: false,
+        semanticBatch: null,
+      });
       send({ type: 'whiteboard.batch', turnId, batch });
 
       await delay(50);

@@ -43,7 +43,7 @@ const TextSchema = BaseElementSchema.extend({
   type: z.literal('text'),
   x: z.number().finite(),
   y: z.number().finite(),
-  text: z.string(),
+  text: z.string().max(500),
   size: z.number().positive().optional(),
 });
 
@@ -51,7 +51,7 @@ const LatexSchema = BaseElementSchema.extend({
   type: z.literal('latex'),
   x: z.number().finite(),
   y: z.number().finite(),
-  tex: z.string(),
+  tex: z.string().max(2_000),
   displayMode: z.boolean().optional(),
   fontSize: z.number().positive().optional(),
   align: z.enum(['left', 'center', 'right']).optional(),
@@ -74,13 +74,13 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
 export const DrawBatchSchema = z.object({
   batch_id: z.string().min(1),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
-  elements: z.array(DrawElementSchema),
+  elements: z.array(DrawElementSchema).max(200),
 });
 
 const ChatMessageSchema = z.object({
   id: z.string().min(1),
   role: z.enum(['user', 'assistant', 'system']),
-  content: z.string(),
+  content: z.string().max(50_000),
   createdAt: z.number().int().optional(),
 });
 
@@ -248,14 +248,14 @@ export const SemanticBatchSchema = z.object({
   batch_id: z.string().min(1),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
   template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic']),
-  blocks: z.array(SemanticBlockSchema).min(1),
+  blocks: z.array(SemanticBlockSchema).min(1).max(50),
   relations: z.array(SemanticRelationSchema).optional(),
   intent: z.enum(['teach', 'derive', 'compare', 'summarize']).optional(),
 });
 
 export const AgentStreamRequestSchema = z.object({
   sessionId: z.string().min(1),
-  userMessage: z.string().min(1),
+  userMessage: z.string().min(1).max(10_000),
   history: z.array(ChatMessageSchema).max(100),
   plannerMode: z.enum(['semantic_preferred', 'legacy_draw_only']).optional(),
   whiteboardContext: WhiteboardContextSchema.optional(),
@@ -334,7 +334,10 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         warnings.push(`Rect ${id} has invalid coordinates`);
         continue;
       }
-      elements.push({ id, type, x, y, w, h, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      const cw = Math.max(1, Math.abs(w));
+      const ch = Math.max(1, Math.abs(h));
+      if (cw !== w || ch !== h) warnings.push(`Rect ${id} dimensions clamped to positive`);
+      elements.push({ id, type, x, y, w: cw, h: ch, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
       continue;
     }
 
@@ -347,7 +350,10 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         warnings.push(`Ellipse ${id} has invalid coordinates`);
         continue;
       }
-      elements.push({ id, type, cx, cy, rx, ry, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      const crx = Math.max(1, Math.abs(rx));
+      const cry = Math.max(1, Math.abs(ry));
+      if (crx !== rx || cry !== ry) warnings.push(`Ellipse ${id} radii clamped to positive`);
+      elements.push({ id, type, cx, cy, rx: crx, ry: cry, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
       continue;
     }
 
@@ -671,6 +677,7 @@ export function normalizeSemanticBatchPayload(payload: unknown): {
     return { normalized: null, warnings: [...warnings, 'No valid semantic blocks in payload'] };
   }
 
+  const blockIds = new Set(blocks.map((b) => b.id));
   const rawRelations = Array.isArray(rec.relations) ? rec.relations : [];
   const relations: NonNullable<SemanticBatchInput['relations']> = [];
   for (let idx = 0; idx < rawRelations.length; idx++) {
@@ -680,6 +687,10 @@ export function normalizeSemanticBatchPayload(payload: unknown): {
     const from_block_id = asString(rawRel.from_block_id);
     const to_block_id = asString(rawRel.to_block_id);
     if (!type || !from_block_id || !to_block_id) continue;
+    if (!blockIds.has(from_block_id) || !blockIds.has(to_block_id)) {
+      warnings.push(`Relation ${asString(rawRel.id) ?? idx} references non-existent block`);
+      continue;
+    }
     relations.push({
       id: asString(rawRel.id) ?? `rel-${idx + 1}`,
       type,

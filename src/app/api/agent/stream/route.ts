@@ -16,6 +16,7 @@ import {
   getModel,
 } from '@/lib/server/openai';
 import { formatSSE, sseHeaders } from '@/lib/server/sse';
+import { createLogger } from '@/lib/server/logger';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
@@ -279,6 +280,10 @@ function estimateProvisionalAdvance(chunk: { kind: 'latex' | 'text'; value: stri
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const requestId = randomUUID();
+  const startTime = Date.now();
+  const log = createLogger({ requestId, route: '/api/agent/stream' });
+
   // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
   if (isMockMode()) {
     let json: unknown;
@@ -287,10 +292,11 @@ export async function POST(request: Request): Promise<Response> {
     } catch {
       return new Response(
         JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } },
+        { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
       );
     }
     const body = json as { userMessage?: string };
+    log.info('mock_stream_request');
     return mockAgentStream({ userMessage: body.userMessage ?? '' });
   }
 
@@ -300,17 +306,20 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     return new Response(
       JSON.stringify({ error: 'BAD_REQUEST', message: 'Request body must be JSON' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } },
+      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
     );
   }
 
   const parsed = AgentStreamRequestSchema.safeParse(json);
   if (!parsed.success) {
+    log.warn('validation_error', { issues: parsed.error.issues.length });
     return new Response(
       JSON.stringify({ error: 'VALIDATION_ERROR', issues: parsed.error.issues }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } },
+      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
     );
   }
+
+  log.info('stream_start', { sessionId: parsed.data.sessionId, plannerMode: parsed.data.plannerMode });
 
   const client = createOpenAIClient();
   const turnId = randomUUID();
@@ -356,6 +365,7 @@ export async function POST(request: Request): Promise<Response> {
         let sawToolBatchInTurn = false;
         let finalUsage: { prompt?: number; completion?: number; total?: number } | undefined;
         let streamTextBuffer = '';
+        const MAX_STREAM_BUFFER = 32_768;
         const provisionalSeen = new Set<string>();
         let provisionalIndex = 0;
         let turnContextV2 = parsed.data.whiteboardContextV2
@@ -469,7 +479,15 @@ export async function POST(request: Request): Promise<Response> {
           }
         };
 
+        const TURN_TIMEOUT_MS = 90_000;
+        const turnAbort = new AbortController();
+        const turnTimer = setTimeout(() => turnAbort.abort(), TURN_TIMEOUT_MS);
+
         for (let iteration = 0; iteration < 6; iteration++) {
+          if (turnAbort.signal.aborted) {
+            send({ type: 'error', turnId, code: 'TURN_TIMEOUT', message: 'Turn exceeded 90s timeout', retryable: true });
+            break;
+          }
           const modelStream = await client.responses.create(
             {
               model: getModel(),
@@ -487,7 +505,7 @@ export async function POST(request: Request): Promise<Response> {
               temperature: 0.6,
             },
             {
-              signal: AbortSignal.timeout(30_000),
+              signal: turnAbort.signal,
             },
           );
 
@@ -503,6 +521,9 @@ export async function POST(request: Request): Promise<Response> {
               sawTextInTurn = true;
               send({ type: 'assistant.text.delta', turnId, delta: event.delta });
               streamTextBuffer += event.delta;
+              if (streamTextBuffer.length > MAX_STREAM_BUFFER) {
+                streamTextBuffer = streamTextBuffer.slice(streamTextBuffer.length - MAX_STREAM_BUFFER);
+              }
               if (/[\\\n\]}]$/.test(event.delta)) {
                 emitProvisionalFromStream();
               }
@@ -514,6 +535,9 @@ export async function POST(request: Request): Promise<Response> {
               sawTextInTurn = true;
               send({ type: 'assistant.text.delta', turnId, delta: event.text });
               streamTextBuffer += event.text;
+              if (streamTextBuffer.length > MAX_STREAM_BUFFER) {
+                streamTextBuffer = streamTextBuffer.slice(streamTextBuffer.length - MAX_STREAM_BUFFER);
+              }
               emitProvisionalFromStream();
               continue;
             }
@@ -887,6 +911,7 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         send({ type: 'turn.done', turnId, usage: finalUsage });
+        log.info('stream_end', { turnId, durationMs: Date.now() - startTime, usage: finalUsage });
 
         if (!sawTextInTurn) {
           send({
@@ -898,6 +923,7 @@ export async function POST(request: Request): Promise<Response> {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected stream failure';
+        log.error('stream_failure', { turnId, error: message, durationMs: Date.now() - startTime });
         send({
           type: 'error',
           turnId,
@@ -906,10 +932,11 @@ export async function POST(request: Request): Promise<Response> {
           retryable: true,
         });
       } finally {
+        clearTimeout(turnTimer);
         controller.close();
       }
     },
   });
 
-  return new Response(stream, { headers: sseHeaders() });
+  return new Response(stream, { headers: { ...sseHeaders(), 'X-Request-Id': requestId } });
 }
