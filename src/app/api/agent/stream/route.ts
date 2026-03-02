@@ -47,7 +47,13 @@ export interface ClassifiedError {
 }
 
 export function classifyStreamError(error: unknown, requestAborted: boolean): ClassifiedError {
-  const errName = (error as { name?: string })?.name;
+  if (error == null || typeof error !== 'object') {
+    const message = typeof error === 'string' ? error : 'Unexpected stream failure';
+    return { code: 'STREAM_FAILURE', message, retryable: true };
+  }
+  const errObj = error as Record<string, unknown>;
+
+  const errName = typeof errObj.name === 'string' ? errObj.name : undefined;
   if (errName === 'AbortError') {
     if (requestAborted) {
       return { code: 'CLIENT_DISCONNECTED', message: 'Client disconnected', retryable: false };
@@ -56,9 +62,9 @@ export function classifyStreamError(error: unknown, requestAborted: boolean): Cl
   }
 
   // OpenAI SDK error detection via status code (safe across SDK versions)
-  const status = (error as { status?: number }).status;
+  const status = typeof errObj.status === 'number' ? errObj.status : undefined;
   if (status === 429) {
-    const headers = (error as { headers?: Record<string, string> }).headers;
+    const headers = errObj.headers as Record<string, string> | undefined;
     const retryAfterSec = headers?.['retry-after'];
     const rawMs = retryAfterSec ? Math.ceil(Number(retryAfterSec) * 1000) : undefined;
     const retryAfterMs = Number.isFinite(rawMs) ? rawMs : undefined;
@@ -70,7 +76,7 @@ export function classifyStreamError(error: unknown, requestAborted: boolean): Cl
   if (error instanceof Error && /Connection error|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EAI_AGAIN|socket hang up/i.test(error.message)) {
     return { code: 'API_CONNECTION_ERROR', message: error.message, retryable: true };
   }
-  const errorCode = (error as { code?: string })?.code;
+  const errorCode = typeof errObj.code === 'string' ? errObj.code : undefined;
   if (typeof errorCode === 'string' && /^(ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EAI_AGAIN)$/.test(errorCode)) {
     const message = error instanceof Error ? error.message : 'Network error';
     return { code: 'API_CONNECTION_ERROR', message, retryable: true };

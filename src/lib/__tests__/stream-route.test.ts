@@ -136,6 +136,34 @@ describe('classifyStreamError', () => {
     expect(result.retryable).toBe(true);
   });
 
+  it('classifies null error as STREAM_FAILURE with default message', () => {
+    const result = classifyStreamError(null, false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.message).toBe('Unexpected stream failure');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies undefined error as STREAM_FAILURE with default message', () => {
+    const result = classifyStreamError(undefined, false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.message).toBe('Unexpected stream failure');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies string error with its message', () => {
+    const result = classifyStreamError('custom error text', false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.message).toBe('custom error text');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies numeric error as STREAM_FAILURE with default message', () => {
+    const result = classifyStreamError(42, false);
+    expect(result.code).toBe('STREAM_FAILURE');
+    expect(result.message).toBe('Unexpected stream failure');
+    expect(result.retryable).toBe(true);
+  });
+
   it('classifies ECONNRESET as API_CONNECTION_ERROR', () => {
     const err = new Error('read ECONNRESET');
     const result = classifyStreamError(err, false);
