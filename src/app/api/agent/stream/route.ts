@@ -90,6 +90,20 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  // Body size guard — reject before parsing to avoid memory exhaustion
+  const MAX_BODY_BYTES = 524_288; // 512 KB
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength) {
+    const len = parseInt(contentLength, 10);
+    if (!Number.isNaN(len) && len > MAX_BODY_BYTES) {
+      log.warn('payload_too_large', { bytes: len, maxBytes: MAX_BODY_BYTES });
+      return new Response(
+        JSON.stringify({ error: 'PAYLOAD_TOO_LARGE', message: `Request body exceeds ${MAX_BODY_BYTES} bytes` }),
+        { status: 413, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId } },
+      );
+    }
+  }
+
   // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
   if (isMockMode()) {
     let json: unknown;

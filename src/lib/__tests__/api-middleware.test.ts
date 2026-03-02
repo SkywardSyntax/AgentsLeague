@@ -8,6 +8,7 @@ import {
   withContentType,
   withRateLimit,
   compose,
+  applyMiddleware,
 } from '@/lib/server/api-middleware';
 import type { HandlerContext } from '@/lib/server/api-middleware';
 import { z } from 'zod';
@@ -249,5 +250,81 @@ describe('withBodySizeLimit (chunked transfer)', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.small).toBe(true);
+  });
+});
+
+describe('withValidation — empty and binary body edge cases', () => {
+  const schema = z.object({ name: z.string() });
+
+  it('returns 400 for empty body (no content)', async () => {
+    const handler = withValidation(schema, async () => Response.json({ ok: true }));
+    const req = new Request('http://localhost/test', { method: 'POST' });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for binary/non-UTF8 body', async () => {
+    const handler = withValidation(schema, async () => Response.json({ ok: true }));
+    const binary = new Uint8Array([0x80, 0x81, 0xff, 0xfe, 0x00]);
+    const req = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: binary,
+    });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('withBodySizeLimit — custom maxBytes and exact boundary', () => {
+  it('rejects body at exactly maxBytes + 1', async () => {
+    const handler = withBodySizeLimit(50, async () => Response.json({ ok: true }));
+    const res = await handler(makeRequest(undefined, { 'Content-Length': '51' }), ctx);
+    expect(res.status).toBe(413);
+  });
+
+  it('allows body at exactly maxBytes', async () => {
+    const handler = withBodySizeLimit(50, async () => Response.json({ ok: true }));
+    const res = await handler(makeRequest(undefined, { 'Content-Length': '50' }), ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('passes through when no body and no Content-Length', async () => {
+    const handler = withBodySizeLimit(100, async () => Response.json({ ok: true }));
+    const req = new Request('http://localhost/test', { method: 'POST' });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('applyMiddleware integration', () => {
+  it('composes content-type + body-size + validation end-to-end', async () => {
+    const schema = z.object({ msg: z.string() });
+    const pipeline = compose(
+      (h) => withContentType('application/json', h),
+      (h) => withBodySizeLimit(10_000, h),
+    );
+    const handler = pipeline(
+      withValidation(schema, async (_req, c) => Response.json({ echo: c.data.msg })),
+    );
+
+    // Happy path
+    const res1 = await handler(makeRequest({ msg: 'hello' }), ctx);
+    expect(res1.status).toBe(200);
+    const body1 = await res1.json();
+    expect(body1.echo).toBe('hello');
+
+    // Wrong content-type
+    const req2 = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'test',
+    });
+    const res2 = await handler(req2, ctx);
+    expect(res2.status).toBe(415);
+
+    // Oversized
+    const res3 = await handler(makeRequest({ msg: 'x' }, { 'Content-Length': '999999' }), ctx);
+    expect(res3.status).toBe(413);
   });
 });

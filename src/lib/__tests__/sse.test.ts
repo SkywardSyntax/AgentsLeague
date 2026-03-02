@@ -163,6 +163,40 @@ describe('createSSEHeartbeat', () => {
     vi.advanceTimersByTime(500);
     expect(callCount).toBe(2);
   });
+
+  it('uses default 15s interval when no intervalMs provided', () => {
+    vi.useFakeTimers();
+    const chunks: Uint8Array[] = [];
+    const controller = {
+      enqueue: (chunk: Uint8Array) => chunks.push(chunk),
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+
+    const hb = createSSEHeartbeat(controller);
+    // No heartbeat before 15s
+    vi.advanceTimersByTime(14_999);
+    expect(chunks).toHaveLength(0);
+    // Heartbeat at 15s
+    vi.advanceTimersByTime(1);
+    expect(chunks).toHaveLength(1);
+    hb.stop();
+  });
+
+  it('heartbeat format is a valid SSE comment (starts with colon)', () => {
+    vi.useFakeTimers();
+    const chunks: Uint8Array[] = [];
+    const controller = {
+      enqueue: (chunk: Uint8Array) => chunks.push(chunk),
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+
+    const hb = createSSEHeartbeat(controller, 100);
+    vi.advanceTimersByTime(100);
+    hb.stop();
+
+    const decoded = new TextDecoder().decode(chunks[0]);
+    // SSE comment: starts with colon, ends with double newline
+    expect(decoded).toMatch(/^:/);
+    expect(decoded).toMatch(/\n\n$/);
+  });
 });
 
 describe('formatSSE edge cases', () => {

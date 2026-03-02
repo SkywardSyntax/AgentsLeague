@@ -750,4 +750,42 @@ describe('relation target validation', () => {
     expect(normalized!.relations).toHaveLength(1);
     expect(warnings.filter((w) => w.includes('non-existent'))).toHaveLength(0);
   });
+
+  it('drops relation where both endpoints reference non-existent blocks', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: makeBlocks('a', 'b'),
+      relations: [
+        { id: 'r1', type: 'maps_to', from_block_id: 'ghost1', to_block_id: 'ghost2' },
+      ],
+    });
+    expect(normalized!.relations ?? []).toHaveLength(0);
+    expect(warnings.some((w) => w.includes('non-existent'))).toBe(true);
+  });
+
+  it('empty relations array produces no errors', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: makeBlocks('a'),
+      relations: [],
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.relations ?? []).toHaveLength(0);
+    expect(warnings.filter((w) => w.includes('relation'))).toHaveLength(0);
+  });
+
+  it('empty blocks with non-empty relations returns null and drops all', () => {
+    const { normalized, warnings } = normalizeSemanticBatchPayload({
+      batch_id: 'b1',
+      template: 'freeform_semantic',
+      blocks: [],
+      relations: [
+        { id: 'r1', type: 'maps_to', from_block_id: 'a', to_block_id: 'b' },
+      ],
+    });
+    expect(normalized).toBeNull();
+    expect(warnings.some((w) => w.includes('No valid semantic blocks'))).toBe(true);
+  });
 });
