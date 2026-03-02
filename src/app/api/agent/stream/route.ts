@@ -59,14 +59,20 @@ export function classifyStreamError(error: unknown, requestAborted: boolean): Cl
   if (status === 429) {
     const headers = (error as { headers?: Record<string, string> }).headers;
     const retryAfterSec = headers?.['retry-after'];
-    const retryAfterMs = retryAfterSec ? Math.ceil(Number(retryAfterSec) * 1000) : undefined;
+    const rawMs = retryAfterSec ? Math.ceil(Number(retryAfterSec) * 1000) : undefined;
+    const retryAfterMs = Number.isFinite(rawMs) ? rawMs : undefined;
     return { code: 'RATE_LIMIT', message: 'Rate limited by upstream', retryable: true, retryAfterMs };
   }
   if (status === 401 || status === 403) {
     return { code: 'AUTH_ERROR', message: 'Authentication failed', retryable: false };
   }
-  if (error instanceof Error && error.message?.includes('Connection error')) {
+  if (error instanceof Error && /Connection error|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EAI_AGAIN|socket hang up/i.test(error.message)) {
     return { code: 'API_CONNECTION_ERROR', message: error.message, retryable: true };
+  }
+  const errorCode = (error as { code?: string })?.code;
+  if (typeof errorCode === 'string' && /^(ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EAI_AGAIN)$/.test(errorCode)) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    return { code: 'API_CONNECTION_ERROR', message, retryable: true };
   }
 
   const message = error instanceof Error ? error.message : 'Unexpected stream failure';

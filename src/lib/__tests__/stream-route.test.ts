@@ -135,4 +135,55 @@ describe('classifyStreamError', () => {
     expect(result.code).toBe('STREAM_FAILURE');
     expect(result.retryable).toBe(true);
   });
+
+  it('classifies ECONNRESET as API_CONNECTION_ERROR', () => {
+    const err = new Error('read ECONNRESET');
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies ETIMEDOUT as API_CONNECTION_ERROR', () => {
+    const err = new Error('connect ETIMEDOUT 1.2.3.4:443');
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies socket hang up as API_CONNECTION_ERROR', () => {
+    const err = new Error('socket hang up');
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies error with code property ECONNRESET as API_CONNECTION_ERROR', () => {
+    const err = new Error('some generic message');
+    (err as NodeJS.ErrnoException).code = 'ECONNRESET';
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies error with code property ENOTFOUND as API_CONNECTION_ERROR', () => {
+    const err = new Error('getaddrinfo failed');
+    (err as NodeJS.ErrnoException).code = 'ENOTFOUND';
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('API_CONNECTION_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('returns undefined retryAfterMs for HTTP-date Retry-After header', () => {
+    const err = { status: 429, headers: { 'retry-after': 'Thu, 01 Dec 2025 16:00:00 GMT' }, message: 'rate limited' };
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('RATE_LIMIT');
+    expect(result.retryAfterMs).toBeUndefined();
+  });
+
+  it('returns valid retryAfterMs for numeric Retry-After header', () => {
+    const err = { status: 429, headers: { 'retry-after': '10' }, message: 'rate limited' };
+    const result = classifyStreamError(err, false);
+    expect(result.code).toBe('RATE_LIMIT');
+    expect(result.retryAfterMs).toBe(10000);
+  });
 });

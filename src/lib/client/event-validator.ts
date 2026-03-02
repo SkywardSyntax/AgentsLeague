@@ -26,8 +26,16 @@ export function isValidAgentSSEEvent(data: unknown): data is AgentSSEEvent {
       return typeof obj.delta === 'string';
     case 'assistant.text.done':
       return typeof obj.messageId === 'string';
-    case 'whiteboard.batch':
-      return obj.batch != null && typeof obj.batch === 'object';
+    case 'whiteboard.batch': {
+      if (obj.batch == null || typeof obj.batch !== 'object' || Array.isArray(obj.batch)) return false;
+      const batch = obj.batch as Record<string, unknown>;
+      if (typeof batch.batch_id !== 'string') return false;
+      if (!Array.isArray(batch.elements)) return false;
+      for (const el of batch.elements) {
+        if (el == null || typeof el !== 'object' || Array.isArray(el)) return false;
+      }
+      return true;
+    }
     case 'whiteboard.layout.diagnostics':
       return typeof obj.batchId === 'string' && Array.isArray(obj.violationsFixed);
     case 'warning':

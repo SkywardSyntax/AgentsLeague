@@ -26,6 +26,8 @@ function shouldRetry(
   }
   if (httpStatus != null) {
     if (httpStatus === 429) return { retry: true, reason: 'rate_limited' };
+    if (httpStatus === 408) return { retry: true, reason: 'request_timeout' };
+    if (httpStatus === 503) return { retry: true, reason: 'service_unavailable' };
     if (httpStatus >= 400 && httpStatus < 500) return { retry: false, reason: `http_${httpStatus}` };
     if (httpStatus >= 500) return { retry: true, reason: `http_${httpStatus}` };
   }
@@ -85,6 +87,21 @@ describe('shouldRetry', () => {
   it('retries on HTTP 502', () => {
     const result = shouldRetry(null, 502, null);
     expect(result.retry).toBe(true);
+  });
+
+  it('retries on HTTP 408 (request timeout)', () => {
+    const result = shouldRetry(null, 408, null);
+    expect(result).toEqual({ retry: true, reason: 'request_timeout' });
+  });
+
+  it('retries on HTTP 503 (service unavailable)', () => {
+    const result = shouldRetry(null, 503, null);
+    expect(result).toEqual({ retry: true, reason: 'service_unavailable' });
+  });
+
+  it('does not retry on HTTP 404', () => {
+    const result = shouldRetry(null, 404, null);
+    expect(result).toEqual({ retry: false, reason: 'http_404' });
   });
 
   it('retries on retryable error event', () => {

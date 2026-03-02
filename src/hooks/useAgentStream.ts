@@ -32,6 +32,8 @@ function shouldRetry(
   // HTTP-level errors
   if (httpStatus != null) {
     if (httpStatus === 429) return { retry: true, reason: 'rate_limited' };
+    if (httpStatus === 408) return { retry: true, reason: 'request_timeout' };
+    if (httpStatus === 503) return { retry: true, reason: 'service_unavailable' };
     if (httpStatus >= 400 && httpStatus < 500) return { retry: false, reason: `http_${httpStatus}` };
     if (httpStatus >= 500) return { retry: true, reason: `http_${httpStatus}` };
   }
@@ -228,11 +230,14 @@ export function useAgentStream() {
 function retrySleep(delayMs: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
   return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, delayMs);
     const onAbort = () => {
       clearTimeout(timer);
       reject(new DOMException('Aborted', 'AbortError'));
     };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
     signal.addEventListener('abort', onAbort, { once: true });
   });
 }

@@ -11,7 +11,7 @@ describe('isValidAgentSSEEvent', () => {
   });
 
   it('accepts valid whiteboard.batch', () => {
-    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { elements: [] } })).toBe(true);
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [] } })).toBe(true);
   });
 
   it('accepts valid whiteboard.layout.diagnostics', () => {
@@ -75,6 +75,34 @@ describe('isValidAgentSSEEvent', () => {
 
   it('rejects whiteboard.batch without batch object', () => {
     expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1' })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with batch_id as number', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 123, elements: [] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with elements as string', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: 'not-array' } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch when batch is an array', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: [1, 2, 3] })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with null element in elements', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [null] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with undefined element in elements', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [undefined] } })).toBe(false);
+  });
+
+  it('rejects whiteboard.batch with array element in elements', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [[]] } })).toBe(false);
+  });
+
+  it('accepts whiteboard.batch with valid element objects', () => {
+    expect(isValidAgentSSEEvent({ type: 'whiteboard.batch', turnId: 't1', batch: { batch_id: 'b1', elements: [{ type: 'rect', id: 'r1' }] } })).toBe(true);
   });
 
   it('rejects diagnostics without violationsFixed array', () => {
