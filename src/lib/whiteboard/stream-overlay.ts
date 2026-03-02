@@ -2,14 +2,17 @@ import type { DrawBatch, DrawElement } from '@/types/agent';
 
 const STREAM_OVERLAY_ID_PREFIXES = ['stream-text-', 'stream-latex-'] as const;
 
+/** Returns true if `id` starts with a stream overlay prefix (`stream-text-` or `stream-latex-`). */
 export function isStreamOverlayElementId(id: string): boolean {
   return STREAM_OVERLAY_ID_PREFIXES.some((prefix) => id.startsWith(prefix));
 }
 
+/** Filter out stream overlay elements from the persisted scene array. */
 export function removeStreamOverlayFromScene(scene: DrawElement[]): DrawElement[] {
   return scene.filter((element) => !isStreamOverlayElementId(element.id));
 }
 
+/** Filter out stream overlay elements from all batches, dropping empty batches. */
 export function removeStreamOverlayFromBatches(batches: DrawBatch[]): DrawBatch[] {
   return batches
     .map((batch) => ({
@@ -33,6 +36,11 @@ function isUsefulStepLine(line: string): boolean {
   return false;
 }
 
+/**
+ * Extract useful step lines (numbered items, bullets, headings) from
+ * streaming assistant text. Returns at most 8 most recent lines, excluding
+ * incomplete (un-newlined) trailing content and LaTeX commands.
+ */
 export function extractStreamStepLines(content: string): string[] {
   const lines = content.split('\n');
   const completeLines = content.endsWith('\n') ? lines : lines.slice(0, -1);
@@ -44,10 +52,12 @@ export function extractStreamStepLines(content: string): string[] {
     .slice(-8);
 }
 
+/** Normalize and prefix a text line as a dedup key for stream overlay. */
 export function toStreamTextKey(line: string): string {
   return `text:${normalizeLineForKey(line)}`;
 }
 
+/** Normalize and prefix a TeX string as a dedup key for stream overlay. */
 export function toStreamLatexKey(tex: string): string {
   return `latex:${tex.replace(/\s+/g, ' ').trim()}`;
 }

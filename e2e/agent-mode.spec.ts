@@ -185,4 +185,35 @@ test.describe('Agent Mode', () => {
     // Mock responses start with "Here is a" prefix
     expect(assistantMsg?.content).toMatch(/Here is a/);
   });
+
+  test('mock-mode draw_batch events have valid schema fields', async ({ page }) => {
+    await page.goto('/?mode=agent');
+    // Wait for first turn to complete with elements drawn
+    await page.waitForFunction(
+      () =>
+        window.__agentAPI?.getStatus() === 'idle' &&
+        window.__agentAPI?.getElementCount() > 0,
+      { timeout: 30_000 },
+    );
+
+    const lastEvents = await page.evaluate(() => window.__agentAPI?.getLastTurnEvents() ?? []);
+    expect(lastEvents.length).toBeGreaterThan(0);
+
+    // Parse each event and validate draw_batch schema fields
+    for (const raw of lastEvents) {
+      const event = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (event.type === 'draw_batch' || event.draw_batch) {
+        const batch = event.draw_batch ?? event;
+        expect(batch.batch_id).toBeDefined();
+        expect(typeof batch.batch_id).toBe('string');
+        expect(Array.isArray(batch.elements)).toBe(true);
+        for (const el of batch.elements) {
+          expect(el.id).toBeDefined();
+          expect(typeof el.id).toBe('string');
+          expect(el.type).toBeDefined();
+          expect(typeof el.type).toBe('string');
+        }
+      }
+    }
+  });
 });
