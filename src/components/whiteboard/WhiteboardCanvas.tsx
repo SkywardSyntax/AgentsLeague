@@ -76,6 +76,15 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const [size, setSize] = useState({ width: 1000, height: 700 });
   const [camera, setCamera] = useState<Camera>({ x: 40, y: 40, zoom: 1 });
   const [stats, setStats] = useState({ active: 0, committed: 0 });
+  const [showDebug, setShowDebug] = useState(false);
+
+  const resetCamera = useCallback(() => setCamera({ x: 40, y: 40, zoom: 1 }), []);
+  const zoomIn = useCallback(() => {
+    setCamera((c) => ({ ...c, zoom: clamp(c.zoom * 1.25, MIN_ZOOM, MAX_ZOOM) }));
+  }, []);
+  const zoomOut = useCallback(() => {
+    setCamera((c) => ({ ...c, zoom: clamp(c.zoom / 1.25, MIN_ZOOM, MAX_ZOOM) }));
+  }, []);
 
   const resizeCanvases = useCallback(() => {
     const container = containerRef.current;
@@ -336,10 +345,50 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <canvas ref={activeRef} className="absolute inset-0" />
       </div>
 
-      <div className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
-        <div>Zoom: {(camera.zoom * 100).toFixed(0)}%</div>
-        <div>Committed: {stats.committed}</div>
-        <div>Active: {stats.active}</div>
+      <div className="absolute left-3 top-3 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={resetCamera}
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          title="Reset view (Ctrl+0)"
+        >
+          ⌂
+        </button>
+        <button
+          type="button"
+          onClick={zoomOut}
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          title="Zoom out"
+        >
+          −
+        </button>
+        <span
+          className="glass-panel rounded-lg px-2 py-1.5 text-xs tabular-nums text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"
+          data-testid="zoom-level"
+        >
+          {(camera.zoom * 100).toFixed(0)}%
+        </span>
+        <button
+          type="button"
+          onClick={zoomIn}
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          title="Zoom in"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDebug((v) => !v)}
+          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)]"
+          title="Toggle debug info"
+        >
+          ···
+        </button>
+        {showDebug && (
+          <span className="glass-panel rounded-lg px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] shadow-[var(--shadow-card)]">
+            C:{stats.committed} A:{stats.active}
+          </span>
+        )}
       </div>
     </section>
   );

@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import type { ChatMessage } from '@/types/agent';
 import { MessageContent } from './MessageContent';
+import { PillButton } from '@/components/ui/PillButton';
 
 export interface ChatThreadMeta {
   id: string;
@@ -25,6 +26,7 @@ interface ChatPanelProps {
   onDeleteMessage: (messageId: string) => void;
   onClearChat: () => void;
   disabled: boolean;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
 }
 
 export function ChatPanel({
@@ -42,6 +44,7 @@ export function ChatPanel({
   onDeleteMessage,
   onClearChat,
   disabled,
+  inputRef,
 }: ChatPanelProps) {
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
   const canManageChats = status === 'idle';
@@ -65,33 +68,28 @@ export function ChatPanel({
           {chats.map((chat) => {
             const isActive = chat.id === activeChatId;
             return (
-              <button
+              <PillButton
                 key={chat.id}
-                type="button"
+                variant={isActive ? 'accent' : 'default'}
                 onClick={() => onSelectChat(chat.id)}
                 disabled={!canManageChats || isActive}
-                className={`group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
-                  isActive
-                    ? 'border-[var(--color-accent)]/45 bg-[var(--color-accent-faint)] text-[var(--color-text-primary)]'
-                    : 'border-[var(--color-border)] bg-white/65 text-[var(--color-text-secondary)] hover:bg-white'
-                } disabled:cursor-not-allowed disabled:opacity-65`}
+                className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-white/65 hover:bg-white'} disabled:opacity-65`}
               >
                 <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
                 <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] tabular-nums">
                   {chat.messageCount}
                 </span>
-              </button>
+              </PillButton>
             );
           })}
 
-          <button
-            type="button"
+          <PillButton
             onClick={onCreateChat}
             disabled={!canManageChats}
-            className="shrink-0 rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
+            className="shrink-0 bg-white/70 hover:bg-white"
           >
             + New Chat
-          </button>
+          </PillButton>
         </div>
       </div>
 
@@ -104,33 +102,32 @@ export function ChatPanel({
             {status}
           </p>
         </div>
-        <button
-          type="button"
+        <PillButton
           onClick={onCancel}
           disabled={status === 'idle'}
-          className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+          className="disabled:opacity-40"
         >
           Stop
-        </button>
+        </PillButton>
       </header>
 
       <div className="flex items-center justify-end gap-2 border-b border-[var(--color-border)] px-4 py-2">
-        <button
-          type="button"
+        <PillButton
+          size="sm"
           onClick={() => onDeleteChat(activeChatId)}
           disabled={chats.length <= 1 || !canManageChats}
-          className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
+          className="bg-white/70 hover:bg-white"
         >
           Delete Chat
-        </button>
-        <button
-          type="button"
+        </PillButton>
+        <PillButton
+          size="sm"
           onClick={onClearChat}
           disabled={messages.length === 0 || status !== 'idle'}
-          className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
+          className="bg-white/70 hover:bg-white"
         >
           Clear Chat
-        </button>
+        </PillButton>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -155,24 +152,34 @@ export function ChatPanel({
                 <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
                   {isUser ? 'You' : 'Agent'}
                 </div>
-                <button
-                  type="button"
+                <PillButton
+                  variant="ghost"
+                  size="sm"
                   aria-label={`Delete ${isUser ? 'user' : 'assistant'} message`}
                   onClick={() => onDeleteMessage(message.id)}
                   disabled={status !== 'idle'}
-                  className="rounded-full px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)] transition hover:bg-white/75 hover:text-[var(--color-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="hover:bg-white/75 hover:text-[var(--color-text-secondary)] disabled:opacity-40"
                 >
                   Delete
-                </button>
+                </PillButton>
               </div>
               <MessageContent content={message.content} />
             </article>
           );
         })}
+
+        {status === 'thinking' && (
+          <div className="animate-rise-in mr-6 flex gap-1.5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
+            <span className="h-2 w-2 rounded-full bg-[var(--color-text-muted)] animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="h-2 w-2 rounded-full bg-[var(--color-text-muted)] animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="h-2 w-2 rounded-full bg-[var(--color-text-muted)] animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        )}
       </div>
 
       <footer className="border-t border-[var(--color-border)] bg-[var(--color-surface-soft)]/55 p-3">
         <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => onInput(e.target.value)}
           onKeyDown={(e) => {
@@ -188,7 +195,7 @@ export function ChatPanel({
         />
 
         <div className="mt-2 flex items-center justify-between">
-          <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline</p>
+          <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline · Ctrl+Shift+K focus</p>
           <button
             type="button"
             onClick={onSend}

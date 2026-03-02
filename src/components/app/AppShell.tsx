@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
 import { loadSession, saveSession } from '@/lib/client/persistence';
 import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
@@ -21,6 +22,8 @@ import type {
   WhiteboardLayoutDiagnostics,
 } from '@/types/agent';
 import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 
 interface ChatSessionState {
   id: string;
@@ -128,11 +131,13 @@ export function AppShell() {
   const [agentDomainIndex, setAgentDomainIndex] = useState(0);
   const [didRestoreSession, setDidRestoreSession] = useState(false);
   const [seedChat] = useState<ChatSessionState>(() => createEmptyChatSession(1));
+  const [mobileActivePanel, setMobileActivePanel] = useState<'whiteboard' | 'chat'>('whiteboard');
 
   const [chatSessions, setChatSessions] = useState<ChatSessionState[]>([seedChat]);
   const [activeChatId, setActiveChatId] = useState<string>(seedChat.id);
 
   const [sessionId] = useState(() => createId());
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const activeChatIdRef = useRef<string>(activeChatId);
   const streamChatIdRef = useRef<string | null>(null);
   const currentAssistantMessageId = useRef<string | null>(null);
@@ -688,21 +693,55 @@ export function AppShell() {
         : status === 'streaming'
           ? 'Responding'
           : 'Drawing';
-
-  const statusTone =
-    status === 'idle'
-      ? 'bg-emerald-500'
-      : status === 'thinking'
-        ? 'bg-amber-500'
-        : status === 'streaming'
-          ? 'bg-sky-500'
-          : 'bg-indigo-500';
   const agentDomain = AGENT_DOMAINS[agentDomainIndex % AGENT_DOMAINS.length]!;
+
+  useKeyboardShortcuts(
+    useMemo(
+      () => ({
+        focusInput: () => chatInputRef.current?.focus(),
+        newChat: () => createChat(),
+        cancelStream: () => {
+          if (status !== 'idle') {
+            cancel();
+            resetStreamState();
+            setStatus('idle');
+          }
+        },
+        prevChat: () => {
+          const idx = chatSessions.findIndex((c) => c.id === activeChatId);
+          if (idx > 0) selectChat(chatSessions[idx - 1]!.id);
+        },
+        nextChat: () => {
+          const idx = chatSessions.findIndex((c) => c.id === activeChatId);
+          if (idx < chatSessions.length - 1) selectChat(chatSessions[idx + 1]!.id);
+        },
+        resetZoom: () => {
+          /* handled by WhiteboardCanvas internally */
+        },
+        togglePanel: () =>
+          setMobileActivePanel((p) => (p === 'whiteboard' ? 'chat' : 'whiteboard')),
+      }),
+      [activeChatId, cancel, chatSessions, createChat, resetStreamState, selectChat, status],
+    ),
+  );
+
+  if (!didRestoreSession) {
+    return (
+      <main className="relative h-screen w-screen overflow-hidden p-2 sm:p-4" style={{ height: '100dvh' }}>
+        <div className="app-card glass-panel flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
+          <div className="h-14 border-b border-[var(--color-border)]" />
+          <div className="flex flex-1 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (!activeChat) return null;
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4">
+    <main className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
       <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
         <header className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-4 sm:px-5">
           <div>
@@ -711,17 +750,18 @@ export function AppShell() {
             </h1>
             <p className="text-[11px] text-[var(--color-text-muted)]">Interleaved conversational whiteboard</p>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1.5">
-            <span className={`h-2 w-2 rounded-full ${statusTone}`} data-testid="status-dot" />
-            <span className="text-[11px] font-medium text-[var(--color-text-secondary)]" data-testid="status-label">{statusLabel}</span>
-          </div>
+          <StatusBadge status={status} />
         </header>
 
         <div
           className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 md:flex-row"
           style={{ ['--left-width' as string]: `${panelSizes[0]}%` }}
         >
-          <section data-testid="whiteboard-canvas" className={isAgentMode ? 'h-full w-full' : 'h-[56%] w-full md:h-full md:w-[var(--left-width)]'}>
+          <section
+            data-testid="whiteboard-canvas"
+            className={isAgentMode ? 'h-full w-full' : `w-full md:h-full md:w-[var(--left-width)] ${mobileActivePanel === 'whiteboard' ? 'h-full' : 'hidden'} md:!block`}
+            {...(mobileActivePanel !== 'whiteboard' && !isAgentMode ? { inert: true, 'aria-hidden': true } : {})}
+          >
             <WhiteboardCanvas
               key={activeChat.id}
               batches={activeChat.batches}
@@ -760,13 +800,18 @@ export function AppShell() {
           )}
 
           {!isAgentMode && (
-            <section data-testid="chat-panel" className="h-[44%] min-h-0 w-full md:h-full md:flex-1">
+            <section
+              data-testid="chat-panel"
+              className={`min-h-0 w-full md:h-full md:flex-1 ${mobileActivePanel === 'chat' ? 'h-full' : 'hidden'} md:!block`}
+              {...(mobileActivePanel !== 'chat' ? { inert: true, 'aria-hidden': true } : {})}
+            >
               <ChatPanel
                 chats={chatMeta}
                 activeChatId={activeChat.id}
                 messages={activeChat.messages}
                 input={input}
                 status={status}
+                inputRef={chatInputRef}
                 onInput={setInput}
                 onSend={send}
                 onCancel={() => {
@@ -832,6 +877,12 @@ export function AppShell() {
           {warningsUI}
         </div>
       </div>
+      {!isAgentMode && (
+        <MobilePanelSwitcher
+          activePanel={mobileActivePanel}
+          onSwitch={setMobileActivePanel}
+        />
+      )}
     </main>
   );
 }

@@ -66,7 +66,13 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   }
 
   if (!visibleSvg) {
-    return <span className="text-[var(--color-text-muted)]">Rendering…</span>;
+    return (
+      <span
+        className={`inline-block animate-pulse rounded bg-[var(--color-surface-soft)] ${
+          displayMode ? 'my-1 h-8 w-48' : 'h-4 w-16'
+        }`}
+      />
+    );
   }
 
   return (
