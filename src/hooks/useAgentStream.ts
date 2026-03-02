@@ -8,6 +8,7 @@ import type {
   StructuredWhiteboardContext,
   WhiteboardContext,
 } from '@/types/agent';
+import { parseSSEBuffer } from './sse-parser';
 
 export interface StreamHandlers {
   onEvent: (event: AgentSSEEvent) => void;
@@ -63,44 +64,30 @@ export function useAgentStream() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        const splitChunks = (raw: string) => raw.split(/\r?\n\r?\n/);
 
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          const parts = splitChunks(buffer);
-          if (parts.length <= 1) continue;
-
-          buffer = parts.pop() ?? '';
-          for (const chunk of parts) {
-            const lines = chunk
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .filter((line) => line.startsWith('data:'));
-            for (const line of lines) {
-              const json = line.slice(5).trim();
-              if (!json) continue;
-              try {
-                const event = JSON.parse(json) as AgentSSEEvent;
-                args.handlers.onEvent(event);
-              } catch {
-                args.handlers.onError('Invalid SSE JSON payload received');
-              }
-            }
+          const result = parseSSEBuffer(buffer);
+          buffer = result.remaining;
+          for (const event of result.events) {
+            args.handlers.onEvent(event as AgentSSEEvent);
+          }
+          for (const err of result.errors) {
+            args.handlers.onError(err);
           }
         }
 
-        const trailing = buffer.trim();
-        if (trailing.startsWith('data:')) {
-          const json = trailing.slice(5).trim();
-          if (json) {
-            try {
-              args.handlers.onEvent(JSON.parse(json) as AgentSSEEvent);
-            } catch {
-              args.handlers.onError('Invalid trailing SSE JSON payload received');
-            }
+        // flush trailing buffer
+        if (buffer.trim()) {
+          const result = parseSSEBuffer(buffer + '\n\n');
+          for (const event of result.events) {
+            args.handlers.onEvent(event as AgentSSEEvent);
+          }
+          for (const err of result.errors) {
+            args.handlers.onError(err);
           }
         }
       } catch (error) {

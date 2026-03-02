@@ -171,3 +171,91 @@ describe('saveSession SSR safety', () => {
     globalThis.window = origWindow;
   });
 });
+
+describe('loadSession migration edge cases', () => {
+  it('handles V2 with empty chat title gracefully', () => {
+    const v2 = {
+      version: 2,
+      updatedAt: 800,
+      activeChatId: 'c-empty',
+      chats: [
+        {
+          id: 'c-empty',
+          title: '',
+          createdAt: 800,
+          updatedAt: 800,
+          messages: [
+            { id: 'm1', role: 'user', content: 'test', createdAt: 800 },
+          ],
+          scene: [],
+        },
+      ],
+      prefs: { panelSizes: [50, 50] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(v2);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(3);
+    expect(loaded!.chats[0].title).toBe('');
+    expect(loaded!.chats[0].semanticScene).toHaveLength(1);
+  });
+
+  it('handles V1 with empty messages array', () => {
+    const v1 = {
+      version: 1,
+      updatedAt: 900,
+      messages: [],
+      scene: [],
+      prefs: { panelSizes: [50, 50] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(v1);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(3);
+    expect(loaded!.chats).toHaveLength(1);
+    expect(loaded!.chats[0].messages).toHaveLength(0);
+  });
+
+  it('handles V3 with extra unknown fields via passthrough', () => {
+    const v3WithExtra = {
+      version: 3,
+      updatedAt: 1000,
+      activeChatId: 'cx',
+      someUnknownField: 'should be stripped by zod',
+      chats: [
+        {
+          id: 'cx',
+          title: 'Extra fields chat',
+          createdAt: 1000,
+          updatedAt: 1000,
+          messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1000 }],
+          semanticScene: [],
+          scene: [],
+          plannerMeta: [],
+          extraNested: true,
+        },
+      ],
+      prefs: { panelSizes: [40, 60] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(v3WithExtra);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(3);
+    expect(loaded!.chats[0].title).toBe('Extra fields chat');
+  });
+
+  it('removes data and returns null on structurally invalid V3', () => {
+    // Valid JSON, but chats has wrong inner structure (missing required fields)
+    const bad = {
+      version: 3,
+      updatedAt: 1000,
+      activeChatId: 'c1',
+      chats: [{ id: 'c1' }], // missing title, messages, etc.
+      prefs: { panelSizes: [50, 50] },
+    };
+    store[STORAGE_KEY] = JSON.stringify(bad);
+    const loaded = loadSession();
+    expect(loaded).toBeNull();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(STORAGE_KEY);
+  });
+});

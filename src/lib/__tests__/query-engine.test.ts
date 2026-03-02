@@ -122,3 +122,28 @@ describe('QueryEngine.generateBatch', () => {
     expect(batchA).toEqual(batchB);
   });
 });
+
+describe('QueryEngine.generateBatch edge cases', () => {
+  it('generateBatch with count=1 returns single entry', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(1);
+    expect(batch).toHaveLength(1);
+    expect(batch[0]!.query.length).toBeGreaterThan(0);
+    expect(AGENT_DOMAINS).toContain(batch[0]!.domain);
+  });
+
+  it('generateBatch with count=0 returns empty array', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(0);
+    expect(batch).toHaveLength(0);
+  });
+
+  it('generateBatch covers all domains in a large batch', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(40);
+    const domains = new Set(batch.map((e) => e.domain));
+    for (const d of AGENT_DOMAINS) {
+      expect(domains).toContain(d);
+    }
+  });
+});

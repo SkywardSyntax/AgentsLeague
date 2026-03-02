@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildWhiteboardContext } from '../whiteboard/context';
-import type { DrawElement } from '@/types/agent';
+import { buildWhiteboardContext, buildWhiteboardContextV2 } from '../whiteboard/context';
+import { StructuredWhiteboardContextSchema } from '../schema';
+import type { DrawElement, SemanticBatch } from '@/types/agent';
 
 describe('buildWhiteboardContext', () => {
   it('returns zero counts for empty scene', () => {
@@ -102,5 +103,75 @@ describe('buildWhiteboardContext', () => {
     ];
     const ctx = buildWhiteboardContext(elements);
     expect(ctx.recentElements[0].textPreview).toBeUndefined();
+  });
+});
+
+describe('buildWhiteboardContextV2', () => {
+  const sceneFixture: DrawElement[] = [
+    { id: 'a1', type: 'arrow', from: { x: 100, y: 120 }, to: { x: 320, y: 120 } },
+    { id: 'eq1', type: 'latex', x: 110, y: 220, tex: 'x^2+1=0', displayMode: true, fontSize: 24 },
+    { id: 'r1', type: 'rect', x: 50, y: 50, w: 200, h: 100 },
+  ];
+
+  const semanticFixture: SemanticBatch[] = [
+    {
+      batch_id: 'sem-1',
+      template: 'equation_derivation_vertical',
+      blocks: [
+        { id: 'eq', kind: 'equation_stack', lines: [{ id: 'l1', tex: 'x^2+1=0' }] },
+      ],
+    },
+  ];
+
+  it('output passes StructuredWhiteboardContextSchema validation', () => {
+    const ctx = buildWhiteboardContextV2(sceneFixture, semanticFixture);
+    const result = StructuredWhiteboardContextSchema.safeParse(ctx);
+    expect(result.success).toBe(true);
+  });
+
+  it('with semantic scene includes occupied_regions', () => {
+    const ctx = buildWhiteboardContextV2(sceneFixture, semanticFixture);
+    expect(ctx.occupied_regions.length).toBeGreaterThan(0);
+    const kinds = ctx.occupied_regions.map((r) => r.semantic_kind);
+    expect(kinds).toContain('arrow');
+    expect(kinds).toContain('latex');
+    expect(kinds).toContain('rect');
+  });
+
+  it('with empty scene produces valid default regions', () => {
+    const ctx = buildWhiteboardContextV2([], []);
+    const result = StructuredWhiteboardContextSchema.safeParse(ctx);
+    expect(result.success).toBe(true);
+    expect(ctx.scene_summary.element_count).toBe(0);
+    expect(ctx.suggested_next_regions.length).toBeGreaterThan(0);
+    expect(ctx.occupied_regions).toHaveLength(0);
+  });
+
+  it('handles malformed semantic scene entries gracefully', () => {
+    const malformed: SemanticBatch[] = [
+      {
+        batch_id: 'bad-1',
+        template: 'freeform_semantic',
+        blocks: [],
+      },
+    ];
+    const ctx = buildWhiteboardContextV2(sceneFixture, malformed);
+    const result = StructuredWhiteboardContextSchema.safeParse(ctx);
+    expect(result.success).toBe(true);
+    // Empty blocks batch produces no recent_blocks from semantic path
+    // Falls back to element-based recent blocks
+    expect(ctx.scene_summary.element_count).toBe(3);
+  });
+
+  it('suggested_next_regions has deterministic ordering', () => {
+    const ctx1 = buildWhiteboardContextV2(sceneFixture, semanticFixture);
+    const ctx2 = buildWhiteboardContextV2(sceneFixture, semanticFixture);
+    expect(ctx1.suggested_next_regions).toEqual(ctx2.suggested_next_regions);
+    // Scores are descending
+    for (let i = 1; i < ctx1.suggested_next_regions.length; i++) {
+      expect(ctx1.suggested_next_regions[i - 1]!.score).toBeGreaterThanOrEqual(
+        ctx1.suggested_next_regions[i]!.score,
+      );
+    }
   });
 });
