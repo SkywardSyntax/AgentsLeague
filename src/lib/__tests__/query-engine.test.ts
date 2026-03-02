@@ -25,7 +25,6 @@ describe('QueryEngine.generate', () => {
     const engine = new QueryEngine(12345);
     for (const domain of AGENT_DOMAINS) {
       const q = engine.generate(domain);
-      expect(q).toBeTruthy();
       expect(typeof q).toBe('string');
       expect(q.length).toBeGreaterThan(5);
     }
@@ -66,7 +65,7 @@ describe('QueryEngine.generateCrossDomain', () => {
   it('returns a non-empty string', () => {
     const engine = new QueryEngine(42);
     const q = engine.generateCrossDomain('biology', 'math');
-    expect(q).toBeTruthy();
+    expect(typeof q).toBe('string');
     expect(q.length).toBeGreaterThan(5);
   });
 
@@ -108,7 +107,7 @@ describe('QueryEngine.generateBatch', () => {
     const engine = new QueryEngine(42);
     const batch = engine.generateBatch(10);
     for (const entry of batch) {
-      expect(entry.query).toBeTruthy();
+      expect(typeof entry.query).toBe('string');
       expect(entry.query.length).toBeGreaterThan(5);
       expect(AGENT_DOMAINS).toContain(entry.domain);
     }

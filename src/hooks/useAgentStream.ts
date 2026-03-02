@@ -9,11 +9,24 @@ import type {
   WhiteboardContext,
 } from '@/types/agent';
 
+/**
+ * Callback interface for SSE stream events. `onEvent` is called for each
+ * parsed server-sent event; `onError` is called with a human-readable
+ * message when the stream fails or receives malformed data.
+ */
 export interface StreamHandlers {
   onEvent: (event: AgentSSEEvent) => void;
   onError: (message: string) => void;
 }
 
+/**
+ * Hook providing `run` (start an SSE agent stream) and `cancel` (abort the
+ * active stream). Only one stream is active at a time — calling `run` while
+ * a previous stream is in progress aborts the previous one automatically.
+ *
+ * @returns `{ run, cancel }` — `run` accepts session context and handlers;
+ *   `cancel` aborts the current stream if any.
+ */
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
 
