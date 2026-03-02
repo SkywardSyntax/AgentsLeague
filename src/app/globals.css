@@ -164,3 +164,12 @@ pre {
     height: 100dvh;
   }
 }
+
+/* Layout containment for performance-critical components */
+[aria-label="Whiteboard"] {
+  contain: strict;
+}
+
+[data-testid="chat-messages"] {
+  contain: content;
+}
