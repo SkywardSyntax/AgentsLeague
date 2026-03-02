@@ -68,7 +68,7 @@ export interface SessionManagerResult {
   didRestoreSession: boolean;
   sessionId: string;
   createChat: () => void;
-  selectChat: (chatId: string) => void;
+  selectChat: (chatId: string, opts?: { cancel?: () => void; resetStreamState?: () => void; streamChatId?: string | null }) => void;
   deleteChat: (chatId: string, opts?: { cancel?: () => void; resetStreamState?: () => void; streamChatId?: string | null }) => void;
   panelSizes: [number, number];
   setPanelSizes: React.Dispatch<React.SetStateAction<[number, number]>>;
@@ -168,8 +168,13 @@ export function useSessionManager(): SessionManagerResult {
   }, [chatSessions.length]);
 
   const selectChat = useCallback(
-    (chatId: string) => {
+    (chatId: string, opts?: { cancel?: () => void; resetStreamState?: () => void; streamChatId?: string | null }) => {
       if (chatId === activeChatId) return;
+      // Abort active stream when switching away from the streaming chat
+      if (opts?.streamChatId === activeChatId) {
+        opts.cancel?.();
+        opts.resetStreamState?.();
+      }
       setActiveChatId(chatId);
     },
     [activeChatId],

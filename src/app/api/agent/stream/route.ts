@@ -16,6 +16,7 @@ import {
   getModel,
 } from '@/lib/server/openai';
 import { formatSSE, sseHeaders } from '@/lib/server/sse';
+import { appendToStreamBuffer } from '@/lib/server/stream-buffer';
 import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
 import {
   enforceDrawBatchConstraints,
@@ -502,7 +503,11 @@ export async function POST(request: Request): Promise<Response> {
               sawTextThisIteration = true;
               sawTextInTurn = true;
               send({ type: 'assistant.text.delta', turnId, delta: event.delta });
-              streamTextBuffer += event.delta;
+              {
+                const r = appendToStreamBuffer(streamTextBuffer, event.delta);
+                streamTextBuffer = r.buffer;
+                if (r.truncated) send({ type: 'warning', turnId, code: 'BUFFER_TRUNCATED', message: 'Stream buffer exceeded maximum size' });
+              }
               if (/[\\\n\]}]$/.test(event.delta)) {
                 emitProvisionalFromStream();
               }
@@ -513,7 +518,11 @@ export async function POST(request: Request): Promise<Response> {
               sawTextThisIteration = true;
               sawTextInTurn = true;
               send({ type: 'assistant.text.delta', turnId, delta: event.text });
-              streamTextBuffer += event.text;
+              {
+                const r = appendToStreamBuffer(streamTextBuffer, event.text);
+                streamTextBuffer = r.buffer;
+                if (r.truncated) send({ type: 'warning', turnId, code: 'BUFFER_TRUNCATED', message: 'Stream buffer exceeded maximum size' });
+              }
               emitProvisionalFromStream();
               continue;
             }

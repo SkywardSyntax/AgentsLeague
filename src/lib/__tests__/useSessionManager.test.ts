@@ -156,4 +156,112 @@ describe('useSessionManager', () => {
     rerender();
     expect(result.current.sessionId).toBe(id1);
   });
+
+  it('selectChat during active stream aborts the stream', () => {
+    const { result } = renderHook(() => useSessionManager());
+
+    act(() => {
+      result.current.createChat();
+    });
+
+    const streamingChatId = result.current.chatSessions[1].id;
+    const targetChatId = result.current.chatSessions[0].id;
+
+    // Select the non-active chat first so we stream from it
+    act(() => {
+      result.current.selectChat(streamingChatId);
+    });
+    expect(result.current.activeChatId).toBe(streamingChatId);
+
+    const cancelFn = vi.fn();
+    const resetFn = vi.fn();
+
+    // Now switch away with active stream opts
+    act(() => {
+      result.current.selectChat(targetChatId, {
+        cancel: cancelFn,
+        resetStreamState: resetFn,
+        streamChatId: streamingChatId,
+      });
+    });
+
+    expect(result.current.activeChatId).toBe(targetChatId);
+    expect(cancelFn).toHaveBeenCalledOnce();
+    expect(resetFn).toHaveBeenCalledOnce();
+  });
+
+  it('selectChat does not abort when stream belongs to a different chat', () => {
+    const { result } = renderHook(() => useSessionManager());
+
+    act(() => {
+      result.current.createChat();
+    });
+
+    const targetChatId = result.current.chatSessions[1].id;
+    const cancelFn = vi.fn();
+
+    act(() => {
+      result.current.selectChat(targetChatId, {
+        cancel: cancelFn,
+        streamChatId: 'some-other-chat-id',
+      });
+    });
+
+    expect(result.current.activeChatId).toBe(targetChatId);
+    expect(cancelFn).not.toHaveBeenCalled();
+  });
+
+  it('deleteChat on active chat switches to next available chat first', () => {
+    const { result } = renderHook(() => useSessionManager());
+
+    act(() => {
+      result.current.createChat();
+    });
+    act(() => {
+      result.current.createChat();
+    });
+
+    expect(result.current.chatSessions).toHaveLength(3);
+    const activeId = result.current.activeChatId;
+
+    act(() => {
+      result.current.deleteChat(activeId);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+
+    expect(result.current.chatSessions).toHaveLength(2);
+    expect(result.current.chatSessions.some((c) => c.id === activeId)).toBe(false);
+    // activeChat resolves to a valid remaining chat
+    expect(result.current.chatSessions.some((c) => c.id === result.current.activeChat.id)).toBe(true);
+  });
+
+  it('rapid createChat + selectChat results in consistent state', () => {
+    const { result } = renderHook(() => useSessionManager());
+
+    act(() => {
+      result.current.createChat();
+      result.current.createChat();
+      result.current.createChat();
+    });
+
+    expect(result.current.chatSessions).toHaveLength(4);
+    const ids = result.current.chatSessions.map((c) => c.id);
+    // All IDs unique
+    expect(new Set(ids).size).toBe(4);
+
+    // Rapid switching
+    act(() => {
+      result.current.selectChat(ids[2]!);
+    });
+    act(() => {
+      result.current.selectChat(ids[0]!);
+    });
+
+    expect(result.current.activeChatId).toBe(ids[0]);
+    // Sessions unchanged
+    expect(result.current.chatSessions).toHaveLength(4);
+  });
 });

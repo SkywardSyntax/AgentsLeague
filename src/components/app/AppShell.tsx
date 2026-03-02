@@ -403,12 +403,14 @@ export function AppShell() {
 
   const selectChat = useCallback(
     (chatId: string) => {
-      if (status !== 'idle') return;
-      selectChatBase(chatId);
+      selectChatBase(chatId, {
+        cancel,
+        resetStreamState,
+        streamChatId: streamChatIdRef.current,
+      });
       setInput('');
-      resetStreamState();
     },
-    [resetStreamState, selectChatBase, status],
+    [cancel, resetStreamState, selectChatBase],
   );
 
   const deleteChat = useCallback(
