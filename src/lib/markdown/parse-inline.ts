@@ -4,7 +4,8 @@ export type InlineToken =
   | { kind: 'italic'; value: string }
   | { kind: 'strikethrough'; value: string }
   | { kind: 'inline_code'; value: string }
-  | { kind: 'link'; text: string; href: string };
+  | { kind: 'link'; text: string; href: string }
+  | { kind: 'image'; alt: string; src: string };
 
 const SAFE_PROTOCOLS = /^(?:https?:|mailto:)/i;
 
@@ -48,6 +49,42 @@ export function parseInline(text: string): InlineToken[] {
       }
       // No closing backtick — treat as text
       buf += text.slice(start, i);
+      continue;
+    }
+
+    // --- Image: ![alt](url) ---
+    if (text[i] === '!' && i + 1 < text.length && text[i + 1] === '[') {
+      const imgStart = i;
+      i += 2; // skip ![
+      let alt = '';
+      let depth = 1;
+      while (i < text.length && depth > 0) {
+        if (text[i] === '[') depth++;
+        else if (text[i] === ']') depth--;
+        if (depth > 0) alt += text[i];
+        i++;
+      }
+      if (depth === 0 && i < text.length && text[i] === '(') {
+        i++; // skip (
+        let src = '';
+        let pDepth = 1;
+        while (i < text.length && pDepth > 0) {
+          if (text[i] === '(') pDepth++;
+          else if (text[i] === ')') pDepth--;
+          if (pDepth > 0) src += text[i];
+          i++;
+        }
+        if (pDepth === 0) {
+          const safeSrc = sanitizeHref(src);
+          if (safeSrc) {
+            flush();
+            tokens.push({ kind: 'image', alt, src: safeSrc });
+            continue;
+          }
+        }
+      }
+      // Not a valid image — backtrack
+      buf += text.slice(imgStart, i);
       continue;
     }
 
@@ -168,5 +205,29 @@ export function parseInline(text: string): InlineToken[] {
   }
 
   flush();
-  return tokens;
+
+  // Autolink pass: convert bare URLs in text tokens to link tokens
+  const AUTOLINK_RE = /(https?:\/\/[^\s<>)\]]+)/g;
+  const result: InlineToken[] = [];
+  for (const token of tokens) {
+    if (token.kind !== 'text') {
+      result.push(token);
+      continue;
+    }
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    AUTOLINK_RE.lastIndex = 0;
+    while ((match = AUTOLINK_RE.exec(token.value)) !== null) {
+      if (match.index > lastIndex) {
+        result.push({ kind: 'text', value: token.value.slice(lastIndex, match.index) });
+      }
+      result.push({ kind: 'link', text: match[1]!, href: match[1]! });
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < token.value.length) {
+      result.push({ kind: 'text', value: token.value.slice(lastIndex) });
+    }
+  }
+
+  return result;
 }

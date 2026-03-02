@@ -70,9 +70,10 @@ describe('parseBlocks', () => {
   it('parses blockquotes', () => {
     const input = '> This is a quote\n> Second line';
     const result = parseBlocks(input);
-    expect(result).toEqual([
-      { kind: 'blockquote', content: 'This is a quote\nSecond line' },
-    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: 'blockquote', content: 'This is a quote\nSecond line' });
+    const bq = result[0] as { kind: 'blockquote'; children?: unknown[] };
+    expect(bq.children).toBeDefined();
   });
 
   it('parses mixed content correctly', () => {
@@ -97,7 +98,7 @@ describe('parseBlocks', () => {
       { kind: 'paragraph', content: 'Some paragraph text.' },
       { kind: 'code_block', content: 'console.log("hello");', language: 'js' },
       { kind: 'list', ordered: false, items: ['item a', 'item b'] },
-      { kind: 'blockquote', content: 'a quote' },
+      expect.objectContaining({ kind: 'blockquote', content: 'a quote' }),
     ]);
   });
 
@@ -182,5 +183,40 @@ describe('parseBlocks', () => {
     expect(result).toEqual([
       { kind: 'table', headers: ['A', 'B'], rows: [['a|b', 'c']] },
     ]);
+  });
+
+  // --- 3A: Recursive blockquote parsing ---
+
+  it('blockquote containing a code fence parses inner fence as code block child', () => {
+    const input = '> ```js\n> const x = 1;\n> ```';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.kind).toBe('blockquote');
+    const bq = result[0] as { kind: 'blockquote'; content: string; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children![0]).toMatchObject({ kind: 'code_block', language: 'js' });
+  });
+
+  it('blockquote containing a heading parses inner heading as child', () => {
+    const input = '> ## Sub-heading\n> Some text';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const bq = result[0] as { kind: 'blockquote'; content: string; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children!).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'heading', content: 'Sub-heading', level: 2 }),
+        expect.objectContaining({ kind: 'paragraph', content: 'Some text' }),
+      ]),
+    );
+  });
+
+  it('blockquote with no special inner content has children matching lines as paragraph', () => {
+    const input = '> plain text';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+    const bq = result[0] as { kind: 'blockquote'; content: string; children?: unknown[] };
+    expect(bq.children).toBeDefined();
+    expect(bq.children![0]).toMatchObject({ kind: 'paragraph', content: 'plain text' });
   });
 });

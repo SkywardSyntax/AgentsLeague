@@ -3,9 +3,11 @@ export type BlockSegment =
   | { kind: 'code_block'; content: string; language: string }
   | { kind: 'heading'; content: string; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { kind: 'list'; ordered: boolean; items: string[] }
-  | { kind: 'blockquote'; content: string }
+  | { kind: 'blockquote'; content: string; children?: BlockSegment[] }
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' };
+
+const MAX_BLOCKQUOTE_DEPTH = 5;
 
 const CODE_FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
 const HEADING_RE = /^(#{1,6})\s+(.+)$/;
@@ -49,7 +51,7 @@ function isTableStart(lines: string[], idx: number): boolean {
   return TABLE_ROW_RE.test(row) && TABLE_SEP_RE.test(sep);
 }
 
-export function parseBlocks(raw: string): BlockSegment[] {
+export function parseBlocks(raw: string, depth = 0): BlockSegment[] {
   const lines = raw.split('\n');
   const blocks: BlockSegment[] = [];
   let i = 0;
@@ -111,7 +113,9 @@ export function parseBlocks(raw: string): BlockSegment[] {
         bqLines.push(bm[1]!);
         i++;
       }
-      blocks.push({ kind: 'blockquote', content: bqLines.join('\n') });
+      const content = bqLines.join('\n');
+      const children = depth < MAX_BLOCKQUOTE_DEPTH ? parseBlocks(content, depth + 1) : undefined;
+      blocks.push({ kind: 'blockquote', content, children });
       continue;
     }
 

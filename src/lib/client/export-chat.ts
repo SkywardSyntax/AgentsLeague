@@ -26,13 +26,22 @@ export function escapeStructuralMarkdown(content: string): string {
   return content.replace(/^([-*_])(\s*\1){2,}\s*$/gm, (match) => `\\${match}`);
 }
 
+/** Wrap display-math $$ blocks in code fences to preserve them structurally.
+ *  Only matches $$ at line boundaries to avoid false positives with currency (e.g., $$5.00). */
+export function wrapDisplayLatex(content: string): string {
+  return content.replace(
+    /^\$\$([\s\S]*?)\$\$\s*$/gm,
+    (_match, inner: string) => '```latex\n' + inner.trim() + '\n```',
+  );
+}
+
 /** Format messages as Markdown. */
 export function exportChatToMarkdown(messages: ChatMessage[], title: string): string {
   const header = `# ${title}\n\nExported: ${new Date().toISOString()}\n\n---\n\n`;
   const body = messages
     .map((m) => {
       const role = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : 'System';
-      return `## ${role}\n\n${escapeStructuralMarkdown(m.content)}\n\n---\n`;
+      return `## ${role}\n\n${escapeStructuralMarkdown(wrapDisplayLatex(m.content))}\n\n---\n`;
     })
     .join('\n');
   return header + body;

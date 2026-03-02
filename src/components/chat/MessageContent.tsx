@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, type ReactNode, useMemo } from 'react';
+import React, { Fragment, type ReactNode, useMemo } from 'react';
 import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
 import { parseTextScripts } from '@/lib/latex/text-scripts';
 import { parseBlocks, type BlockSegment } from '@/lib/markdown/parse-blocks';
@@ -51,6 +51,10 @@ function renderInlineTokens(tokens: InlineToken[], keyPrefix: string): ReactNode
           <a key={key} href={token.href} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] underline">
             {token.text}
           </a>
+        );
+      case 'image':
+        return (
+          <img key={key} src={token.src} alt={token.alt} className="my-1 max-w-full rounded" />
         );
       case 'text':
         return <Fragment key={key}>{renderTextWithScripts(token.value, key)}</Fragment>;
@@ -108,7 +112,9 @@ function renderBlock(block: BlockSegment, idx: number): ReactNode {
     case 'blockquote':
       return (
         <blockquote key={key} className="my-2 border-l-3 border-[var(--color-border)] pl-3 text-[var(--color-text-muted)]">
-          {renderParagraphContent(block.content, key)}
+          {block.children
+            ? block.children.map((child, ci) => renderBlock(child, ci))
+            : renderParagraphContent(block.content, key)}
         </blockquote>
       );
     case 'hr':
@@ -149,7 +155,7 @@ function renderBlock(block: BlockSegment, idx: number): ReactNode {
   }
 }
 
-export function MessageContent({ content }: { content: string }) {
+export const MessageContent = React.memo(function MessageContent({ content }: { content: string }) {
   const blocks = useMemo(() => parseBlocks(content), [content]);
 
   return (
@@ -157,4 +163,4 @@ export function MessageContent({ content }: { content: string }) {
       {blocks.map((block, idx) => renderBlock(block, idx))}
     </div>
   );
-}
+});

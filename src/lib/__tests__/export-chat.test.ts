@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { exportChatToMarkdown, exportChatToJson, escapeStructuralMarkdown } from '@/lib/client/export-chat';
+import { exportChatToMarkdown, exportChatToJson, escapeStructuralMarkdown, wrapDisplayLatex } from '@/lib/client/export-chat';
 import type { ChatMessage } from '@/types/agent';
 
 const msgs: ChatMessage[] = [
@@ -58,6 +58,28 @@ describe('exportChatToMarkdown', () => {
   it('does not escape non-HR content', () => {
     expect(escapeStructuralMarkdown('normal text')).toBe('normal text');
     expect(escapeStructuralMarkdown('-- not enough')).toBe('-- not enough');
+  });
+
+  // --- 3C: LaTeX delimiter preservation ---
+
+  it('wraps display LaTeX in code fences', () => {
+    const messages: ChatMessage[] = [
+      { id: 'm1', role: 'assistant', content: '$$\n\\frac{a}{b}\n$$', createdAt: 1000 },
+    ];
+    const md = exportChatToMarkdown(messages, 'Test');
+    expect(md).toContain('```latex');
+    expect(md).toContain('\\frac{a}{b}');
+    // Should not contain bare $$
+    expect(md).not.toContain('$$');
+  });
+
+  it('preserves inline LaTeX as-is', () => {
+    const messages: ChatMessage[] = [
+      { id: 'm1', role: 'user', content: 'The formula $E=mc^2$ is famous', createdAt: 1000 },
+    ];
+    const md = exportChatToMarkdown(messages, 'Test');
+    expect(md).toContain('$E=mc^2$');
+    expect(md).not.toContain('```latex');
   });
 });
 

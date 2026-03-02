@@ -143,6 +143,37 @@ describe('parseInline', () => {
       { kind: 'text', value: '~' },
     ]);
   });
+
+  // --- 3B: Image syntax ---
+
+  it('parses image syntax into image token', () => {
+    const tokens = parseInline('![alt text](https://img.png)');
+    expect(tokens).toEqual([
+      { kind: 'image', alt: 'alt text', src: 'https://img.png' },
+    ]);
+  });
+
+  it('sanitizes javascript: URLs in image src', () => {
+    const tokens = parseInline('![x](javascript:alert(1))');
+    // Unsafe src — falls back to plain text
+    expect(tokens.every(t => t.kind !== 'image')).toBe(true);
+  });
+
+  it('autolinks bare https URLs', () => {
+    const tokens = parseInline('visit https://example.com today');
+    expect(tokens).toEqual([
+      { kind: 'text', value: 'visit ' },
+      { kind: 'link', text: 'https://example.com', href: 'https://example.com' },
+      { kind: 'text', value: ' today' },
+    ]);
+  });
+
+  it('does not autolink URLs inside existing link text', () => {
+    const tokens = parseInline('[https://a.com](https://b.com)');
+    expect(tokens).toEqual([
+      { kind: 'link', text: 'https://a.com', href: 'https://b.com' },
+    ]);
+  });
 });
 
 describe('sanitizeHref', () => {
