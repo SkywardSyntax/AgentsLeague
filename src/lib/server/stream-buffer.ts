@@ -14,6 +14,8 @@ export function appendToStreamBuffer(
   current: string,
   incoming: string,
 ): BufferAppendResult {
+  current ??= '';
+  incoming ??= '';
   const combined = current + incoming;
   if (combined.length <= MAX_STREAM_BUFFER) {
     return { buffer: combined, truncated: false };

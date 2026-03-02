@@ -45,4 +45,28 @@ describe('appendToStreamBuffer', () => {
     expect(result.buffer).toBe('existing');
     expect(result.truncated).toBe(false);
   });
+
+  it('handles both empty strings', () => {
+    const result = appendToStreamBuffer('', '');
+    expect(result.buffer).toBe('');
+    expect(result.truncated).toBe(false);
+  });
+
+  it('handles undefined current without crashing', () => {
+    const result = appendToStreamBuffer(undefined as any, 'data');
+    expect(result.buffer).toBe('data');
+    expect(result.truncated).toBe(false);
+  });
+
+  it('handles null incoming without crashing', () => {
+    const result = appendToStreamBuffer('data', null as any);
+    expect(result.buffer).toBe('data');
+    expect(result.truncated).toBe(false);
+  });
+
+  it('handles both undefined without crashing', () => {
+    const result = appendToStreamBuffer(undefined as any, undefined as any);
+    expect(result.buffer).toBe('');
+    expect(result.truncated).toBe(false);
+  });
 });

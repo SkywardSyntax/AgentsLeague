@@ -125,4 +125,30 @@ describe('useKeyboardShortcuts', () => {
     fireKey('K');
     expect(actions.focusInput).not.toHaveBeenCalled();
   });
+
+  it('unknown key combination does not fire any action', () => {
+    renderHook(() => useKeyboardShortcuts(actions));
+    fireKey('Z', { ctrlKey: true, shiftKey: true });
+    expect(actions.focusInput).not.toHaveBeenCalled();
+    expect(actions.newChat).not.toHaveBeenCalled();
+    expect(actions.cancelStream).not.toHaveBeenCalled();
+    expect(actions.prevChat).not.toHaveBeenCalled();
+    expect(actions.nextChat).not.toHaveBeenCalled();
+    expect(actions.resetZoom).not.toHaveBeenCalled();
+    expect(actions.togglePanel).not.toHaveBeenCalled();
+  });
+
+  it('multiple rapid Escape presses call cancelStream each time', () => {
+    renderHook(() => useKeyboardShortcuts(actions));
+    fireKey('Escape');
+    fireKey('Escape');
+    fireKey('Escape');
+    expect(actions.cancelStream).toHaveBeenCalledTimes(3);
+  });
+
+  it('key event with repeat: true still fires', () => {
+    renderHook(() => useKeyboardShortcuts(actions));
+    fireKey('Escape', { repeat: true });
+    expect(actions.cancelStream).toHaveBeenCalledOnce();
+  });
 });
