@@ -68,6 +68,11 @@ const DOMAIN_KEYWORDS: Record<string, string[]> = {
   physics: ['free-body', 'circuit', 'projectile', 'wave', 'pendulum', 'magnetic', 'lens', 'heat', 'spring', 'capacitor', 'standing', 'physics'],
 };
 
+let passthroughTurnCounter = 0;
+let passthroughMsgCounter = 0;
+let mockTurnCounter = 0;
+let mockMsgCounter = 0;
+
 function detectDomain(query: string): string {
   const lower = query.toLowerCase();
   let bestDomain = 'math';
@@ -83,7 +88,61 @@ function detectDomain(query: string): string {
 }
 
 export function isMockMode(): boolean {
-  return process.env.AGENT_STREAM_MODE === 'mock';
+  return process.env.AGENT_STREAM_MODE === 'mock' || process.env.AGENT_STREAM_MODE === 'passthrough';
+}
+
+export function isPassthroughMode(): boolean {
+  return process.env.AGENT_STREAM_MODE === 'passthrough';
+}
+
+/**
+ * Passthrough mode: echoes a batch from the request body as SSE.
+ * Enables per-test scenario control without env var switching or server restart.
+ * The request body must include a `passthroughBatch` field with the batch to echo.
+ * Optionally include `passthroughError` to simulate an error event.
+ */
+export function passthroughAgentStream(body: {
+  userMessage: string;
+  passthroughBatch?: Record<string, unknown>;
+  passthroughError?: string;
+}): Response {
+  const turnId = `passthrough-turn-${++passthroughTurnCounter}`;
+  const messageId = `passthrough-msg-${++passthroughMsgCounter}`;
+  const textReply = `Passthrough response for: ${body.userMessage.slice(0, 80)}`;
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(encoder.encode(formatSSE(payload)));
+      };
+
+      await delay(20);
+      send({ type: 'assistant.text.delta', turnId, delta: textReply });
+
+      await delay(20);
+      send({ type: 'assistant.text.done', turnId, messageId });
+
+      if (body.passthroughError) {
+        await delay(20);
+        send({ type: 'error', message: body.passthroughError });
+        controller.close();
+        return;
+      }
+
+      if (body.passthroughBatch) {
+        await delay(20);
+        send({ type: 'whiteboard.batch', turnId, batch: body.passthroughBatch });
+      }
+
+      await delay(20);
+      send({ type: 'turn.done', turnId, usage: { prompt: 0, completion: 0, total: 0 } });
+
+      controller.close();
+    },
+  });
+
+  return new Response(stream, { headers: sseHeaders() });
 }
 
 export function mockAgentStream(body: { userMessage: string; scenario?: MockScenario }): Response {
@@ -106,8 +165,8 @@ export function mockAgentStream(body: { userMessage: string; scenario?: MockScen
   const domain = detectDomain(body.userMessage);
   const batch = (MOCK_BATCHES[domain] ?? MOCK_BATCHES['math']!) as unknown as DrawBatch;
   const textReply = `Here is a ${domain} diagram for: ${body.userMessage.slice(0, 80)}`;
-  const turnId = `mock-turn-${Date.now()}`;
-  const messageId = `mock-msg-${Date.now()}`;
+  const turnId = `mock-turn-${++mockTurnCounter}`;
+  const messageId = `mock-msg-${++mockMsgCounter}`;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

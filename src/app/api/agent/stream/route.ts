@@ -28,7 +28,7 @@ import {
   withRateLimit,
 } from '@/lib/server/api-middleware';
 import type { HandlerContext, Handler } from '@/lib/server/api-middleware';
-import { isMockMode, mockAgentStream } from './__mocks__/mock-stream';
+import { isMockMode, isPassthroughMode, mockAgentStream, passthroughAgentStream } from './__mocks__/mock-stream';
 import { buildWhiteboardContextMessage, buildWhiteboardContextMessageV2 } from '@/lib/server/stream/context-builder';
 import { boundsOfBatch } from '@/lib/server/stream/bounds';
 import { extractStableChunks, normalizeChunkKey, estimateProvisionalAdvance } from '@/lib/server/stream/provisional';
@@ -121,8 +121,15 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   if (isMockMode()) {
     const result = await parseRequestJson(request, requestId);
     if (result instanceof Response) return result;
-    const body = result.json as { userMessage?: string };
+    const body = result.json as { userMessage?: string; passthroughBatch?: Record<string, unknown>; passthroughError?: string };
     log.info('mock_stream_request');
+    if (isPassthroughMode() || body.passthroughBatch || body.passthroughError) {
+      return passthroughAgentStream({
+        userMessage: body.userMessage ?? '',
+        passthroughBatch: body.passthroughBatch,
+        passthroughError: body.passthroughError,
+      });
+    }
     return mockAgentStream({ userMessage: body.userMessage ?? '' });
   }
 

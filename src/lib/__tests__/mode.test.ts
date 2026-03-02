@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getInitialAppMode, getClientAppMode } from '../mode';
 
 describe('getInitialAppMode', () => {
@@ -27,8 +27,18 @@ describe('getInitialAppMode', () => {
     expect(getInitialAppMode()).toBe('interactive');
   });
 
+  it('returns "interactive" when env is empty string', () => {
+    process.env.NEXT_PUBLIC_MODE = '';
+    expect(getInitialAppMode()).toBe('interactive');
+  });
+
   it('returns "interactive" for arbitrary NEXT_PUBLIC_MODE value', () => {
     process.env.NEXT_PUBLIC_MODE = 'something_else';
+    expect(getInitialAppMode()).toBe('interactive');
+  });
+
+  it('returns "interactive" for unrecognized env value', () => {
+    process.env.NEXT_PUBLIC_MODE = 'invalid';
     expect(getInitialAppMode()).toBe('interactive');
   });
 });
@@ -72,6 +82,16 @@ describe('getClientAppMode', () => {
   it('returns "interactive" for empty search with env unset', () => {
     delete process.env.NEXT_PUBLIC_MODE;
     expect(getClientAppMode('')).toBe('interactive');
+  });
+
+  it('falls back to env when no URL param', () => {
+    process.env.NEXT_PUBLIC_MODE = 'agent';
+    expect(getClientAppMode('')).toBe('agent');
+  });
+
+  it('falls back to env when search has no mode param', () => {
+    process.env.NEXT_PUBLIC_MODE = 'agent';
+    expect(getClientAppMode('?foo=bar')).toBe('agent');
   });
 });
 

@@ -224,6 +224,7 @@ export const ChatPanel = memo(function ChatPanel({
           </p>
         </div>
         <PillButton
+          data-testid="chat-stop"
           onClick={onCancel}
           disabled={status === 'idle'}
           className="disabled:opacity-40"
@@ -324,6 +325,7 @@ export const ChatPanel = memo(function ChatPanel({
           return (
             <article
               key={message.id}
+              data-testid={`chat-message-${isUser ? 'user' : 'assistant'}`}
               className={`${newMessageIds.has(message.id) ? 'animate-rise-in' : ''} rounded-2xl border px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${
                 isUser
                   ? 'ml-6 border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)]'
@@ -372,6 +374,7 @@ export const ChatPanel = memo(function ChatPanel({
           }}
         >
           <textarea
+            data-testid="chat-input"
             ref={inputRef}
             aria-label="Message input"
             value={input}
@@ -393,6 +396,7 @@ export const ChatPanel = memo(function ChatPanel({
             <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline · Ctrl+Shift+K focus</p>
             <button
               type="submit"
+              data-testid="chat-send"
               disabled={disabled || input.trim().length === 0}
               aria-label="Send message"
               className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"

@@ -8,6 +8,7 @@ import type {
   WhiteboardContext,
 } from '@/types/agent';
 import { validateSSEEvent, type ValidatedAgentSSEEvent } from '@/lib/schema';
+import { parseSSEBuffer } from './sse-parser';
 
 export interface StreamHandlers {
   onEvent: (event: ValidatedAgentSSEEvent) => void;

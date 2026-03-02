@@ -110,7 +110,7 @@ const WhiteboardContextSchema = z.object({
   }),
 });
 
-const StructuredWhiteboardContextSchema = z.object({
+export const StructuredWhiteboardContextSchema = z.object({
   scene_summary: z.object({
     element_count: z.number().int().nonnegative(),
     bounds: z

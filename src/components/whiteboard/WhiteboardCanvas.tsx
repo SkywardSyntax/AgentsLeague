@@ -707,6 +707,12 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         </div>
       )}
 
+      <div data-testid="whiteboard-stats" className="glass-panel pointer-events-none absolute right-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
+        <div data-testid="whiteboard-zoom">Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
+        <div data-testid="whiteboard-committed">Committed: {statsRef.current.committed}</div>
+        <div data-testid="whiteboard-active">Active: {statsRef.current.active}</div>
+      </div>
+
       <div className="absolute left-3 top-3 flex items-center gap-1">
         <button
           type="button"

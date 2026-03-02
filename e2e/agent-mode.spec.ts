@@ -16,6 +16,10 @@ declare global {
 }
 
 test.describe('Agent Mode', () => {
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.evaluate(() => localStorage.clear());
+  });
   test('hides chat panel and shows full-screen whiteboard', async ({ page }) => {
     await page.goto('/?mode=agent');
     await expect(page.locator('[data-testid="chat-panel"]')).not.toBeVisible();
@@ -113,8 +117,23 @@ test.describe('Agent Mode', () => {
     // Pause
     await page.locator('[data-testid="agent-toggle"]').click();
     const countBefore = await page.evaluate(() => window.__agentAPI!.getMessages().length);
-    await page.waitForTimeout(4000);
-    const countAfter = await page.evaluate(() => window.__agentAPI!.getMessages().length);
+    // Poll to confirm no new messages arrive while paused (replaces brittle waitForTimeout)
+    const stableCheck = await page.evaluate(
+      (prev) =>
+        new Promise<number>((resolve) => {
+          let checks = 0;
+          const interval = setInterval(() => {
+            checks++;
+            const current = window.__agentAPI?.getMessages().length ?? prev;
+            if (current > prev || checks >= 8) {
+              clearInterval(interval);
+              resolve(current);
+            }
+          }, 500);
+        }),
+      countBefore,
+    );
+    const countAfter = stableCheck;
     expect(countAfter).toBe(countBefore);
 
     // Resume
@@ -165,5 +184,36 @@ test.describe('Agent Mode', () => {
     const assistantMsg = messages.find((m) => m.role === 'assistant');
     // Mock responses start with "Here is a" prefix
     expect(assistantMsg?.content).toMatch(/Here is a/);
+  });
+
+  test('mock-mode draw_batch events have valid schema fields', async ({ page }) => {
+    await page.goto('/?mode=agent');
+    // Wait for first turn to complete with elements drawn
+    await page.waitForFunction(
+      () =>
+        window.__agentAPI?.getStatus() === 'idle' &&
+        window.__agentAPI?.getElementCount() > 0,
+      { timeout: 30_000 },
+    );
+
+    const lastEvents = await page.evaluate(() => window.__agentAPI?.getLastTurnEvents() ?? []);
+    expect(lastEvents.length).toBeGreaterThan(0);
+
+    // Parse each event and validate draw_batch schema fields
+    for (const raw of lastEvents) {
+      const event = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (event.type === 'draw_batch' || event.draw_batch) {
+        const batch = event.draw_batch ?? event;
+        expect(batch.batch_id).toBeDefined();
+        expect(typeof batch.batch_id).toBe('string');
+        expect(Array.isArray(batch.elements)).toBe(true);
+        for (const el of batch.elements) {
+          expect(el.id).toBeDefined();
+          expect(typeof el.id).toBe('string');
+          expect(el.type).toBeDefined();
+          expect(typeof el.type).toBe('string');
+        }
+      }
+    }
   });
 });

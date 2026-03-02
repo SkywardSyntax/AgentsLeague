@@ -176,3 +176,109 @@ describe('QueryEngine.generateBatch', () => {
     }
   });
 });
+
+describe('QueryEngine.generateBatch edge cases', () => {
+  it('generateBatch with count=1 returns single entry', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(1);
+    expect(batch).toHaveLength(1);
+    expect(batch[0]!.query.length).toBeGreaterThan(0);
+    expect(AGENT_DOMAINS).toContain(batch[0]!.domain);
+  });
+
+  it('generateBatch with count=0 returns empty array', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(0);
+    expect(batch).toHaveLength(0);
+  });
+
+  it('generateBatch covers all domains in a large batch', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(40);
+    const domains = new Set(batch.map((e) => e.domain));
+    for (const d of AGENT_DOMAINS) {
+      expect(domains).toContain(d);
+    }
+  });
+});
+
+describe('SeededRandom seed edge cases', () => {
+  it('seed=0 produces valid output', () => {
+    const rng = new SeededRandom(0);
+    const val = rng.next();
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThan(1);
+  });
+
+  it('seed=-1 produces valid output', () => {
+    const rng = new SeededRandom(-1);
+    const val = rng.next();
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThan(1);
+  });
+
+  it('seed=Number.MAX_SAFE_INTEGER produces valid output', () => {
+    const rng = new SeededRandom(Number.MAX_SAFE_INTEGER);
+    const val = rng.next();
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThan(1);
+  });
+
+  it('pick() never returns undefined (index-safety)', () => {
+    const items = ['a', 'b', 'c'];
+    // Run many iterations across different seeds to exercise boundary values
+    for (let seed = 0; seed < 1000; seed++) {
+      const rng = new SeededRandom(seed);
+      for (let i = 0; i < 50; i++) {
+        const picked = rng.pick(items);
+        expect(picked).toBeDefined();
+        expect(items).toContain(picked);
+      }
+    }
+  });
+});
+
+describe('QueryEngine seed edge cases', () => {
+  it('seed=0 generates valid non-empty queries', () => {
+    const engine = new QueryEngine(0);
+    for (const domain of AGENT_DOMAINS) {
+      const q = engine.generate(domain);
+      expect(q).toBeTruthy();
+      expect(q.length).toBeGreaterThan(5);
+    }
+  });
+
+  it('seed=-1 generates valid non-empty queries', () => {
+    const engine = new QueryEngine(-1);
+    for (const domain of AGENT_DOMAINS) {
+      const q = engine.generate(domain);
+      expect(q).toBeTruthy();
+      expect(q.length).toBeGreaterThan(5);
+    }
+  });
+
+  it('seed=Number.MAX_SAFE_INTEGER generates valid non-empty queries', () => {
+    const engine = new QueryEngine(Number.MAX_SAFE_INTEGER);
+    for (const domain of AGENT_DOMAINS) {
+      const q = engine.generate(domain);
+      expect(q).toBeTruthy();
+      expect(q.length).toBeGreaterThan(5);
+    }
+  });
+
+  it('two instances with same seed produce identical first 20 queries', () => {
+    const a = new QueryEngine(777);
+    const b = new QueryEngine(777);
+    for (let i = 0; i < 20; i++) {
+      const domain = AGENT_DOMAINS[i % AGENT_DOMAINS.length]!;
+      expect(a.generate(domain)).toBe(b.generate(domain));
+    }
+  });
+
+  it('full cycle: 2x AGENT_DOMAINS.length queries cover every domain', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(AGENT_DOMAINS.length * 2);
+    const domains = new Set(batch.map((e) => e.domain));
+    expect(domains.size).toBe(AGENT_DOMAINS.length);
+  });
+});
