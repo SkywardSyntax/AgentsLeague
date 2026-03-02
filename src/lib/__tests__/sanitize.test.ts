@@ -112,4 +112,35 @@ describe('sanitizeSemanticScene', () => {
   it('handles empty input', () => {
     expect(sanitizeSemanticScene([])).toHaveLength(0);
   });
+
+  it('drops batches with blocks missing kind field', () => {
+    const result = sanitizeSemanticScene([
+      { batch_id: 'b1', template: 'freeform_semantic', blocks: [{ text: 'no kind' }] },
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('passes batches with valid blocks containing extra fields', () => {
+    const result = sanitizeSemanticScene([
+      { batch_id: 'b1', template: 'freeform_semantic', blocks: [{ kind: 'caption', text: 'hi', extra: 42 }] },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.batch_id).toBe('b1');
+    const block = (result[0] as unknown as { blocks: Array<Record<string, unknown>> }).blocks[0]!;
+    expect(block.extra).toBe(42);
+  });
+
+  it('passes batches with empty blocks array', () => {
+    const result = sanitizeSemanticScene([
+      { batch_id: 'b1', template: 'freeform_semantic', blocks: [] },
+    ]);
+    expect(result).toHaveLength(1);
+  });
+
+  it('drops batches with non-object block entries', () => {
+    const result = sanitizeSemanticScene([
+      { batch_id: 'b1', template: 'freeform_semantic', blocks: [null, undefined, 42] },
+    ]);
+    expect(result).toHaveLength(0);
+  });
 });

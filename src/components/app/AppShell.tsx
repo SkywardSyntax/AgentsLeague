@@ -68,7 +68,10 @@ export function AppShell() {
   const { run, cancel } = useAgentStream();
 
   const activeChat = useMemo(
-    () => chatStore.chats[activeChatId] ?? chatStore.chats[chatStore.chatOrder[0]!] ?? null,
+    () => {
+      const firstId = chatStore.chatOrder[0];
+      return chatStore.chats[activeChatId] ?? (firstId ? chatStore.chats[firstId] : null) ?? null;
+    },
     [activeChatId, chatStore],
   );
 
@@ -127,7 +130,7 @@ export function AppShell() {
       saveSession({
         version: 3,
         updatedAt: Date.now(),
-        activeChatId: activeChat?.id ?? chatStore.chatOrder[0]!,
+        activeChatId: activeChat?.id ?? chatStore.chatOrder[0]!, // safe: guarded by length check above
         chats: chatStore.chatOrder.map((id) => {
           const chat = withoutStreamOverlay(chatStore.chats[id]!);
           return {

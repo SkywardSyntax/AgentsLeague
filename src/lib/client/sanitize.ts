@@ -151,7 +151,9 @@ export function sanitizeScene(raw: unknown[]): { valid: DrawElement[]; dropped: 
 const SemanticBatchSchema = z.object({
   batch_id: z.string(),
   template: z.string(),
-  blocks: z.array(z.any()),
+  blocks: z.array(z.object({
+    kind: z.string(),
+  }).passthrough()),
 }).passthrough();
 
 export function sanitizeSemanticScene(raw: unknown[]): SemanticBatch[] {
@@ -164,7 +166,7 @@ export function sanitizeSemanticScene(raw: unknown[]): SemanticBatch[] {
       dropped++;
       continue;
     }
-    valid.push(result.data as SemanticBatch);
+    valid.push(result.data as unknown as SemanticBatch);
   }
 
   if (dropped > 0) {

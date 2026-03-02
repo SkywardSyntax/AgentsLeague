@@ -251,6 +251,16 @@ describe('chatSessionReducer', () => {
       expect(next.chats[id]).toBeUndefined();
     });
 
+    it('never leaves chatOrder empty after deleting last chat', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const next = chatSessionReducer(store, { type: 'DELETE_CHAT', chatId: id, activeChatId: id });
+      expect(next.chatOrder.length).toBeGreaterThan(0);
+      const replacementId = next.chatOrder[0]!;
+      expect(next.chats[replacementId]).toBeDefined();
+      expect(next.chats[replacementId]!.messages).toHaveLength(0);
+    });
+
     it('removes chat from multi-chat store', () => {
       const chat1 = createEmptyChatSession(1);
       const chat2 = createEmptyChatSession(2);
@@ -313,6 +323,17 @@ describe('chatSessionReducer', () => {
       });
       expect(next.chatOrder).toEqual([newChat.id]);
       expect(Object.keys(next.chats)).toEqual([newChat.id]);
+    });
+
+    it('handles empty chatOrder without crashing', () => {
+      const store = makeStore();
+      const next = chatSessionReducer(store, {
+        type: 'RESTORE_SESSION',
+        chats: {},
+        chatOrder: [],
+      });
+      expect(next.chatOrder).toEqual([]);
+      expect(Object.keys(next.chats)).toEqual([]);
     });
   });
 
@@ -661,6 +682,32 @@ describe('chatSessionReducer', () => {
       // First warning (w0) should be evicted; oldest remaining is w1
       expect(s.chats[id]!.warnings[0]).toBe('w1');
       expect(s.chats[id]!.warnings[7]).toBe('w8');
+    });
+  });
+
+  describe('empty chatOrder safety', () => {
+    it('chatOrder[0] is undefined when chatOrder is empty', () => {
+      const store: ChatStore = {
+        chatOrder: [],
+        chats: {},
+        turn: createInitialTurn(),
+      };
+      // Mirrors the AppShell activeChat fallback logic
+      const firstId = store.chatOrder[0];
+      expect(firstId).toBeUndefined();
+      const activeChat = store.chats['nonexistent'] ?? (firstId ? store.chats[firstId] : null) ?? null;
+      expect(activeChat).toBeNull();
+    });
+
+    it('RESTORE_SESSION with empty chatOrder then DELETE_CHAT is a no-op', () => {
+      const store = makeStore();
+      let s = chatSessionReducer(store, {
+        type: 'RESTORE_SESSION',
+        chats: {},
+        chatOrder: [],
+      });
+      const next = chatSessionReducer(s, { type: 'DELETE_CHAT', chatId: 'ghost', activeChatId: 'ghost' });
+      expect(next).toBe(s);
     });
   });
 });
