@@ -98,6 +98,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
   const committedStrokesRef = useRef<StrokeTrajectory[]>([]);
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
+  const committedDirtyRef = useRef(true);
 
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number | null>(null);
@@ -122,6 +123,8 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
     });
+
+    committedDirtyRef.current = true;
   }, []);
 
   useEffect(() => {
@@ -148,6 +151,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         if (compiled.clear) {
           committedStrokesRef.current = [];
           activeStrokesRef.current = [];
+          committedDirtyRef.current = true;
         }
 
         compiled.warnings.forEach(onWarning);
@@ -172,6 +176,9 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   }, [batches, onWarning]);
 
   useEffect(() => {
+    // Camera, dpr, or size changed — committed canvas needs full redraw
+    committedDirtyRef.current = true;
+
     const drawFrame = () => {
       const bgCanvas = bgRef.current;
       const committedCanvas = committedRef.current;
@@ -226,17 +233,21 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
       drawGrid();
 
-      committedCtx.setTransform(1, 0, 0, 1, 0, 0);
-      committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
-      committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+      // Only redraw committed canvas when dirty (new strokes, camera change, resize, clear)
+      if (committedDirtyRef.current) {
+        committedCtx.setTransform(1, 0, 0, 1, 0, 0);
+        committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
+        committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+
+        for (const stroke of committedStrokesRef.current) {
+          drawSmoothStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+        }
+        committedDirtyRef.current = false;
+      }
 
       activeCtx.setTransform(1, 0, 0, 1, 0, 0);
       activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
       activeCtx.setTransform(scale, 0, 0, scale, tx, ty);
-
-      for (const stroke of committedStrokesRef.current) {
-        drawSmoothStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
-      }
 
       const now = performance.now();
       const nextActive: ActiveStroke[] = [];
@@ -261,6 +272,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
       if (completed.length > 0) {
         committedStrokesRef.current = committedStrokesRef.current.concat(completed);
+        committedDirtyRef.current = true;
       }
       activeStrokesRef.current = nextActive;
 

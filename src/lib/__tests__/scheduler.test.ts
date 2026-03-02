@@ -215,4 +215,20 @@ describe('weightedVisibleLength', () => {
   it('handles empty cumulative', () => {
     expect(weightedVisibleLength([], [], 0.5)).toBe(0);
   });
+
+  it('clamps t > 1 to total length', () => {
+    expect(weightedVisibleLength([0, 10, 20], [1, 1, 1], 1.5)).toBe(20);
+  });
+
+  it('clamps t < 0 to 0', () => {
+    expect(weightedVisibleLength([0, 10, 20], [1, 1, 1], -0.5)).toBe(0);
+  });
+
+  it('all-zero speed factors fall back to linear mapping', () => {
+    const cum = [0, 10, 20];
+    const factors = [0, 0, 0];
+    // Should not NaN or crash — degenerate case
+    const result = weightedVisibleLength(cum, factors, 0.5);
+    expect(Number.isFinite(result)).toBe(true);
+  });
 });

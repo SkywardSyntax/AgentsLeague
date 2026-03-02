@@ -308,6 +308,64 @@ describe('bezierChainLength', () => {
   });
 });
 
+describe('partialPolylineByLength — negative and boundary values', () => {
+  it('treats negative targetLength same as 0', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ];
+    const result = partialPolylineByLength(pts, [0, 10], -5);
+    expect(result).toEqual([{ x: 0, y: 0 }]);
+  });
+
+  it('handles two coincident points', () => {
+    const pts = [
+      { x: 5, y: 5 },
+      { x: 5, y: 5 },
+    ];
+    const result = partialPolylineByLength(pts, [0, 0], 0);
+    expect(result).toEqual([{ x: 5, y: 5 }]);
+  });
+
+  it('includes segment endpoint when targetLength lands exactly on it', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 20, y: 0 },
+    ];
+    // targetLength exactly at first segment end — includes that point plus interpolated duplicate
+    const result = partialPolylineByLength(pts, [0, 10, 20], 10);
+    expect(result.length).toBe(3);
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(result[1]).toEqual({ x: 10, y: 0 });
+    expect(result[2]).toEqual({ x: 10, y: 0 });
+  });
+});
+
+describe('resamplePolyline — large spacing and edge cases', () => {
+  it('returns start and end when spacing exceeds total length', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 3, y: 4 }, // total length = 5
+    ];
+    const result = resamplePolyline(pts, 100);
+    expect(result.length).toBeGreaterThanOrEqual(2);
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(result[result.length - 1]).toEqual({ x: 3, y: 4 });
+  });
+
+  it('spacing equal to total length gives 2 points', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ];
+    const result = resamplePolyline(pts, 10);
+    expect(result.length).toBe(2);
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(result[1]).toEqual({ x: 10, y: 0 });
+  });
+});
+
 describe('catmullRomToBezier', () => {
   it('returns empty for fewer than 2 points', () => {
     expect(catmullRomToBezier([])).toEqual([]);
@@ -333,6 +391,35 @@ describe('catmullRomToBezier', () => {
     for (const seg of segs) {
       const mid = bezierPointAt(seg, 0.5);
       expect(mid.y).toBeCloseTo(0, 5);
+    }
+  });
+
+  it('handles coincident consecutive points without error', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 20, y: 0 },
+    ];
+    const segs = catmullRomToBezier(pts);
+    expect(segs).toHaveLength(3);
+    // Endpoints should match original points
+    expect(segs[0]!.p0).toEqual({ x: 0, y: 0 });
+    expect(segs[segs.length - 1]!.p3).toEqual({ x: 20, y: 0 });
+  });
+
+  it('all-coincident points produce degenerate but valid segments', () => {
+    const pts = [
+      { x: 5, y: 5 },
+      { x: 5, y: 5 },
+      { x: 5, y: 5 },
+    ];
+    const segs = catmullRomToBezier(pts);
+    expect(segs).toHaveLength(2);
+    for (const seg of segs) {
+      const mid = bezierPointAt(seg, 0.5);
+      expect(mid.x).toBeCloseTo(5);
+      expect(mid.y).toBeCloseTo(5);
     }
   });
 });
