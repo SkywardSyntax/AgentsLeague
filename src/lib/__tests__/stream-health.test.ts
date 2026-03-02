@@ -111,7 +111,7 @@ describe('StreamHealthTracker', () => {
     tracker.onBytesReceived(100);
     const snap = tracker.snapshot();
     expect(() => {
-      (snap as Record<string, unknown>).totalBytesReceived = 999;
+      (snap as unknown as Record<string, unknown>).totalBytesReceived = 999;
     }).toThrow();
     expect(tracker.snapshot().totalBytesReceived).toBe(100);
   });
