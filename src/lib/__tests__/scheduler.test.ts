@@ -129,6 +129,31 @@ describe('easing functions', () => {
   }
 });
 
+describe('easeOutCubic', () => {
+  it('returns 0 at t=0 and 1 at t=1', () => {
+    expect(easeOutCubic(0)).toBe(0);
+    expect(easeOutCubic(1)).toBe(1);
+  });
+
+  it('clamps out-of-range inputs', () => {
+    expect(easeOutCubic(-0.5)).toBe(0);
+    expect(easeOutCubic(1.5)).toBe(1);
+  });
+
+  it('is monotonically non-decreasing', () => {
+    let prev = 0;
+    for (let t = 0; t <= 1; t += 0.05) {
+      const val = easeOutCubic(t);
+      expect(val).toBeGreaterThanOrEqual(prev);
+      prev = val;
+    }
+  });
+
+  it('is concave (decelerating) — midpoint value exceeds linear interpolation', () => {
+    expect(easeOutCubic(0.5)).toBeGreaterThan(0.5);
+  });
+});
+
 describe('cornerSpeedFactors', () => {
   it('returns all 1s for a straight line', () => {
     const pts = [

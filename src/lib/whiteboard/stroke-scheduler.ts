@@ -1,8 +1,14 @@
 import type { ActiveStroke, Point, StrokeTrajectory } from '@/types/agent';
 import { cumulativeLengths, distance, totalLength } from './geometry';
 
+/** Drawing speed used to derive animation duration from stroke path length. */
 export const STROKE_SPEED_PX_PER_SECOND = 180;
 
+/**
+ * Compute animation duration in ms from stroke path `length` in world pixels.
+ * Clamped to [220ms, 2600ms] — short strokes have a minimum visible duration
+ * and long strokes cap to avoid excessively slow drawing.
+ */
 export function strokeDurationMs(length: number): number {
   if (!Number.isFinite(length) || length < 0) return 220;
   const raw = (length / STROKE_SPEED_PX_PER_SECOND) * 1000;
@@ -13,6 +19,12 @@ export type Clock = () => number;
 
 export const defaultClock: Clock = () => performance.now();
 
+/**
+ * Convert raw `StrokeTrajectory[]` to `ActiveStroke[]` by precomputing
+ * cumulative path lengths and animation duration for each stroke.
+ * All strokes in the batch share the same `startedAt` timestamp so they
+ * animate in parallel.
+ */
 export function createActiveBatch(
   strokes: StrokeTrajectory[],
   startedAt?: number,
@@ -59,6 +71,10 @@ export function createStaggeredBatch(
 
 // --- Easing functions ---
 
+/**
+ * Cubic ease-out: fast start, smooth deceleration. Input `t` is clamped
+ * to [0, 1]. Used for progressive stroke reveal animation.
+ */
 export function easeOutCubic(t: number): number {
   const clamped = Math.min(1, Math.max(0, t));
   return 1 - Math.pow(1 - clamped, 3);
