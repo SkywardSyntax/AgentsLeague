@@ -12,7 +12,14 @@ function stripOuterDelimiters(input: string): DelimiterStripResult {
   const trimmed = input.trim();
 
   const candidates: Array<{ open: string; close: string; displayMode: boolean }> = [
+    { open: '\\begin{equation*}', close: '\\end{equation*}', displayMode: true },
     { open: '\\begin{equation}', close: '\\end{equation}', displayMode: true },
+    { open: '\\begin{align*}', close: '\\end{align*}', displayMode: true },
+    { open: '\\begin{align}', close: '\\end{align}', displayMode: true },
+    { open: '\\begin{gather*}', close: '\\end{gather*}', displayMode: true },
+    { open: '\\begin{gather}', close: '\\end{gather}', displayMode: true },
+    { open: '\\begin{cases}', close: '\\end{cases}', displayMode: true },
+    { open: '\\begin{gathered}', close: '\\end{gathered}', displayMode: true },
     { open: '$$', close: '$$', displayMode: true },
     { open: '\\\\[', close: '\\\\]', displayMode: true },
     { open: '\\[', close: '\\]', displayMode: true },

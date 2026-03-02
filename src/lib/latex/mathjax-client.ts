@@ -171,9 +171,14 @@ async function getMathJaxContext(): Promise<MathJaxContext> {
   return mathJaxContextPromise;
 }
 
+const MAX_TEX_LENGTH = 10_000;
+
 export async function renderTexToSvg(tex: string, displayMode: boolean): Promise<string> {
+  if (tex.length > MAX_TEX_LENGTH) {
+    throw new Error(`TeX input exceeds maximum length of ${MAX_TEX_LENGTH} characters`);
+  }
   const prepared = prepareTexForMathJax(tex, displayMode);
-  const cacheKey = `${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
+  const cacheKey = `render:${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
 
   const cached = renderCache.get(cacheKey);
   if (cached) return cached;

@@ -14,7 +14,14 @@ interface Delimiter {
 }
 
 const DELIMITERS: Delimiter[] = [
+  { open: '\\begin{equation*}', close: '\\end{equation*}', display: true },
   { open: '\\begin{equation}', close: '\\end{equation}', display: true },
+  { open: '\\begin{align*}', close: '\\end{align*}', display: true },
+  { open: '\\begin{align}', close: '\\end{align}', display: true },
+  { open: '\\begin{gather*}', close: '\\end{gather*}', display: true },
+  { open: '\\begin{gather}', close: '\\end{gather}', display: true },
+  { open: '\\begin{cases}', close: '\\end{cases}', display: true },
+  { open: '\\begin{gathered}', close: '\\end{gathered}', display: true },
   { open: '$$', close: '$$', display: true },
   { open: '\\\\[', close: '\\\\]', display: true },
   { open: '\\[', close: '\\]', display: true },
@@ -99,7 +106,6 @@ function findClosing(input: string, from: number, delimiter: Delimiter): number 
 
   for (let i = from; i < input.length; i++) {
     if (input[i] !== '$') continue;
-    if (input.startsWith('$$', i)) continue;
     if (isEscapedAt(input, i)) continue;
     return i;
   }

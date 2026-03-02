@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { renderTexToSvg } from '@/lib/latex/mathjax-client';
-import { prepareTexForMathJax } from '@/lib/latex/tex-normalize';
 
 interface LatexSvgProps {
   tex: string;
@@ -15,8 +14,8 @@ const MAX_SVG_CACHE = 300;
 export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const prepared = prepareTexForMathJax(tex, displayMode);
-  const cacheKey = `${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
+  // Cache key uses raw input; renderTexToSvg normalizes internally exactly once.
+  const cacheKey = `svg:${displayMode ? 'D' : 'I'}:${tex}`;
   const cached = svgCache.get(cacheKey);
 
   useEffect(() => {
@@ -25,7 +24,7 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
 
     (async () => {
       try {
-        const rendered = await renderTexToSvg(prepared.tex, prepared.displayMode);
+        const rendered = await renderTexToSvg(tex, displayMode);
         if (!cancelled) {
           if (svgCache.size > MAX_SVG_CACHE) {
             const oldest = svgCache.keys().next().value as string | undefined;
@@ -46,7 +45,7 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     return () => {
       cancelled = true;
     };
-  }, [cached, cacheKey, prepared.displayMode, prepared.tex]);
+  }, [cached, cacheKey, displayMode, tex]);
 
   const visibleSvg = cached ?? svg;
   const visibleError = cached ? null : error;
@@ -66,6 +65,8 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   return (
     <span
       className={displayMode ? 'block overflow-x-auto py-1' : 'inline-block align-middle'}
+      role="math"
+      aria-label={`LaTeX: ${tex}`}
       dangerouslySetInnerHTML={{ __html: visibleSvg }}
     />
   );
