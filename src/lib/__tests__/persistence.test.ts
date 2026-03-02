@@ -302,6 +302,116 @@ describe('persistence', () => {
     });
   });
 
+  describe('scene array primitive rejection', () => {
+    it('returns null when V3 scene contains primitives instead of objects', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const bad = {
+        version: 3,
+        updatedAt: Date.now(),
+        activeChatId: 'chat-1',
+        chats: [
+          {
+            id: 'chat-1',
+            title: 'Test',
+            createdAt: 1000,
+            updatedAt: 2000,
+            messages: [],
+            semanticScene: [],
+            scene: [42, 'bad', null],
+            plannerMeta: [],
+          },
+        ],
+        prefs: { panelSizes: [50, 50] },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(bad));
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      consoleSpy.mockRestore();
+    });
+
+    it('returns null when V3 semanticScene contains primitives', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const bad = {
+        version: 3,
+        updatedAt: Date.now(),
+        activeChatId: 'chat-1',
+        chats: [
+          {
+            id: 'chat-1',
+            title: 'Test',
+            createdAt: 1000,
+            updatedAt: 2000,
+            messages: [],
+            semanticScene: [99, false],
+            scene: [],
+            plannerMeta: [],
+          },
+        ],
+        prefs: { panelSizes: [50, 50] },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(bad));
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      consoleSpy.mockRestore();
+    });
+
+    it('returns null when V3 plannerMeta contains primitives', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const bad = {
+        version: 3,
+        updatedAt: Date.now(),
+        activeChatId: 'chat-1',
+        chats: [
+          {
+            id: 'chat-1',
+            title: 'Test',
+            createdAt: 1000,
+            updatedAt: 2000,
+            messages: [],
+            semanticScene: [],
+            scene: [],
+            plannerMeta: ['not-an-object'],
+          },
+        ],
+        prefs: { panelSizes: [50, 50] },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(bad));
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      consoleSpy.mockRestore();
+    });
+
+    it('returns null when V2 scene contains primitives', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const bad = {
+        version: 2,
+        updatedAt: 1000,
+        activeChatId: 'c1',
+        chats: [{ id: 'c1', title: 'X', createdAt: 1, updatedAt: 2, messages: [], scene: [42, null] }],
+        prefs: { panelSizes: [50, 50] },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(bad));
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      consoleSpy.mockRestore();
+    });
+
+    it('returns null when V1 scene contains primitives', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const bad = {
+        version: 1,
+        updatedAt: 1000,
+        messages: [],
+        scene: ['bad', 123],
+        prefs: { panelSizes: [50, 50] },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(bad));
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      consoleSpy.mockRestore();
+    });
+  });
+
   describe('unrecognized schema', () => {
     it('returns null for wrong version number', () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

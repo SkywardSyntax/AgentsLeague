@@ -50,9 +50,9 @@ const PersistedSessionV3Schema = z.object({
       createdAt: z.number(),
       updatedAt: z.number(),
       messages: z.array(MessageSchema),
-      semanticScene: z.array(z.any()),
-      scene: z.array(z.any()),
-      plannerMeta: z.array(z.any()),
+      semanticScene: z.array(z.record(z.string(), z.unknown())),
+      scene: z.array(z.record(z.string(), z.unknown())),
+      plannerMeta: z.array(z.record(z.string(), z.unknown())),
       warnings: z.array(z.string()).optional(),
     }),
   ),
@@ -70,7 +70,7 @@ const PersistedSessionV2Schema = z.object({
       createdAt: z.number(),
       updatedAt: z.number(),
       messages: z.array(MessageSchema),
-      scene: z.array(z.any()),
+      scene: z.array(z.record(z.string(), z.unknown())),
     }),
   ),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
@@ -80,7 +80,7 @@ const LegacyPersistedSessionV1Schema = z.object({
   version: z.literal(1),
   updatedAt: z.number(),
   messages: z.array(MessageSchema),
-  scene: z.array(z.any()),
+  scene: z.array(z.record(z.string(), z.unknown())),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
 });
 
@@ -114,7 +114,7 @@ function migrateV2toV3(v2: z.infer<typeof PersistedSessionV2Schema>): PersistedS
       ...chat,
       semanticScene: [importedLegacySemanticBatch(chat.id, chat.scene.length)],
       plannerMeta: [],
-      scene: chat.scene as DrawElement[],
+      scene: chat.scene as unknown as DrawElement[],
     })),
     prefs: v2.prefs,
   };
@@ -135,7 +135,7 @@ function migrateV1toV3(legacy: z.infer<typeof LegacyPersistedSessionV1Schema>): 
         messages: legacy.messages,
         semanticScene: [importedLegacySemanticBatch(chatId, legacy.scene.length)],
         plannerMeta: [],
-        scene: legacy.scene as DrawElement[],
+        scene: legacy.scene as unknown as DrawElement[],
       },
     ],
     prefs: legacy.prefs,
@@ -165,7 +165,7 @@ export function loadSession(): PersistedSessionV3 | null {
 
     const v3 = PersistedSessionV3Schema.safeParse(parsed);
     if (v3.success) {
-      return sanitizeSession(v3.data as PersistedSessionV3);
+      return sanitizeSession(v3.data as unknown as PersistedSessionV3);
     }
 
     // Backup raw JSON before migration
