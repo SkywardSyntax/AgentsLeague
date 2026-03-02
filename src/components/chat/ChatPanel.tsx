@@ -8,8 +8,10 @@ import { PillButton } from '@/components/ui/PillButton';
 function useTabKeyboard(chats: ChatThreadMeta[], onSelectChat: (id: string) => void) {
   return useCallback(
     (e: React.KeyboardEvent) => {
+      if (!(e.target instanceof HTMLElement)) return;
+      const target = e.target;
       const idx = chats.findIndex(
-        (c) => (e.target as HTMLElement).textContent?.includes(c.title),
+        (c) => target.textContent?.includes(c.title),
       );
       if (idx === -1) return;
       let next = -1;
@@ -20,7 +22,7 @@ function useTabKeyboard(chats: ChatThreadMeta[], onSelectChat: (id: string) => v
       if (next >= 0) {
         e.preventDefault();
         onSelectChat(chats[next].id);
-        const container = (e.currentTarget as HTMLElement);
+        const container = e.currentTarget;
         const tabs = container.querySelectorAll<HTMLElement>('[role="tab"]');
         tabs[next]?.focus();
       }

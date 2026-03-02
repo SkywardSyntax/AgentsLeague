@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface ShortcutActions {
   focusInput: () => void;
@@ -11,14 +11,18 @@ interface ShortcutActions {
 }
 
 export function useKeyboardShortcuts(actions: ShortcutActions) {
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+      const { current: a } = actionsRef;
 
       // Escape works even in inputs
       if (e.key === 'Escape') {
-        actions.cancelStream();
+        a.cancelStream();
         return;
       }
 
@@ -30,45 +34,45 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
       // Ctrl+Shift+K — focus chat input (avoids Cmd+K browser conflict)
       if (mod && e.shiftKey && e.key === 'K') {
         e.preventDefault();
-        actions.focusInput();
+        a.focusInput();
         return;
       }
 
       // Ctrl+Shift+N — new chat
       if (mod && e.shiftKey && e.key === 'N') {
         e.preventDefault();
-        actions.newChat();
+        a.newChat();
         return;
       }
 
       // Ctrl+[ / Ctrl+] — prev/next chat
       if (mod && e.key === '[') {
         e.preventDefault();
-        actions.prevChat();
+        a.prevChat();
         return;
       }
       if (mod && e.key === ']') {
         e.preventDefault();
-        actions.nextChat();
+        a.nextChat();
         return;
       }
 
       // Ctrl+0 — reset zoom
       if (mod && e.key === '0') {
         e.preventDefault();
-        actions.resetZoom();
+        a.resetZoom();
         return;
       }
 
       // Ctrl+Shift+M — toggle panel (mobile)
       if (mod && e.shiftKey && e.key === 'M') {
         e.preventDefault();
-        actions.togglePanel?.();
+        a.togglePanel?.();
         return;
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [actions]);
+  }, []);
 }

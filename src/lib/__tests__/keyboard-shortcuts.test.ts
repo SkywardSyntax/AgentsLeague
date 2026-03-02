@@ -151,4 +151,42 @@ describe('useKeyboardShortcuts', () => {
     fireKey('Escape', { repeat: true });
     expect(actions.cancelStream).toHaveBeenCalledOnce();
   });
+
+  it('registers keydown listener only once across re-renders with new action callbacks', () => {
+    const addSpy = vi.spyOn(document, 'addEventListener');
+    const removeSpy = vi.spyOn(document, 'removeEventListener');
+
+    const { rerender } = renderHook(
+      (props: ReturnType<typeof makeActions>) => useKeyboardShortcuts(props),
+      { initialProps: actions },
+    );
+
+    const addCountAfterMount = addSpy.mock.calls.filter(
+      ([ev]) => ev === 'keydown',
+    ).length;
+    expect(addCountAfterMount).toBe(1);
+
+    // Re-render with brand-new actions object — listener should NOT be re-added
+    const actions2 = makeActions();
+    rerender(actions2);
+
+    const addCountAfterRerender = addSpy.mock.calls.filter(
+      ([ev]) => ev === 'keydown',
+    ).length;
+    expect(addCountAfterRerender).toBe(1);
+
+    // Remove listener should NOT have been called (no re-subscribe)
+    const removeCount = removeSpy.mock.calls.filter(
+      ([ev]) => ev === 'keydown',
+    ).length;
+    expect(removeCount).toBe(0);
+
+    // The latest actions should still be invoked
+    fireKey('Escape');
+    expect(actions2.cancelStream).toHaveBeenCalledOnce();
+    expect(actions.cancelStream).not.toHaveBeenCalled();
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
 });
