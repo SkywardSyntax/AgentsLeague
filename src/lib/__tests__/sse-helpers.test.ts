@@ -8,6 +8,11 @@ describe('sseHeaders', () => {
     expect(headers).toHaveProperty('Content-Type', 'text/event-stream; charset=utf-8');
     expect(headers).toHaveProperty('Cache-Control', 'no-cache, no-transform');
   });
+
+  it('returns Connection keep-alive', () => {
+    const headers = sseHeaders();
+    expect(headers).toHaveProperty('Connection', 'keep-alive');
+  });
 });
 
 describe('formatSSE', () => {
@@ -62,6 +67,13 @@ describe('formatSSE', () => {
     expect(parsed.delta).toBe('line1\nline2');
   });
 
+  it('escapes embedded newlines in string fields via JSON.stringify', () => {
+    const result = formatSSE({ text: 'line1\nline2' });
+    expect(result).toBe('data: {"text":"line1\\nline2"}\n\n');
+    // Should be a single data: line, not split
+    expect(result.split('\n').filter((l: string) => l.startsWith('data:')).length).toBe(1);
+  });
+
   it('encodes payload with backslash in string field', () => {
     const event: AgentSSEEvent = { type: 'assistant.text.delta', turnId: 't1', delta: 'path\\file' };
     const result = formatSSE(event);
@@ -82,6 +94,26 @@ describe('formatSSE', () => {
     expect(result).toBe('data: {"type":"turn.done","turnId":"t1"}\n\n');
     const parsed = JSON.parse(result.slice(6).trim());
     expect(parsed.type).toBe('turn.done');
+  });
+
+  it('serializes null as valid JSON', () => {
+    expect(formatSSE(null)).toBe('data: null\n\n');
+  });
+
+  it('serializes undefined as non-JSON "data: undefined" (protocol caveat)', () => {
+    // JSON.stringify(undefined) returns undefined (not a string "null")
+    expect(formatSSE(undefined)).toBe('data: undefined\n\n');
+  });
+
+  it('serializes number primitives as valid JSON', () => {
+    expect(formatSSE(42)).toBe('data: 42\n\n');
+  });
+
+  it('handles special characters (emoji, backslash) without corruption', () => {
+    const result = formatSSE({ emoji: '🚀', path: 'C:\\Users' });
+    const parsed = JSON.parse(result.replace(/^data: /, '').trim());
+    expect(parsed.emoji).toBe('🚀');
+    expect(parsed.path).toBe('C:\\Users');
   });
 });
 

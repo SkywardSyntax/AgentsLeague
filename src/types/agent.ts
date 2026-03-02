@@ -145,7 +145,20 @@ export interface SemanticCaptionBlock {
   region_hint?: 'bottom' | 'center' | 'auto';
 }
 
-export type SemanticBlock = SemanticEquationStackBlock | SemanticDiagramPanelBlock | SemanticCaptionBlock;
+export interface SemanticAnnotationBlock {
+  id: string;
+  kind: 'annotation';
+  target_block_id: string;
+  text: string;
+  style?: 'callout' | 'bracket' | 'underline';
+  anchor?: string;
+}
+
+export type SemanticBlock =
+  | SemanticEquationStackBlock
+  | SemanticDiagramPanelBlock
+  | SemanticCaptionBlock
+  | SemanticAnnotationBlock;
 
 export interface SemanticRelation {
   id: string;

@@ -52,7 +52,7 @@ export const DEFAULT_PLANNER_CONFIG: PlannerConfig = {
   canvasWidth: 1600,
   canvasHeight: 1200,
   margin: 24,
-  maxRepairIterations: 3,
+  maxRepairIterations: 6,
   minTextGap: 14,
   minLabelGap: 10,
   maxScaleDownPerBlock: 0.15,

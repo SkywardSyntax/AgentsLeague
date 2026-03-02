@@ -2,6 +2,7 @@ import type {
   ArrowElement,
   DrawElement,
   Point,
+  SemanticAnnotationBlock,
   SemanticBatch,
   SemanticCaptionBlock,
   SemanticDiagramPanelBlock,
@@ -11,6 +12,8 @@ import type {
   StylePreset,
 } from '@/types/agent';
 import type { PlannedSemanticLayout, PlannerAnchor, PlannerRegion } from './types';
+import type { PlannerTraceContext } from './trace';
+import { validateSemanticBatchInput } from './validate-input';
 
 const MAX_BLOCKS = 8;
 const MAX_EQUATION_LINES = 6;
@@ -42,20 +45,31 @@ function compactText(input: string | undefined, maxChars: number): string | unde
 }
 
 function buildDefaultRegions(context?: StructuredWhiteboardContext): Record<string, PlannerRegion> {
-  const suggested = context?.suggested_next_regions?.[0];
-  const baseX = suggested ? suggested.x : 64;
-  const baseY = suggested ? suggested.y : 80;
-  const baseW = suggested ? Math.max(980, suggested.w) : 1320;
+  const suggested = context?.suggested_next_regions;
+  const primary = suggested?.[0];
+  const baseX = primary ? primary.x : 64;
+  const baseY = primary ? primary.y : 80;
+  const baseW = primary ? Math.max(980, primary.w) : 1320;
   const topH = 380;
 
   const laneGap = 56;
-  const leftW = Math.max(420, Math.floor((baseW - laneGap) / 2));
-  const rightW = Math.max(420, baseW - leftW - laneGap);
+
+  // When multiple suggested regions exist, use them to inform left/right bounds
+  const sugLeft = suggested?.[1]; // below_left
+  const sugRight = suggested?.[2]; // below_right
+  const leftW = sugLeft
+    ? Math.max(420, sugLeft.w)
+    : Math.max(420, Math.floor((baseW - laneGap) / 2));
+  const leftX = sugLeft ? sugLeft.x : baseX;
+  const rightW = sugRight
+    ? Math.max(420, sugRight.w)
+    : Math.max(420, baseW - leftW - laneGap);
+  const rightX = sugRight ? sugRight.x : leftX + leftW + laneGap;
   const centerW = Math.max(560, Math.floor(baseW * 0.66));
 
   return {
-    left: { name: 'left', x: baseX, y: baseY, w: leftW, h: topH, score: 1 },
-    right: { name: 'right', x: baseX + leftW + laneGap, y: baseY, w: rightW, h: topH, score: 0.94 },
+    left: { name: 'left', x: leftX, y: baseY, w: leftW, h: topH, score: 1 },
+    right: { name: 'right', x: rightX, y: baseY, w: rightW, h: topH, score: 0.94 },
     center: {
       name: 'center',
       x: baseX + Math.floor((baseW - centerW) / 2),
@@ -165,6 +179,74 @@ function estimateLatexVerticalAdvance(line: SemanticEquationLine, fontSize: numb
 
   const floor = displayMode ? Math.max(62, fontSize * 1.95) : Math.max(44, fontSize * 1.45);
   return Math.max(floor, base + extra);
+}
+
+export function measureEquationStack(
+  block: SemanticEquationStackBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  let h = 0;
+  if (block.title) {
+    const avgCharPx = Math.max(8, 22 * 0.5);
+    const maxChars = Math.max(16, Math.floor((regionWidth - 24) / avgCharPx));
+    const titleLines = wrapPlainText(block.title, maxChars);
+    h += titleLines.length * Math.max(23, Math.floor(22 * 1.24)) + 8;
+  }
+  for (const line of block.lines) {
+    const role = line.role ?? 'step';
+    const fontSize = role === 'result' ? 28 : role === 'note' ? 20 : 24;
+    h += estimateLatexVerticalAdvance(line, fontSize) + 12;
+  }
+  return { width: regionWidth, height: h };
+}
+
+export function measureDiagramPanel(
+  block: SemanticDiagramPanelBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  let h = 0;
+  if (block.title) {
+    const avgCharPx = Math.max(8, 22 * 0.5);
+    const maxChars = Math.max(16, Math.floor((regionWidth - 24) / avgCharPx));
+    const titleLines = wrapPlainText(block.title, maxChars);
+    h += titleLines.length * Math.max(23, Math.floor(22 * 1.24)) + 6;
+  }
+  h += Math.max(210, 336);
+  return { width: regionWidth, height: h };
+}
+
+export function measureCaptionBlock(
+  block: SemanticCaptionBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  const w = regionWidth - 20;
+  const avgCharPx = Math.max(8, 20 * 0.5);
+  const maxChars = Math.max(16, Math.floor((w - 24) / avgCharPx));
+  const lines = wrapPlainText(block.text, maxChars);
+  const h = lines.length * Math.max(23, Math.floor(20 * 1.24)) + 10;
+  return { width: w, height: h };
+}
+
+export function measureAnnotationBlock(
+  block: SemanticAnnotationBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  const w = Math.min(regionWidth * 0.5, 260);
+  const avgCharPx = Math.max(8, 16 * 0.5);
+  const maxChars = Math.max(16, Math.floor((w - 20) / avgCharPx));
+  const lines = wrapPlainText(block.text, maxChars);
+  const h = lines.length * Math.max(23, Math.floor(16 * 1.24)) + 10;
+  return { width: w, height: h };
+}
+
+export function measureBlock(
+  block: SemanticBatch['blocks'][number],
+  regionWidth: number,
+): { width: number; height: number } {
+  if (block.kind === 'equation_stack') return measureEquationStack(block, regionWidth);
+  if (block.kind === 'diagram_panel') return measureDiagramPanel(block, regionWidth);
+  if (block.kind === 'annotation') return measureAnnotationBlock(block, regionWidth);
+  return measureCaptionBlock(block, regionWidth);
 }
 
 function placeEquationStack(
@@ -417,6 +499,44 @@ function placeCaptionBlock(
   return y + 10;
 }
 
+function placeAnnotationBlock(
+  block: SemanticAnnotationBlock,
+  targetPos: PanelPlacement,
+  state: BuildState,
+): void {
+  const style = block.style ?? 'callout';
+  let textX: number;
+  let textY: number;
+  let arrowFrom: Point;
+  let arrowTo: Point;
+
+  if (style === 'underline') {
+    textX = targetPos.center.x - 60;
+    textY = targetPos.bottomY + 8;
+    arrowFrom = { x: textX, y: textY - 4 };
+    arrowTo = { x: targetPos.center.x, y: targetPos.bottomY - 4 };
+  } else if (style === 'bracket') {
+    textX = targetPos.entry.x - 20;
+    textY = targetPos.center.y;
+    arrowFrom = { x: textX + 10, y: textY - 6 };
+    arrowTo = { x: targetPos.entry.x + 4, y: targetPos.center.y };
+  } else {
+    // callout: position to the right of the target
+    textX = targetPos.exit.x + 24;
+    textY = targetPos.center.y - 10;
+    arrowFrom = { x: textX - 4, y: textY + 8 };
+    arrowTo = { x: targetPos.exit.x + 4, y: targetPos.center.y };
+  }
+
+  pushElement(state, {
+    id: `${block.id}-arrow`,
+    type: 'arrow',
+    from: arrowFrom,
+    to: arrowTo,
+  });
+  pushWrappedText(state, `${block.id}-text`, textX, textY, block.text, 16, 220);
+}
+
 function diagramHintWeight(block: SemanticDiagramPanelBlock): number {
   if (block.region_hint === 'left') return 0;
   if (block.region_hint === 'center') return 1;
@@ -511,6 +631,13 @@ function compactSemanticBatchForLegibility(
       continue;
     }
 
+    if (block.kind === 'annotation') {
+      const text = compactText(block.text, 60);
+      if (!text) continue;
+      compactedBlocks.push({ ...block, text });
+      continue;
+    }
+
     const text = compactText(block.text, 74);
     if (!text) continue;
     compactedBlocks.push({
@@ -520,6 +647,15 @@ function compactSemanticBatchForLegibility(
   }
 
   const idSet = new Set(compactedBlocks.map((block) => block.id));
+
+  // Drop annotation blocks whose target was removed during compaction
+  const validBlocks = compactedBlocks.filter((block) => {
+    if (block.kind !== 'annotation') return true;
+    if (idSet.has(block.target_block_id)) return true;
+    warnings.push(`Annotation ${block.id} target ${block.target_block_id} not found`);
+    return false;
+  });
+
   const relations =
     semanticBatch.relations
       ?.filter((relation) => idSet.has(relation.from_block_id) && idSet.has(relation.to_block_id))
@@ -531,8 +667,8 @@ function compactSemanticBatchForLegibility(
   return {
     ...semanticBatch,
     blocks:
-      compactedBlocks.length > 0
-        ? compactedBlocks
+      validBlocks.length > 0
+        ? validBlocks
         : [
             {
               id: `fallback-${semanticBatch.batch_id}`,
@@ -553,8 +689,7 @@ function buildTextLanes(
   const topTextY = textStartY;
 
   if (panelColumns.length >= 2) {
-    const leftCol = panelColumns[0]!;
-    const rightCol = panelColumns[1]!;
+    const [leftCol, rightCol] = panelColumns as [{ x: number; w: number }, { x: number; w: number }, ...Array<{ x: number; w: number }>];
     return {
       left: {
         name: 'left',
@@ -593,15 +728,21 @@ function buildTextLanes(
     };
   }
 
+  // When there are fewer than 2 panel columns, create distinct non-overlapping
+  // lane regions instead of giving all lanes the same spatial bounds.
+  const laneGap = 40;
+  const leftW = Math.max(280, Math.floor((baseRegion.w - laneGap) / 2));
+  const rightW = Math.max(280, baseRegion.w - leftW - laneGap);
+
   return {
     left: {
       name: 'left',
-      region: { ...baseRegion, x: baseRegion.x, y: topTextY, w: baseRegion.w, h: baseRegion.h, score: 1 },
+      region: { ...baseRegion, x: baseRegion.x, y: topTextY, w: leftW, h: baseRegion.h, score: 1 },
       cursorY: topTextY,
     },
     right: {
       name: 'right',
-      region: { ...baseRegion, x: baseRegion.x, y: topTextY, w: baseRegion.w, h: baseRegion.h, score: 1 },
+      region: { ...baseRegion, x: baseRegion.x + leftW + laneGap, y: topTextY, w: rightW, h: baseRegion.h, score: 1 },
       cursorY: topTextY,
     },
     center: {
@@ -634,6 +775,7 @@ function buildTextLanes(
 function chooseLaneForBlock(
   block: SemanticBatch['blocks'][number],
   lanes: Record<Lane['name'], Lane>,
+  contentHeights?: Record<string, number>,
 ): Lane {
   const hint =
     block.kind === 'caption'
@@ -646,17 +788,35 @@ function chooseLaneForBlock(
   if (hint === 'right') return lanes.right;
   if (hint === 'center') return lanes.center;
   if (hint === 'bottom') {
-    lanes.bottom.cursorY = Math.max(
-      lanes.bottom.cursorY,
-      lanes.left.cursorY + 16,
-      lanes.right.cursorY + 16,
-      lanes.center.cursorY + 16,
-    );
+    // Don't mutate cursorY during selection — the caller advances cursorY
+    // after placement. Just ensure bottom starts below other lanes.
     return lanes.bottom;
   }
 
   const candidates = [lanes.left, lanes.right, lanes.center];
-  return candidates.reduce((best, lane) => (lane.cursorY < best.cursorY ? lane : best), candidates[0]!);
+  const minY = Math.min(...candidates.map((l) => l.cursorY));
+  const threshold = 30;
+  const tied = candidates.filter((l) => l.cursorY - minY <= threshold);
+
+  if (tied.length > 1 && contentHeights) {
+    // Break tie by choosing the lane that best balances left vs right height
+    let bestLane = tied[0] ?? candidates[0];
+    let bestImbalance = Infinity;
+    for (const lane of tied) {
+      const leftH = contentHeights['left'] ?? 0;
+      const rightH = contentHeights['right'] ?? 0;
+      const addLeft = lane.name === 'left' ? 1 : 0;
+      const addRight = lane.name === 'right' ? 1 : 0;
+      const imbalance = Math.abs((leftH + addLeft) - (rightH + addRight));
+      if (imbalance < bestImbalance) {
+        bestImbalance = imbalance;
+        bestLane = lane;
+      }
+    }
+    return bestLane;
+  }
+
+  return tied[0] ?? candidates.reduce((best, lane) => (lane.cursorY < best.cursorY ? lane : best));
 }
 
 function findAnchorPoint(anchors: PlannerAnchor[], id: string | undefined): Point | null {
@@ -682,7 +842,11 @@ function buildAdaptiveLayout(
   const diagramBlocks = semanticBatch.blocks
     .filter((block): block is SemanticDiagramPanelBlock => block.kind === 'diagram_panel')
     .sort((a, b) => diagramHintWeight(a) - diagramHintWeight(b));
-  const textBlocks = semanticBatch.blocks.filter((block) => block.kind !== 'diagram_panel');
+  const annotationBlocks = semanticBatch.blocks
+    .filter((block): block is SemanticAnnotationBlock => block.kind === 'annotation');
+  const textBlocks = semanticBatch.blocks.filter(
+    (block) => block.kind !== 'diagram_panel' && block.kind !== 'annotation',
+  );
 
   const panelPlacements = new Map<string, PanelPlacement>();
   const panelColumns: Array<{ x: number; w: number }> = [];
@@ -720,52 +884,96 @@ function buildAdaptiveLayout(
       panelPlacements.set(block.id, placed);
       textStartY = Math.max(textStartY, placed.bottomY);
     }
-
-    for (const relation of semanticBatch.relations ?? []) {
-      const from = panelPlacements.get(relation.from_block_id);
-      const to = panelPlacements.get(relation.to_block_id);
-      if (!from || !to) continue;
-
-      const fromAnchor = findAnchorPoint(state.anchors, relation.from_anchor);
-      const toAnchor = findAnchorPoint(state.anchors, relation.to_anchor);
-
-      const arrowFrom = fromAnchor ??
-        (from.center.x < to.center.x
-          ? { x: from.exit.x, y: from.center.y - 6 }
-          : { x: from.entry.x, y: from.center.y - 6 });
-      const arrowTo = toAnchor ??
-        (from.center.x < to.center.x
-          ? { x: to.entry.x, y: to.center.y - 6 }
-          : { x: to.exit.x, y: to.center.y - 6 });
-
-      pushElement(state, {
-        id: relation.id,
-        type: 'arrow',
-        from: arrowFrom,
-        to: arrowTo,
-      });
-      if (relation.label) {
-        pushElement(state, {
-          id: `${relation.id}-label`,
-          type: 'text',
-          x: (arrowFrom.x + arrowTo.x) / 2 - 20,
-          y: Math.min(arrowFrom.y, arrowTo.y) - 12,
-          text: relation.label,
-          size: 20,
-        });
-      }
-    }
   }
 
   const lanes = buildTextLanes(baseRegion, panelColumns, textStartY + (diagramBlocks.length > 0 ? 8 : 0));
 
+  // Track text block positions so cross-type relations (panel↔equation, panel↔caption) work
+  const textBlockPositions = new Map<string, PanelPlacement>();
+  const contentHeights: Record<string, number> = { left: 0, right: 0, center: 0, bottom: 0 };
+
   for (const block of textBlocks) {
-    const lane = chooseLaneForBlock(block, lanes);
+    const lane = chooseLaneForBlock(block, lanes, contentHeights);
+    // Ensure bottom lane starts below all other lanes
+    if (lane.name === 'bottom') {
+      lane.cursorY = Math.max(
+        lane.cursorY,
+        lanes.left.cursorY + 16,
+        lanes.right.cursorY + 16,
+        lanes.center.cursorY + 16,
+      );
+    }
+    const startY = lane.cursorY;
     if (block.kind === 'equation_stack') {
       lane.cursorY = placeEquationStack(block, lane.region, state, lane.cursorY);
       lane.cursorY += 14;
     } else {
       lane.cursorY = placeCaptionBlock(block, lane.region, state, lane.cursorY);
+    }
+    contentHeights[lane.name] = (contentHeights[lane.name] ?? 0) + (lane.cursorY - startY);
+    const midY = (startY + lane.cursorY) / 2;
+    const midX = lane.region.x + lane.region.w / 2;
+    textBlockPositions.set(block.id, {
+      blockId: block.id,
+      center: { x: midX, y: midY },
+      entry: { x: lane.region.x - 10, y: midY },
+      exit: { x: lane.region.x + lane.region.w + 10, y: midY },
+      bottomY: lane.cursorY,
+    });
+  }
+
+  // Place annotation blocks attached to their targets (don't consume lanes)
+  for (const block of annotationBlocks) {
+    const targetPos =
+      panelPlacements.get(block.target_block_id) ?? textBlockPositions.get(block.target_block_id);
+    if (!targetPos) {
+      state.warnings.push(`Annotation ${block.id} target ${block.target_block_id} not found`);
+      continue;
+    }
+    placeAnnotationBlock(block, targetPos, state);
+  }
+
+  // Render relations between ANY block types (panel↔panel, panel↔equation, etc.)
+  for (const relation of semanticBatch.relations ?? []) {
+    const from = panelPlacements.get(relation.from_block_id) ?? textBlockPositions.get(relation.from_block_id);
+    const to = panelPlacements.get(relation.to_block_id) ?? textBlockPositions.get(relation.to_block_id);
+    if (!from || !to) continue;
+
+    const fromAnchor = findAnchorPoint(state.anchors, relation.from_anchor);
+    const toAnchor = findAnchorPoint(state.anchors, relation.to_anchor);
+
+    const arrowFrom = fromAnchor ??
+      (from.center.x < to.center.x
+        ? { x: from.exit.x, y: from.center.y - 6 }
+        : { x: from.entry.x, y: from.center.y - 6 });
+    const arrowTo = toAnchor ??
+      (from.center.x < to.center.x
+        ? { x: to.entry.x, y: to.center.y - 6 }
+        : { x: to.exit.x, y: to.center.y - 6 });
+
+    pushElement(state, {
+      id: relation.id,
+      type: 'arrow',
+      from: arrowFrom,
+      to: arrowTo,
+    });
+    if (relation.label) {
+      const midX = (arrowFrom.x + arrowTo.x) / 2;
+      const midY = (arrowFrom.y + arrowTo.y) / 2;
+      const dx = arrowTo.x - arrowFrom.x;
+      const dy = arrowTo.y - arrowFrom.y;
+      // Offset label perpendicular to arrow direction for readability
+      const isMoreVertical = Math.abs(dy) > Math.abs(dx);
+      const labelX = isMoreVertical ? midX + 8 : midX - 20;
+      const labelY = isMoreVertical ? midY : midY - 14;
+      pushElement(state, {
+        id: `${relation.id}-label`,
+        type: 'text',
+        x: labelX,
+        y: labelY,
+        text: relation.label,
+        size: 20,
+      });
     }
   }
 }
@@ -773,17 +981,29 @@ function buildAdaptiveLayout(
 export function planSemanticBatch(
   semanticBatch: SemanticBatch,
   context?: StructuredWhiteboardContext,
+  trace?: PlannerTraceContext,
 ): PlannedSemanticLayout {
-  const regions = buildDefaultRegions(context);
+  const { repaired, warnings: validationWarnings } = trace
+    ? trace.span('validate', 'validateSemanticBatchInput', () => validateSemanticBatchInput(semanticBatch))
+    : validateSemanticBatchInput(semanticBatch);
+  const regions = trace
+    ? trace.span('region', 'buildDefaultRegions', () => buildDefaultRegions(context))
+    : buildDefaultRegions(context);
   const state: BuildState = {
     elements: [],
     anchors: [],
-    warnings: [],
+    warnings: [...validationWarnings],
   };
-  const normalizedSemantic = compactSemanticBatchForLegibility(semanticBatch, state.warnings);
+  const normalizedSemantic = trace
+    ? trace.span('template', 'compactSemanticBatchForLegibility', () => compactSemanticBatchForLegibility(repaired, state.warnings))
+    : compactSemanticBatchForLegibility(repaired, state.warnings);
 
   // Single adaptive planner path: no hardcoded situation templates, only semantic content + region hints.
-  buildAdaptiveLayout(normalizedSemantic, regions, state);
+  if (trace) {
+    trace.span('template', 'buildAdaptiveLayout', () => { buildAdaptiveLayout(normalizedSemantic, regions, state); return undefined; });
+  } else {
+    buildAdaptiveLayout(normalizedSemantic, regions, state);
+  }
 
   return {
     batchId: normalizedSemantic.batch_id,

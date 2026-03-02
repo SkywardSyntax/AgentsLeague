@@ -83,6 +83,7 @@ export const ChatPanel = memo(function ChatPanel({
             type="button"
             onClick={onCreateChat}
             disabled={!canManageChats}
+            aria-label="New chat"
             className="shrink-0 rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
           >
             + New Chat
@@ -96,13 +97,14 @@ export const ChatPanel = memo(function ChatPanel({
             {activeChat?.title ?? 'Agent Channel'}
           </p>
           <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
-            {status}
+            <span role="status" aria-live="polite">{status}</span>
           </p>
         </div>
         <button
           type="button"
           onClick={onCancel}
           disabled={status === 'idle'}
+          aria-label="Stop generation"
           className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           Stop
@@ -114,6 +116,7 @@ export const ChatPanel = memo(function ChatPanel({
           type="button"
           onClick={() => onDeleteChat(activeChatId)}
           disabled={chats.length <= 1 || !canManageChats}
+          aria-label="Delete current chat"
           className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
         >
           Delete Chat
@@ -122,6 +125,7 @@ export const ChatPanel = memo(function ChatPanel({
           type="button"
           onClick={onClearChat}
           disabled={messages.length === 0 || status !== 'idle'}
+          aria-label="Clear messages"
           className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
         >
           Clear Chat
@@ -192,6 +196,7 @@ export const ChatPanel = memo(function ChatPanel({
             type="button"
             onClick={onSend}
             disabled={disabled || input.trim().length === 0}
+            aria-label="Send message"
             className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Send

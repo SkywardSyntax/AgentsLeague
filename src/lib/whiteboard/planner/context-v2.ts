@@ -5,7 +5,7 @@ import type {
   StructuredWhiteboardContext,
   WhiteboardBounds,
 } from '@/types/agent';
-import { boundsOf } from '../bounds';
+import { boundsOf } from './bounds';
 
 function mergeBounds(a: WhiteboardBounds | undefined, b: WhiteboardBounds | null): WhiteboardBounds | undefined {
   if (!b) return a;
@@ -73,6 +73,15 @@ function recentBlocksFromSemanticBatch(batch: SemanticBatch): StructuredWhiteboa
           kind: block.kind,
           region: block.region_hint ?? 'auto',
           text_preview: block.lines[0]?.tex?.replace(/\s+/g, ' ').slice(0, 80),
+        };
+      }
+
+      if (block.kind === 'annotation') {
+        return {
+          id: `${batch.batch_id}:${block.id}`,
+          kind: block.kind,
+          region: 'auto',
+          text_preview: block.text.slice(0, 80),
         };
       }
 
