@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   partialPolylineByLength,
   screenStrokePx,
+  computeFitCamera,
 } from '@/lib/whiteboard/geometry';
 import { rectPoints, withJitter } from '@/lib/whiteboard/semantic-to-strokes';
 
@@ -44,5 +45,43 @@ describe('geometry + sketch behavior', () => {
   it('clamps stroke width across zoom levels', () => {
     expect(screenStrokePx(0.8, 0.1, 1)).toBeGreaterThanOrEqual(1.25);
     expect(screenStrokePx(10, 2, 2)).toBeLessThanOrEqual(5.5);
+  });
+});
+
+describe('computeFitCamera', () => {
+  it('centers bbox and applies 0.9 margin zoom', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+      1000, 800, 0.25, 4,
+    );
+    expect(result).not.toBeNull();
+    // zoom = min(1000/100, 800/100) * 0.9 = 8 * 0.9 = 7.2 → clamped to 4
+    expect(result!.zoom).toBe(4);
+    // center of bbox = (50, 50), camera: x = 500 - 50*4 = 300, y = 400 - 50*4 = 200
+    expect(result!.x).toBe(300);
+    expect(result!.y).toBe(200);
+  });
+
+  it('fits wide content horizontally', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 2000, maxY: 200 },
+      1000, 800, 0.25, 4,
+    );
+    expect(result).not.toBeNull();
+    // zoom = min(1000/2000, 800/200) * 0.9 = min(0.5, 4) * 0.9 = 0.45
+    expect(result!.zoom).toBeCloseTo(0.45);
+  });
+
+  it('returns null for zero-area bbox', () => {
+    expect(computeFitCamera({ minX: 5, minY: 5, maxX: 5, maxY: 5 }, 1000, 800, 0.25, 4)).toBeNull();
+  });
+
+  it('clamps zoom to minZoom for very large content', () => {
+    const result = computeFitCamera(
+      { minX: 0, minY: 0, maxX: 100000, maxY: 100000 },
+      1000, 800, 0.25, 4,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.zoom).toBe(0.25);
   });
 });

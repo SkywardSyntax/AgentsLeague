@@ -8,6 +8,7 @@ import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-s
 import {
   partialPolylineByLength,
   screenStrokePx,
+  computeFitCamera,
 } from '@/lib/whiteboard/geometry';
 
 interface Camera {
@@ -337,6 +338,38 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     };
   }, []);
 
+  const fitToContent = useCallback(() => {
+    const strokes = committedStrokesRef.current;
+    if (strokes.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of strokes) {
+      if (s.bounds) {
+        if (s.bounds.minX < minX) minX = s.bounds.minX;
+        if (s.bounds.minY < minY) minY = s.bounds.minY;
+        if (s.bounds.maxX > maxX) maxX = s.bounds.maxX;
+        if (s.bounds.maxY > maxY) maxY = s.bounds.maxY;
+      } else {
+        for (const p of s.points) {
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+      }
+    }
+    if (!isFinite(minX)) return;
+    const result = computeFitCamera(
+      { minX, minY, maxX, maxY },
+      sizeRef.current.width,
+      sizeRef.current.height,
+      MIN_ZOOM,
+      MAX_ZOOM,
+    );
+    if (!result) return;
+    cameraRef.current = result;
+    committedDirtyRef.current = true;
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -345,14 +378,69 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     let lastX = 0;
     let lastY = 0;
 
+    // Pinch-to-zoom: track active pointers
+    const activePointers = new Map<number, { x: number; y: number }>();
+    let lastPinchDist = 0;
+
+    function getPinchDistance(): number {
+      const pts = Array.from(activePointers.values());
+      if (pts.length < 2) return 0;
+      const dx = pts[1]!.x - pts[0]!.x;
+      const dy = pts[1]!.y - pts[0]!.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function getPinchCenter(): { x: number; y: number } {
+      const pts = Array.from(activePointers.values());
+      return {
+        x: (pts[0]!.x + pts[1]!.x) / 2,
+        y: (pts[0]!.y + pts[1]!.y) / 2,
+      };
+    }
+
     const onPointerDown = (e: PointerEvent) => {
-      isPanning = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (activePointers.size === 2) {
+        // Entering pinch mode — cancel any pan
+        isPanning = false;
+        lastPinchDist = getPinchDistance();
+      } else if (activePointers.size === 1) {
+        isPanning = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+      }
       container.setPointerCapture(e.pointerId);
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (activePointers.size >= 2) {
+        // Pinch-to-zoom
+        const dist = getPinchDistance();
+        if (lastPinchDist > 0 && dist > 0) {
+          const rect = container.getBoundingClientRect();
+          const center = getPinchCenter();
+          const sx = center.x - rect.left;
+          const sy = center.y - rect.top;
+
+          const c = cameraRef.current;
+          const worldX = (sx - c.x) / c.zoom;
+          const worldY = (sy - c.y) / c.zoom;
+
+          const scale = dist / lastPinchDist;
+          const nextZoom = clamp(c.zoom * scale, MIN_ZOOM, MAX_ZOOM);
+
+          cameraRef.current = {
+            x: sx - worldX * nextZoom,
+            y: sy - worldY * nextZoom,
+            zoom: nextZoom,
+          };
+        }
+        lastPinchDist = dist;
+        return;
+      }
+
       if (!isPanning) return;
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
@@ -366,13 +454,17 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     };
 
     const onPointerUp = (e: PointerEvent) => {
-      isPanning = false;
-      container.releasePointerCapture(e.pointerId);
+      activePointers.delete(e.pointerId);
+      if (activePointers.size < 2) lastPinchDist = 0;
+      if (activePointers.size === 0) isPanning = false;
+      try { container.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     };
 
     // Fix C12: handle pointercancel to prevent stuck pan state
     const onPointerCancel = (e: PointerEvent) => {
-      isPanning = false;
+      activePointers.delete(e.pointerId);
+      if (activePointers.size < 2) lastPinchDist = 0;
+      if (activePointers.size === 0) isPanning = false;
       try { container.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     };
 
@@ -402,20 +494,31 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     container.addEventListener('pointercancel', onPointerCancel);
     container.addEventListener('wheel', onWheel, { passive: false });
 
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      if (e.key === 'Home') {
+        e.preventDefault();
+        fitToContent();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+
     return () => {
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerCancel);
       container.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [fitToContent]);
 
   return (
     <section className="relative h-full overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-paper)] shadow-[var(--shadow-card)]">
       <div
         ref={containerRef}
         className="relative h-full w-full cursor-grab active:cursor-grabbing"
+        style={{ touchAction: 'none' }}
         aria-label="Whiteboard"
         role="application"
       >
@@ -429,6 +532,15 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <div ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
         <div ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
       </div>
+
+      <button
+        onClick={fitToContent}
+        className="glass-panel absolute bottom-3 right-3 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:text-[var(--color-text-primary)] transition-colors"
+        aria-label="Fit to content"
+        title="Fit to content (Home)"
+      >
+        ⊞ Fit
+      </button>
     </section>
   );
 }

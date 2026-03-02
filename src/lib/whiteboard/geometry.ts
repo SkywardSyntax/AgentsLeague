@@ -103,3 +103,36 @@ export function screenStrokePx(
 ): number {
   return clamp(baseWorldWidth * zoom * dpr, minPx, maxPx);
 }
+
+/** Bounding box in world coordinates. */
+export interface BBox {
+  minX: number; minY: number; maxX: number; maxY: number;
+}
+
+/**
+ * Compute camera position & zoom to fit a world-space bounding box inside a
+ * viewport of the given pixel dimensions, with 10 % margin.
+ */
+export function computeFitCamera(
+  bbox: BBox,
+  viewportWidth: number,
+  viewportHeight: number,
+  minZoom: number,
+  maxZoom: number,
+): { x: number; y: number; zoom: number } | null {
+  const bboxW = bbox.maxX - bbox.minX;
+  const bboxH = bbox.maxY - bbox.minY;
+  if (bboxW <= 0 || bboxH <= 0) return null;
+  const zoom = clamp(
+    Math.min(viewportWidth / bboxW, viewportHeight / bboxH) * 0.9,
+    minZoom,
+    maxZoom,
+  );
+  const cx = bbox.minX + bboxW / 2;
+  const cy = bbox.minY + bboxH / 2;
+  return {
+    x: viewportWidth / 2 - cx * zoom,
+    y: viewportHeight / 2 - cy * zoom,
+    zoom,
+  };
+}
