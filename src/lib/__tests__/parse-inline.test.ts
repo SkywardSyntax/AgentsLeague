@@ -174,6 +174,66 @@ describe('parseInline', () => {
       { kind: 'link', text: 'https://a.com', href: 'https://b.com' },
     ]);
   });
+
+  // --- Iter 6 3-C: edge cases for unclosed delimiters and autolinks ---
+
+  it('treats unclosed __ as plain text', () => {
+    expect(parseInline('__bold but never closed')).toEqual([
+      { kind: 'text', value: '__bold but never closed' },
+    ]);
+  });
+
+  it('treats **** as empty bold token', () => {
+    // indexOf('**', 2) finds pos 2 → empty bold value
+    const tokens = parseInline('****');
+    expect(tokens).toEqual([{ kind: 'bold', value: '' }]);
+  });
+
+  it('parses two separate strikethrough tokens', () => {
+    const tokens = parseInline('text ~~strike~~ more ~~also~~');
+    expect(tokens).toEqual([
+      { kind: 'text', value: 'text ' },
+      { kind: 'strikethrough', value: 'strike' },
+      { kind: 'text', value: ' more ' },
+      { kind: 'strikethrough', value: 'also' },
+    ]);
+  });
+
+  it('parses two autolink URLs in one string', () => {
+    const tokens = parseInline('Visit https://a.com and https://b.com');
+    expect(tokens).toEqual([
+      { kind: 'text', value: 'Visit ' },
+      { kind: 'link', text: 'https://a.com', href: 'https://a.com' },
+      { kind: 'text', value: ' and ' },
+      { kind: 'link', text: 'https://b.com', href: 'https://b.com' },
+    ]);
+  });
+
+  it('mixes explicit link with autolink', () => {
+    const tokens = parseInline('[link](https://a.com) https://bare.com');
+    expect(tokens).toEqual([
+      { kind: 'link', text: 'link', href: 'https://a.com' },
+      { kind: 'text', value: ' ' },
+      { kind: 'link', text: 'https://bare.com', href: 'https://bare.com' },
+    ]);
+  });
+
+  it('parses multiple underscore italics in one line', () => {
+    const tokens = parseInline('check _this_ and _that_');
+    expect(tokens).toEqual([
+      { kind: 'text', value: 'check ' },
+      { kind: 'italic', value: 'this' },
+      { kind: 'text', value: ' and ' },
+      { kind: 'italic', value: 'that' },
+    ]);
+  });
+
+  it('handles nested image in link gracefully', () => {
+    // [![alt](img.png)](url) — parser should handle without crashing
+    const tokens = parseInline('[![alt](https://img.png)](https://url.com)');
+    // The exact output depends on parser behavior; key is no crash
+    expect(tokens.length).toBeGreaterThan(0);
+  });
 });
 
 describe('sanitizeHref', () => {

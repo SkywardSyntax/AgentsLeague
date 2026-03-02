@@ -2,7 +2,7 @@ import type { ChatMessage } from '@/types/agent';
 import type { ChatThreadMeta } from '@/components/chat/ChatPanel';
 
 /** Sanitize a string for use as a filename. */
-function safeFilename(name: string): string {
+export function safeFilename(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_\- ]/g, '')
     .trim()

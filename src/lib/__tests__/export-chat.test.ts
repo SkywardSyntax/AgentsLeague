@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { exportChatToMarkdown, exportChatToJson, escapeStructuralMarkdown, wrapDisplayLatex } from '@/lib/client/export-chat';
+import { exportChatToMarkdown, exportChatToJson, escapeStructuralMarkdown, wrapDisplayLatex, safeFilename } from '@/lib/client/export-chat';
 import type { ChatMessage } from '@/types/agent';
 
 const msgs: ChatMessage[] = [
@@ -80,6 +80,61 @@ describe('exportChatToMarkdown', () => {
     const md = exportChatToMarkdown(messages, 'Test');
     expect(md).toContain('$E=mc^2$');
     expect(md).not.toContain('```latex');
+  });
+});
+
+describe('safeFilename', () => {
+  it('sanitizes normal title', () => {
+    expect(safeFilename('My Chat!')).toBe('My-Chat');
+  });
+
+  it('returns default for empty string', () => {
+    expect(safeFilename('')).toBe('chat-export');
+  });
+
+  it('falls back to default for unicode-only title', () => {
+    expect(safeFilename('数学讨论')).toBe('chat-export');
+  });
+
+  it('truncates long titles to 80 chars', () => {
+    const long = 'a'.repeat(200);
+    const result = safeFilename(long);
+    expect(result.length).toBeLessThanOrEqual(80);
+  });
+
+  it('strips dangerous special chars', () => {
+    expect(safeFilename('a/b\\c:d*e')).toBe('abcde');
+  });
+
+  it('collapses whitespace to single hyphen', () => {
+    expect(safeFilename('hello   world')).toBe('hello-world');
+  });
+});
+
+describe('wrapDisplayLatex', () => {
+  it('wraps adjacent $$ blocks separately', () => {
+    const input = '$$a+b$$\n$$c+d$$';
+    const result = wrapDisplayLatex(input);
+    expect(result).toContain('```latex\na+b\n```');
+    expect(result).toContain('```latex\nc+d\n```');
+    expect(result).not.toContain('$$');
+  });
+
+  it('does not wrap $$ mid-line (e.g. currency)', () => {
+    const input = 'The price is $$5.00 today';
+    const result = wrapDisplayLatex(input);
+    expect(result).not.toContain('```latex');
+    expect(result).toBe(input);
+  });
+});
+
+describe('exportChatToMarkdown edge cases', () => {
+  it('empty messages array produces header only', () => {
+    const md = exportChatToMarkdown([], 'Empty');
+    expect(md).toContain('# Empty');
+    expect(md).toContain('Exported:');
+    expect(md).not.toContain('## User');
+    expect(md).not.toContain('## Assistant');
   });
 });
 
