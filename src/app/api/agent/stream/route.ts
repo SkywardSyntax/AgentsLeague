@@ -41,15 +41,22 @@ type FunctionCall = {
   arguments: string;
 };
 
+function extractCallId(event: unknown): string | undefined {
+  if (event != null && typeof event === 'object' && 'call_id' in event) {
+    return typeof (event as Record<string, unknown>).call_id === 'string'
+      ? (event as Record<string, unknown>).call_id as string
+      : undefined;
+  }
+  return undefined;
+}
+
 function parseFunctionCallFromEvent(
   event: ResponseStreamEvent,
 ): FunctionCall | null {
   if (event.type === 'response.function_call_arguments.done') {
     const doneEvent: ResponseFunctionCallArgumentsDoneEvent = event;
     // SDK types don't include call_id on this event; check at runtime for forward-compat
-    const runtimeCallId = 'call_id' in doneEvent && typeof (doneEvent as Record<string, unknown>).call_id === 'string'
-      ? (doneEvent as Record<string, unknown>).call_id as string
-      : undefined;
+    const runtimeCallId = extractCallId(doneEvent);
     const callId = runtimeCallId ?? doneEvent.item_id;
     if (callId && doneEvent.name && typeof doneEvent.arguments === 'string') {
       return { callId, name: doneEvent.name, arguments: doneEvent.arguments };

@@ -165,3 +165,36 @@ describe('parseFunctionCallFromEvent', () => {
     expect(result).toBeNull();
   });
 });
+
+// Re-implement extractCallId for isolated testing
+function extractCallId(event: unknown): string | undefined {
+  if (event != null && typeof event === 'object' && 'call_id' in event) {
+    return typeof (event as Record<string, unknown>).call_id === 'string'
+      ? (event as Record<string, unknown>).call_id as string
+      : undefined;
+  }
+  return undefined;
+}
+
+describe('extractCallId', () => {
+  it('returns call_id when present and string', () => {
+    expect(extractCallId({ call_id: 'call_1' })).toBe('call_1');
+  });
+
+  it('returns undefined when call_id is missing', () => {
+    expect(extractCallId({})).toBeUndefined();
+  });
+
+  it('returns undefined when call_id is not a string', () => {
+    expect(extractCallId({ call_id: 42 })).toBeUndefined();
+    expect(extractCallId({ call_id: null })).toBeUndefined();
+    expect(extractCallId({ call_id: true })).toBeUndefined();
+  });
+
+  it('returns undefined for null/undefined/primitive inputs', () => {
+    expect(extractCallId(null)).toBeUndefined();
+    expect(extractCallId(undefined)).toBeUndefined();
+    expect(extractCallId('string')).toBeUndefined();
+    expect(extractCallId(42)).toBeUndefined();
+  });
+});

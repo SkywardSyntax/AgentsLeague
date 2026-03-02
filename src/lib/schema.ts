@@ -433,9 +433,13 @@ const PANEL_SHAPE_TYPES = ['rect', 'parallelogram', 'line', 'arrow'] as const;
 const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
 
+export function isEnumMember<T extends readonly string[]>(allowed: T, value: string): value is T[number] {
+  return (allowed as readonly string[]).includes(value);
+}
+
 function asEnum<T extends readonly string[]>(value: unknown, allowed: T): T[number] | null {
-  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
-    ? (value as T[number])
+  return typeof value === 'string' && isEnumMember(allowed, value)
+    ? value
     : null;
 }
 
