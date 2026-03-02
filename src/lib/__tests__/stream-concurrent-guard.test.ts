@@ -12,14 +12,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 let streamResolve: ((value?: unknown) => void) | null = null;
 
 vi.mock('@/lib/server/openai', () => ({
-  createOpenAIClient: () => ({
+  createOpenAIClient: vi.fn(() => ({
     responses: {
       create: () =>
         new Promise((_resolve) => {
           streamResolve = _resolve;
         }),
     },
-  }),
+  })),
   getModel: () => 'gpt-test',
   AGENT_SYSTEM_PROMPT: 'test prompt',
   DRAW_TOOL_DEFINITION: { type: 'function', name: 'emit_draw_batch', parameters: {} },
@@ -99,5 +99,61 @@ describe('Concurrent stream guard', () => {
     // Second request should succeed now
     const res2 = await POST(makeRequest(body));
     expect(res2.status).toBe(200);
+  });
+
+  it('cleans up sessionId from activeStreams after stream error', async () => {
+    // Override mock to throw during processing
+    const openaiMock = await import('@/lib/server/openai');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const createClient = openaiMock.createOpenAIClient as any;
+    createClient.mockReturnValueOnce({
+      responses: {
+        create: () => Promise.reject(new Error('simulated API failure')),
+      },
+    });
+
+    const { POST } = await import('@/app/api/agent/stream/route');
+    const sessionId = `error-cleanup-${Date.now()}`;
+    const body = { sessionId, userMessage: 'error test', history: [] };
+
+    // First request — enters guard, throws during processing
+    const res1 = await POST(makeRequest(body));
+    expect(res1.status).toBe(200);
+    // Consume stream to trigger the finally block which deletes from activeStreams
+    try { await res1.text(); } catch { /* stream error expected */ }
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Next request with same sessionId should succeed (not 409)
+    const res2 = await POST(makeRequest(body));
+    expect(res2.status).toBe(200);
+  });
+
+  it('handles rapid sequential requests without race on cleanup', async () => {
+    const { POST } = await import('@/app/api/agent/stream/route');
+    const sessionId = `rapid-sequential-${Date.now()}`;
+    const body = { sessionId, userMessage: 'rapid test', history: [] };
+
+    // First request
+    const res1 = await POST(makeRequest(body));
+    expect(res1.status).toBe(200);
+
+    // Immediately resolve and consume
+    streamResolve?.();
+    try { await res1.text(); } catch { /* ok */ }
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Second request immediately after
+    (streamResolve as ((value?: unknown) => void) | null) = null;
+    const res2 = await POST(makeRequest(body));
+    expect(res2.status).toBe(200);
+
+    // Resolve and consume second — streamResolve may have been re-assigned by the mock
+    if (streamResolve) (streamResolve as (value?: unknown) => void)();
+    try { await res2.text(); } catch { /* ok */ }
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Third request — verifies no stale state
+    const res3 = await POST(makeRequest(body));
+    expect(res3.status).toBe(200);
   });
 });

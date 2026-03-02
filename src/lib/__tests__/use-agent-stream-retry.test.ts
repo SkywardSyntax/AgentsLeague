@@ -201,6 +201,101 @@ describe('retrySleep', () => {
   });
 });
 
+describe('shouldRetry — HTTP status takes precedence over event', () => {
+  it('does not retry when error event is retryable but HTTP status is 401', () => {
+    const result = shouldRetry(
+      { type: 'error', retryable: true, code: 'STREAM_FAILURE' },
+      401,
+      null,
+    );
+    expect(result.retry).toBe(false);
+    expect(result.reason).toBe('http_401');
+  });
+
+  it('does not retry when error event is retryable but HTTP status is 403', () => {
+    const result = shouldRetry(
+      { type: 'error', retryable: true, code: 'STREAM_FAILURE' },
+      403,
+      null,
+    );
+    expect(result.retry).toBe(false);
+    expect(result.reason).toBe('http_403');
+  });
+
+  it('retries when error event is retryable and HTTP status is 500', () => {
+    const result = shouldRetry(
+      { type: 'error', retryable: true, code: 'STREAM_FAILURE' },
+      500,
+      null,
+    );
+    expect(result.retry).toBe(true);
+    expect(result.reason).toBe('http_500');
+  });
+});
+
+describe('computeDelay — boundary cases', () => {
+  it('caps delay at 8000ms even for very high attempt numbers', () => {
+    for (let i = 0; i < 10; i++) {
+      const d = computeDelay(20, 'network_error');
+      // 8000 * 1.2 (max jitter) = 9600
+      expect(d).toBeLessThanOrEqual(9600);
+      expect(d).toBeGreaterThanOrEqual(6400); // 8000 * 0.8
+    }
+  });
+
+  it('returns positive delay for attempt 0', () => {
+    const d = computeDelay(0, 'unknown');
+    expect(d).toBeGreaterThan(0);
+  });
+});
+
+describe('TextDecoder stream mode handles split multi-byte characters', () => {
+  it('decodes emoji split across two chunks with stream: true', () => {
+    const decoder = new TextDecoder();
+    const emoji = '😊';
+    const encoded = new TextEncoder().encode(emoji);
+    // 😊 is 4 bytes: split at byte 2
+    const chunk1 = encoded.slice(0, 2);
+    const chunk2 = encoded.slice(2);
+
+    const part1 = decoder.decode(chunk1, { stream: true });
+    const part2 = decoder.decode(chunk2, { stream: true });
+    const final = decoder.decode(); // flush
+
+    expect(part1 + part2 + final).toBe(emoji);
+  });
+
+  it('decodes CJK character split across chunks with stream: true', () => {
+    const decoder = new TextDecoder();
+    const text = '设';
+    const encoded = new TextEncoder().encode(text);
+    // 设 is 3 bytes: split at byte 1
+    const chunk1 = encoded.slice(0, 1);
+    const chunk2 = encoded.slice(1);
+
+    const part1 = decoder.decode(chunk1, { stream: true });
+    const part2 = decoder.decode(chunk2, { stream: true });
+    const final = decoder.decode();
+
+    expect(part1 + part2 + final).toBe(text);
+  });
+
+  it('produces mojibake without stream: true on split multi-byte', () => {
+    const decoder = new TextDecoder();
+    const emoji = '😊';
+    const encoded = new TextEncoder().encode(emoji);
+    const chunk1 = encoded.slice(0, 2);
+    const chunk2 = encoded.slice(2);
+
+    // Without stream: true, each partial chunk is decoded independently
+    const part1 = decoder.decode(chunk1);
+    const part2 = decoder.decode(chunk2);
+
+    // The concatenated result should NOT equal the original emoji
+    expect(part1 + part2).not.toBe(emoji);
+  });
+});
+
 describe('trailing SSE buffer handling', () => {
   // Simulate the trailing buffer parsing logic from useAgentStream
 

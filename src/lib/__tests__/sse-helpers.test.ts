@@ -52,6 +52,37 @@ describe('formatSSE', () => {
     expect(parsed.retryAfterMs).toBe(3000);
     expect(parsed.retryable).toBe(true);
   });
+
+  it('encodes payload with embedded newline in string field', () => {
+    const event: AgentSSEEvent = { type: 'assistant.text.delta', turnId: 't1', delta: 'line1\nline2' };
+    const result = formatSSE(event);
+    // JSON.stringify escapes \n so the SSE data: line remains a single line
+    expect(result).toMatch(/^data: .+\n\n$/);
+    const parsed = JSON.parse(result.slice(6).trim());
+    expect(parsed.delta).toBe('line1\nline2');
+  });
+
+  it('encodes payload with backslash in string field', () => {
+    const event: AgentSSEEvent = { type: 'assistant.text.delta', turnId: 't1', delta: 'path\\file' };
+    const result = formatSSE(event);
+    const parsed = JSON.parse(result.slice(6).trim());
+    expect(parsed.delta).toBe('path\\file');
+  });
+
+  it('encodes payload with emoji in string field', () => {
+    const event: AgentSSEEvent = { type: 'assistant.text.delta', turnId: 't1', delta: 'Hello 😊' };
+    const result = formatSSE(event);
+    const parsed = JSON.parse(result.slice(6).trim());
+    expect(parsed.delta).toBe('Hello 😊');
+  });
+
+  it('encodes minimal turn.done event', () => {
+    const event: AgentSSEEvent = { type: 'turn.done', turnId: 't1' };
+    const result = formatSSE(event);
+    expect(result).toBe('data: {"type":"turn.done","turnId":"t1"}\n\n');
+    const parsed = JSON.parse(result.slice(6).trim());
+    expect(parsed.type).toBe('turn.done');
+  });
 });
 
 describe('formatSSEComment', () => {
