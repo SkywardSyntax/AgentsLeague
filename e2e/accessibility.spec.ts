@@ -104,6 +104,69 @@ test.describe('Accessibility — axe-core WCAG AA', () => {
     expect(userMsgTag).toBe('article');
   });
 
+  test('full keyboard flow — Tab traversal hits key interactive landmarks', async ({ page }) => {
+    await expect(page.locator('[data-testid="chat-panel"]')).toBeVisible();
+
+    // Reset focus to body
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.keyboard.press('Tab');
+
+    const focusedElements: string[] = [];
+    const maxTabs = 30;
+
+    for (let i = 0; i < maxTabs; i++) {
+      const info = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) return 'body';
+        const testId = el.getAttribute('data-testid') ?? '';
+        if (testId) return testId;
+        const role = el.getAttribute('role') ?? '';
+        const tag = el.tagName.toLowerCase();
+        const ariaLabel = el.getAttribute('aria-label') ?? '';
+        const text = el.textContent?.trim().slice(0, 30) ?? '';
+        return `${tag}${role ? `[role=${role}]` : ''}${ariaLabel ? `[aria-label=${ariaLabel}]` : ''}${text ? `{${text}}` : ''}`;
+      });
+      focusedElements.push(info);
+      await page.keyboard.press('Tab');
+    }
+
+    // Core interactive elements must all be reachable via Tab
+    expect(focusedElements).toContain('chat-input');
+    expect(focusedElements).toContain('chat-send');
+    expect(focusedElements).toContain('chat-stop');
+  });
+
+  test('Enter on send button submits message when input has text', async ({ page }) => {
+    const chatInput = page.locator('[data-testid="chat-input"]');
+    await chatInput.fill('keyboard test via Enter');
+
+    // Tab to send button and activate with Enter
+    const sendBtn = page.locator('[data-testid="chat-send"]');
+    await sendBtn.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('[data-testid="chat-message-user"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Input should be cleared after send
+    await expect(chatInput).toHaveValue('');
+  });
+
+  test('Shift+Enter inserts newline instead of sending', async ({ page }) => {
+    const chatInput = page.locator('[data-testid="chat-input"]');
+    await chatInput.focus();
+    await page.keyboard.type('line one');
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.type('line two');
+
+    const value = await chatInput.inputValue();
+    expect(value).toContain('line one');
+    expect(value).toContain('line two');
+    // Message should NOT have been sent
+    await expect(page.locator('[data-testid="chat-message-user"]')).toHaveCount(0);
+  });
+
   test('whiteboard region has accessible role', async ({ page }) => {
     const whiteboardContainer = page.locator('[data-testid="whiteboard-canvas"]');
     await expect(whiteboardContainer).toBeVisible();
