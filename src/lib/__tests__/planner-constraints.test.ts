@@ -428,3 +428,106 @@ describe('enforceDrawBatchConstraints with default config', () => {
     expect(result.violationsFixed).toHaveLength(0);
   });
 });
+
+describe('NaN/Infinity guards', () => {
+  it('does not propagate NaN from degenerate latex element through constraints', () => {
+    const batch: DrawBatch = {
+      batch_id: 'nan-test',
+      elements: [
+        { id: 'l1', type: 'latex', x: 100, y: 100, tex: '', displayMode: true },
+        { id: 't1', type: 'text', x: 100, y: 200, text: 'valid text', size: 18 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    for (const el of result.batch.elements) {
+      if (el.type === 'text') {
+        expect(Number.isFinite(el.x)).toBe(true);
+        expect(Number.isFinite(el.y)).toBe(true);
+      }
+      if (el.type === 'latex') {
+        expect(Number.isFinite(el.x)).toBe(true);
+        expect(Number.isFinite(el.y)).toBe(true);
+      }
+    }
+  });
+
+  it('handles Infinity coordinates on arrow endpoints without crashing', () => {
+    const batch: DrawBatch = {
+      batch_id: 'inf-arrow',
+      elements: [
+        { id: 'a1', type: 'arrow', from: { x: Infinity, y: 100 }, to: { x: 200, y: 100 } },
+        { id: 't1', type: 'text', x: 100, y: 300, text: 'safe text', size: 18 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    const text = result.batch.elements.find((el) => el.id === 't1')!;
+    expect(text.type).toBe('text');
+    if (text.type === 'text') {
+      expect(Number.isFinite(text.x)).toBe(true);
+      expect(Number.isFinite(text.y)).toBe(true);
+    }
+  });
+
+  it('handles -Infinity coordinates on line endpoints', () => {
+    const batch: DrawBatch = {
+      batch_id: 'neg-inf-line',
+      elements: [
+        { id: 'l1', type: 'line', from: { x: 100, y: -Infinity }, to: { x: 200, y: 200 } },
+        { id: 'r1', type: 'rect', x: 100, y: 100, w: 50, h: 50 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    for (const el of result.batch.elements) {
+      if (el.type === 'rect') {
+        expect(Number.isFinite(el.x)).toBe(true);
+        expect(Number.isFinite(el.y)).toBe(true);
+      }
+    }
+  });
+
+  it('resolves identical-position overlap without producing NaN', () => {
+    const batch: DrawBatch = {
+      batch_id: 'identical-pos',
+      elements: [
+        { id: 't1', type: 'text', x: 100, y: 100, text: 'block A', size: 18 },
+        { id: 't2', type: 'text', x: 100, y: 100, text: 'block B', size: 18 },
+        { id: 'r1', type: 'rect', x: 100, y: 100, w: 80, h: 40 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    const t1 = result.batch.elements.find((el) => el.id === 't1')!;
+    const t2 = result.batch.elements.find((el) => el.id === 't2')!;
+    expect(t1.type).toBe('text');
+    expect(t2.type).toBe('text');
+    if (t1.type === 'text' && t2.type === 'text') {
+      expect(Number.isFinite(t1.x)).toBe(true);
+      expect(Number.isFinite(t1.y)).toBe(true);
+      expect(Number.isFinite(t2.x)).toBe(true);
+      expect(Number.isFinite(t2.y)).toBe(true);
+      // Overlap resolver must separate them by at least minTextGap (14)
+      expect(Math.abs(t2.y - t1.y)).toBeGreaterThanOrEqual(14);
+    }
+  });
+
+  it('BoundsCache.updateAfterShift ignores NaN shift values', () => {
+    const cache = new BoundsCache();
+    const rect: DrawElement = { id: 'r1', type: 'rect', x: 10, y: 20, w: 100, h: 50 };
+    cache.get(rect);
+    cache.updateAfterShift('r1', NaN, 5);
+    const bounds = cache.get(rect);
+    expect(bounds).toEqual({ minX: 10, minY: 20, maxX: 110, maxY: 70 });
+  });
+
+  it('BoundsCache.updateAfterShift ignores Infinity shift values', () => {
+    const cache = new BoundsCache();
+    const rect: DrawElement = { id: 'r1', type: 'rect', x: 10, y: 20, w: 100, h: 50 };
+    cache.get(rect);
+    cache.updateAfterShift('r1', 5, Infinity);
+    const bounds = cache.get(rect);
+    expect(bounds).toEqual({ minX: 10, minY: 20, maxX: 110, maxY: 70 });
+  });
+});

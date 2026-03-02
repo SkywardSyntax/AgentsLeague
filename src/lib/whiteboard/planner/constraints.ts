@@ -26,6 +26,7 @@ export class BoundsCache {
     if (!this.cache.has(id)) return;
     const b = this.cache.get(id)!;
     if (b === null) return; // null-bounds elements stay null
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
     this.cache.set(id, {
       minX: b.minX + dx,
       minY: b.minY + dy,
@@ -36,6 +37,7 @@ export class BoundsCache {
 }
 
 function shiftElement(el: DrawElement, dx: number, dy: number): DrawElement {
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return el;
   if (el.type === 'rect') return { ...el, x: el.x + dx, y: el.y + dy };
   if (el.type === 'ellipse') return { ...el, cx: el.cx + dx, cy: el.cy + dy };
   if (el.type === 'line' || el.type === 'arrow') {
@@ -97,6 +99,12 @@ function ensureCanvasBounds(
     } else {
       if (b.minY < config.margin) dy += config.margin - b.minY;
       if (b.maxY > config.canvasHeight - config.margin) dy -= b.maxY - (config.canvasHeight - config.margin);
+    }
+
+    // Guard against NaN/Infinity corrections from degenerate bounds
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+      fixes.add('nan_guard');
+      return el;
     }
 
     if (dx !== 0) fixes.add('shift_x');
