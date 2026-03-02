@@ -8,6 +8,7 @@ export type BlockSegment =
   | { kind: 'hr' };
 
 const MAX_BLOCKQUOTE_DEPTH = 5;
+export const MAX_LINE_LENGTH = 10_000;
 
 const CODE_FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
 const HEADING_RE = /^(#{1,6})\s+(.+)$/;
@@ -58,6 +59,20 @@ export function parseBlocks(raw: string, depth = 0): BlockSegment[] {
 
   while (i < lines.length) {
     const line = lines[i]!;
+
+    // --- Long line guard: treat as plain text to prevent pathological parsing ---
+    if (line.length > MAX_LINE_LENGTH) {
+      const longLines: string[] = [line];
+      i++;
+      while (i < lines.length) {
+        const pl = lines[i]!;
+        if (pl.trim() === '' || pl.length <= MAX_LINE_LENGTH) break;
+        longLines.push(pl);
+        i++;
+      }
+      blocks.push({ kind: 'paragraph', content: longLines.join('\n') });
+      continue;
+    }
 
     // --- Fenced code block ---
     const fenceMatch = line.match(CODE_FENCE_OPEN);

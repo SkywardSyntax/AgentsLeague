@@ -208,7 +208,7 @@ export function AppShell() {
       setPanelSizes(restored.prefs.panelSizes);
 
       const activeExists = restoredChats.some((chat) => chat.id === restored.activeChatId);
-      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]!.id);
+      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]?.id ?? seedChat.id);
     }
 
     setDidRestoreSession(true);
@@ -224,7 +224,7 @@ export function AppShell() {
       saveSession({
         version: 3,
         updatedAt: Date.now(),
-        activeChatId: activeChat?.id ?? chatSessions[0]!.id,
+        activeChatId: activeChat?.id ?? chatSessions[0]?.id ?? '',
         chats: chatSessions.map((chat) => ({
           id: chat.id,
           title: chat.title,

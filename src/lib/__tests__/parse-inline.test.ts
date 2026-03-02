@@ -263,6 +263,37 @@ describe('parseInline', () => {
     expect(tokens.length).toBeGreaterThan(0);
     expect(tokens[0]).toEqual({ kind: 'italic', value: 'a' });
   });
+
+  // --- iter8 3A: pathological input hardening ---
+
+  it('200 unclosed * markers returns text without exponential backtracking', () => {
+    const input = '*'.repeat(200) + ' some text';
+    const start = performance.now();
+    const tokens = parseInline(input);
+    const elapsed = performance.now() - start;
+    expect(tokens.length).toBeGreaterThan(0);
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it('caps total tokens at MAX_INLINE_TOKENS for extremely long input', () => {
+    // Generate input with many distinct tokens: bold pairs
+    const parts: string[] = [];
+    for (let i = 0; i < 600; i++) {
+      parts.push(`**b${i}** `);
+    }
+    const tokens = parseInline(parts.join(''));
+    // Should cap at MAX_INLINE_TOKENS (500) plus potential remainder
+    expect(tokens.length).toBeLessThanOrEqual(502);
+  });
+
+  it('extremely long single text line completes without hanging', () => {
+    const input = 'a'.repeat(50_000);
+    const start = performance.now();
+    const tokens = parseInline(input);
+    const elapsed = performance.now() - start;
+    expect(tokens).toEqual([{ kind: 'text', value: input }]);
+    expect(elapsed).toBeLessThan(5000);
+  });
 });
 
 describe('sanitizeHref', () => {

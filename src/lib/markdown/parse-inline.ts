@@ -7,6 +7,8 @@ export type InlineToken =
   | { kind: 'link'; text: string; href: string }
   | { kind: 'image'; alt: string; src: string };
 
+export const MAX_INLINE_TOKENS = 500;
+
 const SAFE_PROTOCOLS = /^(?:https?:|mailto:)/i;
 
 /** Only allow safe protocols — blocks javascript:, data:, vbscript: etc. */
@@ -31,6 +33,13 @@ export function parseInline(text: string): InlineToken[] {
   }
 
   while (i < text.length) {
+    // --- Token limit guard: prevent runaway parsing ---
+    if (tokens.length >= MAX_INLINE_TOKENS) {
+      flush();
+      tokens.push({ kind: 'text', value: text.slice(i) });
+      break;
+    }
+
     // --- Inline code ---
     if (text[i] === '`') {
       const start = i;

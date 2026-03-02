@@ -266,4 +266,53 @@ describe('parseBlocks', () => {
     const result = parseBlocks(input);
     expect(result.every(b => b.kind !== 'table')).toBe(true);
   });
+
+  // --- iter8 3A: pathological input hardening ---
+
+  it('treats a line exceeding MAX_LINE_LENGTH as plain text paragraph', () => {
+    const longLine = 'x'.repeat(50_000);
+    const result = parseBlocks(`# Title\n${longLine}\n## After`);
+    expect(result[0]).toMatchObject({ kind: 'heading', content: 'Title' });
+    expect(result[1]).toMatchObject({ kind: 'paragraph', content: longLine });
+    expect(result[2]).toMatchObject({ kind: 'heading', content: 'After' });
+  });
+
+  it('long line does not hang the parser', () => {
+    const longLine = '> '.repeat(25_000);
+    const start = performance.now();
+    const result = parseBlocks(longLine);
+    const elapsed = performance.now() - start;
+    expect(result.length).toBeGreaterThan(0);
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it('caps recursive blockquote depth at MAX_BLOCKQUOTE_DEPTH', () => {
+    // 100 nested > markers — should stop recursing at depth 5
+    const input = Array.from({ length: 100 }, () => '>').join(' ') + ' deep';
+    const result = parseBlocks(input);
+    expect(result).toHaveLength(1);
+
+    // Walk the nesting — should stop producing children at depth 5
+    let node: { kind: string; children?: unknown[] } = result[0] as { kind: string; children?: unknown[] };
+    let depth = 0;
+    while (node.kind === 'blockquote' && node.children) {
+      depth++;
+      const child = node.children.find((c): c is { kind: string; children?: unknown[] } =>
+        typeof c === 'object' && c !== null && (c as { kind: string }).kind === 'blockquote',
+      );
+      if (!child) break;
+      node = child;
+    }
+    expect(depth).toBeLessThanOrEqual(5);
+  });
+
+  it('unclosed code fence followed by many lines does not hang', () => {
+    const lines = ['```python', ...Array.from({ length: 1000 }, (_, i) => `line ${i}`)];
+    const start = performance.now();
+    const result = parseBlocks(lines.join('\n'));
+    const elapsed = performance.now() - start;
+    expect(result).toHaveLength(1);
+    expect(result[0]!.kind).toBe('code_block');
+    expect(elapsed).toBeLessThan(5000);
+  });
 });
