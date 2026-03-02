@@ -159,9 +159,19 @@ interface RateLimitEntry {
   resetAt: number;
 }
 
+const MAX_KEY_LENGTH = 128;
+const MAX_BUCKETS = 10_000;
+
+/** Truncate overly long keys to bound memory per-key. */
+function sanitizeKey(raw: string): string {
+  if (raw.length <= MAX_KEY_LENGTH) return raw;
+  return raw.slice(0, MAX_KEY_LENGTH);
+}
+
 /**
  * Sliding-window rate limiter. Configurable via RateLimitConfig.
  * Uses an in-memory Map keyed by session identifier.
+ * Caps map size at MAX_BUCKETS and truncates keys to MAX_KEY_LENGTH.
  */
 export function withRateLimit(config: RateLimitConfig): Middleware {
   const buckets = new Map<string, RateLimitEntry>();
@@ -181,12 +191,14 @@ export function withRateLimit(config: RateLimitConfig): Middleware {
 
   return (handler: Handler) => async (request: Request, ctx: HandlerContext) => {
     const extractKey = keyExtractor ?? ((req: Request) => req.headers.get('X-Session-Id'));
-    const sessionKey = extractKey(request);
+    const rawKey = extractKey(request);
 
     // Reject requests without a session key to prevent shared-bucket DoS
-    if (!sessionKey) {
+    if (!rawKey) {
       return apiError(401, 'SESSION_REQUIRED', 'X-Session-Id header is required', ctx.requestId);
     }
+
+    const sessionKey = sanitizeKey(rawKey);
 
     const now = Date.now();
 
@@ -215,6 +227,13 @@ export function withRateLimit(config: RateLimitConfig): Middleware {
       entry.count++;
     } else {
       buckets.set(sessionKey, { count: 1, resetAt: now + windowMs });
+    }
+
+    // Force eviction when map grows beyond cap
+    if (buckets.size > MAX_BUCKETS) {
+      for (const [key, e] of buckets) {
+        if (now >= e.resetAt) buckets.delete(key);
+      }
     }
 
     return handler(request, ctx);

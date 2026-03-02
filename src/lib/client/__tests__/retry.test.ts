@@ -145,4 +145,85 @@ describe('fetchWithRetry', () => {
       fetchWithRetry('/test', { method: 'GET', signal: controller.signal }, { maxRetries: 2 }),
     ).rejects.toThrow();
   });
+
+  it('completes normally when signal is undefined (not null)', async () => {
+    const mockFetch = mockFetchSequence([{ status: 503 }, { status: 200 }]);
+    vi.stubGlobal('fetch', mockFetch);
+
+    const res = await fetchWithRetry(
+      '/test',
+      { method: 'GET', signal: undefined },
+      { maxRetries: 1, baseDelayMs: 10 },
+    );
+    expect(res.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('fetchWithRetry deduplication', () => {
+  it('deduplicates concurrent calls with the same dedupeKey', async () => {
+    let resolveFirst!: () => void;
+    const gate = new Promise<void>((r) => { resolveFirst = r; });
+    const mockFetch = vi.fn(async () => {
+      await gate;
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    vi.stubGlobal('fetch', mockFetch);
+
+    const p1 = fetchWithRetry('/test', { method: 'GET' }, { dedupeKey: 'dup-1', maxRetries: 0 });
+    const p2 = fetchWithRetry('/test', { method: 'GET' }, { dedupeKey: 'dup-1', maxRetries: 0 });
+
+    resolveFirst();
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    // Both consumers can independently read the body
+    const b1 = await r1.json();
+    const b2 = await r2.json();
+    expect(b1).toEqual({ ok: true });
+    expect(b2).toEqual({ ok: true });
+  });
+
+  it('clears dedupeKey after completion — next call starts fresh', async () => {
+    const mockFetch = mockFetchSequence([{ status: 200 }, { status: 200 }]);
+    vi.stubGlobal('fetch', mockFetch);
+
+    await fetchWithRetry('/test', { method: 'GET' }, { dedupeKey: 'dup-2', maxRetries: 0 });
+    await fetchWithRetry('/test', { method: 'GET' }, { dedupeKey: 'dup-2', maxRetries: 0 });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('different dedupeKeys are not deduplicated', async () => {
+    let resolveGate!: () => void;
+    const gate = new Promise<void>((r) => { resolveGate = r; });
+    const mockFetch = vi.fn(async () => {
+      await gate;
+      return new Response('ok', { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    vi.stubGlobal('fetch', mockFetch);
+
+    const p1 = fetchWithRetry('/a', { method: 'GET' }, { dedupeKey: 'key-a', maxRetries: 0 });
+    const p2 = fetchWithRetry('/b', { method: 'GET' }, { dedupeKey: 'key-b', maxRetries: 0 });
+
+    resolveGate();
+    await Promise.all([p1, p2]);
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('cleans up dedupeKey on error', async () => {
+    const mockFetch = mockFetchSequence([new TypeError('Network failure')]);
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(
+      fetchWithRetry('/test', { method: 'GET' }, { dedupeKey: 'dup-err', maxRetries: 0 }),
+    ).rejects.toThrow('Network failure');
+
+    // Key should be cleared — inflight map is empty
+    const { _getInflightRequests } = await import('@/lib/client/retry');
+    expect(_getInflightRequests().size).toBe(0);
+  });
 });

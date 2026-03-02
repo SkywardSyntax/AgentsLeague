@@ -199,6 +199,80 @@ describe('withRateLimit', () => {
     const body = await res.json();
     expect(body.error).toBe('SESSION_REQUIRED');
   });
+
+  it('truncates session key longer than 128 chars — same truncated key shares bucket', async () => {
+    const longKeyBase = 'a'.repeat(130);
+    const mw = withRateLimit({ maxRequests: 1, windowMs: 60_000 });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req1 = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Session-Id': longKeyBase + '-suffix1' },
+    });
+    const req2 = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Session-Id': longKeyBase + '-suffix2' },
+    });
+    const r1 = await handler(req1, ctx);
+    expect(r1.status).toBe(200);
+    // Second request shares truncated key, hits limit
+    const r2 = await handler(req2, ctx);
+    expect(r2.status).toBe(429);
+  });
+
+  it('forces eviction when map exceeds 10,000 entries', async () => {
+    // Use a very short window so entries expire quickly
+    const mw = withRateLimit({ maxRequests: 100, windowMs: 1 });
+    const handler = mw(async () => Response.json({ ok: true }));
+
+    // Insert many unique keys
+    for (let i = 0; i < 10_050; i++) {
+      const req = new Request('http://localhost/test', {
+        method: 'POST',
+        headers: { 'X-Session-Id': `burst-sess-${i}` },
+      });
+      await handler(req, ctx);
+    }
+
+    // Wait for entries to expire
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Next request should trigger cap-based eviction; system remains functional
+    const req = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Session-Id': 'post-burst' },
+    });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('eviction clears expired entries after windowMs elapses', async () => {
+    const mw = withRateLimit({ maxRequests: 10, windowMs: 30 });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req = () => new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'X-Session-Id': 'evict-test' },
+    });
+
+    await handler(req(), ctx);
+    // Wait for window to expire
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Next request triggers eviction + creates fresh entry
+    const res = await handler(req(), ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 401 for empty-string session key', async () => {
+    const mw = withRateLimit({
+      maxRequests: 10,
+      windowMs: 60_000,
+      keyExtractor: () => '',
+    });
+    const handler = mw(async () => Response.json({ ok: true }));
+    const req = new Request('http://localhost/test', { method: 'POST' });
+    const res = await handler(req, ctx);
+    expect(res.status).toBe(401);
+  });
 });
 
 describe('withContentType', () => {

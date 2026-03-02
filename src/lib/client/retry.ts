@@ -3,6 +3,8 @@ export interface RetryConfig {
   baseDelayMs?: number;
   retryableStatuses?: number[];
   onRetry?: (attempt: number, maxRetries: number) => void;
+  /** When set, concurrent calls with the same key return the same buffered result. */
+  dedupeKey?: string;
 }
 
 /**
@@ -27,17 +29,60 @@ function abortableDelay(ms: number, signal?: AbortSignal | null): Promise<void> 
   });
 }
 
+/** In-flight dedup registry: key → Promise<{status, headers, body}> */
+const inflightRequests = new Map<string, Promise<{ status: number; headers: [string, string][]; body: ArrayBuffer }>>();
+
 /**
  * Fetch with exponential backoff + jitter.
  * - Retries on retryable HTTP statuses (default: 429, 502, 503).
  * - Retries on network errors (fetch throws).
  * - Respects `Retry-After` header when present.
  * - Honors AbortSignal — aborts immediately, no further retries.
+ * - Optional `dedupeKey` deduplicates concurrent identical requests.
  */
 export async function fetchWithRetry(
   url: string,
   options: RequestInit,
   config: RetryConfig = {},
+): Promise<Response> {
+  const { dedupeKey } = config;
+
+  if (dedupeKey) {
+    const existing = inflightRequests.get(dedupeKey);
+    if (existing) {
+      const snapshot = await existing;
+      return new Response(snapshot.body, { status: snapshot.status, headers: snapshot.headers });
+    }
+
+    const promise = fetchWithRetryCore(url, options, config).then(async (res) => {
+      const body = await res.arrayBuffer();
+      const headers: [string, string][] = [];
+      res.headers.forEach((v, k) => headers.push([k, v]));
+      return { status: res.status, headers, body };
+    });
+
+    inflightRequests.set(dedupeKey, promise);
+
+    try {
+      const snapshot = await promise;
+      return new Response(snapshot.body, { status: snapshot.status, headers: snapshot.headers });
+    } finally {
+      inflightRequests.delete(dedupeKey);
+    }
+  }
+
+  return fetchWithRetryCore(url, options, config);
+}
+
+/** @internal visible for testing dedup map cleanup */
+export function _getInflightRequests() {
+  return inflightRequests;
+}
+
+async function fetchWithRetryCore(
+  url: string,
+  options: RequestInit,
+  config: RetryConfig,
 ): Promise<Response> {
   const {
     maxRetries = 2,
