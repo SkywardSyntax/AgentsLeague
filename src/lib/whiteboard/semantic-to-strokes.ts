@@ -82,8 +82,9 @@ function arrowHeadPoints(el: Extract<DrawElement, { type: 'arrow' }>): Point[][]
   const dx = el.to.x - el.from.x;
   const dy = el.to.y - el.from.y;
   const angle = Math.atan2(dy, dx);
-  const headLen = 14;
-  const wing = Math.PI / 7;
+  const shaftLen = Math.hypot(dx, dy);
+  const headLen = Math.min(24, Math.max(8, shaftLen * 0.18));
+  const wing = Math.PI / 6;
 
   const left: Point = {
     x: el.to.x - Math.cos(angle - wing) * headLen,
@@ -176,6 +177,14 @@ function shiftStrokes(strokes: StrokeTrajectory[], dx: number, dy: number): void
       x: point.x + dx,
       y: point.y + dy,
     }));
+    if (stroke.bounds) {
+      stroke.bounds = {
+        minX: stroke.bounds.minX + dx,
+        minY: stroke.bounds.minY + dy,
+        maxX: stroke.bounds.maxX + dx,
+        maxY: stroke.bounds.maxY + dy,
+      };
+    }
   }
 }
 
@@ -540,6 +549,20 @@ export async function compileBatchToStrokes(
   }
 
   normalizeTextVerticalSpacing(batch, strokes);
+
+  // Compute bounding boxes for viewport culling (after normalization shifts)
+  for (const stroke of strokes) {
+    if (stroke.points.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of stroke.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      stroke.bounds = { minX, minY, maxX, maxY };
+    }
+  }
 
   return { strokes, warnings, clear };
 }

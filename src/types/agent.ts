@@ -241,6 +241,7 @@ export interface StrokeTrajectory {
   points: Point[];
   color: string;
   baseWidth: number;
+  bounds?: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
 export interface ActiveStroke extends StrokeTrajectory {

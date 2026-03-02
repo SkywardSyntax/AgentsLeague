@@ -47,7 +47,7 @@ function drawStroke(
     const b = points[i]!;
     const t = i / n;
 
-    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
+    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
     const worldWidth = baseWidth * widthMod;
     const px = screenStrokePx(worldWidth, camera.zoom, dpr);
     const worldLineWidth = px / (camera.zoom * dpr);
@@ -72,6 +72,12 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
   const clearGenerationRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const committedDirtyRef = useRef(true);
+  const drawErrorCountRef = useRef(0);
+
+  // Store onWarning in a ref to avoid re-running batch effect on callback identity changes
+  const onWarningRef = useRef(onWarning);
+  onWarningRef.current = onWarning;
 
   // Camera/dpr/size stored as refs so RAF loop doesn't restart on changes (C1 fix)
   const cameraRef = useRef<Camera>({ x: 40, y: 40, zoom: 1 });
@@ -107,10 +113,16 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => resizeCanvases());
-    window.addEventListener('resize', resizeCanvases);
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedResize = () => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => resizeCanvases(), 100);
+    };
+    window.addEventListener('resize', debouncedResize);
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener('resize', resizeCanvases);
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      window.removeEventListener('resize', debouncedResize);
     };
   }, [resizeCanvases]);
 
@@ -133,9 +145,10 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
           processedBatchIdsRef.current.add(batch.batch_id);
           // Fix N5: bump generation so RAF loop discards pre-clear completed strokes
           clearGenerationRef.current += 1;
+          committedDirtyRef.current = true;
         }
 
-        compiled.warnings.forEach(onWarning);
+        compiled.warnings.forEach((w) => onWarningRef.current(w));
 
         if (compiled.strokes.length > 0) {
           normalizeBatchTextSpacingAgainstScene(
@@ -154,12 +167,13 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     return () => {
       cancelled = true;
     };
-  }, [batches, onWarning]);
+  }, [batches]);
 
   useEffect(() => {
     let lastClearGeneration = clearGenerationRef.current;
 
     const drawFrame = () => {
+      try {
       const bgCanvas = bgRef.current;
       const committedCanvas = committedRef.current;
       const activeCanvas = activeRef.current;
@@ -194,6 +208,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       if (cameraChanged) {
         prevCameraRef.current = { ...camera };
         prevSizeRef.current = { ...size };
+        committedDirtyRef.current = true;
 
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
@@ -225,17 +240,35 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         }
       }
 
-      committedCtx.setTransform(1, 0, 0, 1, 0, 0);
-      committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
-      committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+      // Viewport bounds in world space for culling
+      const vpMinX = -camera.x / camera.zoom;
+      const vpMinY = -camera.y / camera.zoom;
+      const vpMaxX = vpMinX + size.width / camera.zoom;
+      const vpMaxY = vpMinY + size.height / camera.zoom;
+      const cullMargin = 50;
+
+      // Committed layer: only redraw when dirty
+      if (committedDirtyRef.current) {
+        committedCtx.setTransform(1, 0, 0, 1, 0, 0);
+        committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
+        committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+
+        for (const stroke of committedStrokesRef.current) {
+          if (stroke.bounds) {
+            const b = stroke.bounds;
+            if (b.maxX < vpMinX - cullMargin || b.minX > vpMaxX + cullMargin ||
+                b.maxY < vpMinY - cullMargin || b.minY > vpMaxY + cullMargin) {
+              continue;
+            }
+          }
+          drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+        }
+        committedDirtyRef.current = false;
+      }
 
       activeCtx.setTransform(1, 0, 0, 1, 0, 0);
       activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
       activeCtx.setTransform(scale, 0, 0, scale, tx, ty);
-
-      for (const stroke of committedStrokesRef.current) {
-        drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
-      }
 
       const now = performance.now();
       const nextActive: ActiveStroke[] = [];
@@ -245,6 +278,15 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         const t = easeOutCubic((now - stroke.startedAt) / stroke.durationMs);
         const visibleLength = stroke.length * t;
         const partial = partialPolylineByLength(stroke.points, stroke.cumulativeLengths, visibleLength);
+
+        if (stroke.bounds) {
+          const b = stroke.bounds;
+          if (b.maxX < vpMinX - cullMargin || b.minX > vpMaxX + cullMargin ||
+              b.maxY < vpMinY - cullMargin || b.minY > vpMaxY + cullMargin) {
+            if (t >= 1) { completed.push(stroke); } else { nextActive.push(stroke); }
+            continue;
+          }
+        }
 
         drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr);
 
@@ -259,6 +301,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       const currentGen = clearGenerationRef.current;
       if (completed.length > 0 && currentGen === lastClearGeneration) {
         committedStrokesRef.current = committedStrokesRef.current.concat(completed);
+        committedDirtyRef.current = true;
       }
       lastClearGeneration = currentGen;
       activeStrokesRef.current = nextActive;
@@ -274,6 +317,15 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       // Update zoom display on camera change
       if (cameraChanged && statsZoomElRef.current) {
         statsZoomElRef.current.textContent = `Zoom: ${(camera.zoom * 100).toFixed(0)}%`;
+      }
+
+      drawErrorCountRef.current = 0;
+      } catch (err) {
+        drawErrorCountRef.current += 1;
+        console.error('WhiteboardCanvas draw error:', err);
+        if (drawErrorCountRef.current >= 10) {
+          return;
+        }
       }
 
       rafRef.current = requestAnimationFrame(drawFrame);
