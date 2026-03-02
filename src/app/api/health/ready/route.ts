@@ -1,7 +1,5 @@
 import { getServerEnv } from '@/lib/server/env';
 
-const processStartTime = Date.now();
-
 export async function GET() {
   let envValid = false;
   try {
@@ -11,17 +9,15 @@ export async function GET() {
     // env invalid
   }
 
-  const checks = { env_valid: envValid };
-  const ok = envValid;
+  const allPassed = envValid;
+  const status = allPassed ? 200 : 503;
 
   return Response.json(
     {
-      ok,
-      checks,
-      uptime_ms: Date.now() - processStartTime,
-      node_version: process.version,
+      ready: allPassed,
+      checks: { env_valid: envValid },
       ts: Date.now(),
     },
-    { status: 200 },
+    { status },
   );
 }
