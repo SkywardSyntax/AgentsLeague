@@ -69,6 +69,30 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const committedStrokesRef = useRef<StrokeTrajectory[]>([]);
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
 
+  const gridColorsRef = useRef({ bg: '#f7f9fc', stroke: 'rgba(77, 93, 118, 0.16)' });
+
+  const readGridColors = useCallback(() => {
+    const style = getComputedStyle(document.documentElement);
+    gridColorsRef.current = {
+      bg: style.getPropertyValue('--color-grid-bg').trim() || '#f7f9fc',
+      stroke: style.getPropertyValue('--color-grid').trim() || 'rgba(77, 93, 118, 0.16)',
+    };
+  }, []);
+
+  useEffect(() => {
+    readGridColors();
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes' && m.attributeName === 'data-theme') {
+          readGridColors();
+          break;
+        }
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, [readGridColors]);
+
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
   const MAX_PROCESSED_BATCH_IDS = 500;
   const rafRef = useRef<number | null>(null);
@@ -185,11 +209,11 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       const drawGrid = () => {
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
-        bgCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-grid-bg').trim() || '#f7f9fc';
+        bgCtx.fillStyle = gridColorsRef.current.bg;
         bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
 
         bgCtx.setTransform(scale, 0, 0, scale, tx, ty);
-        bgCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-grid').trim() || 'rgba(77, 93, 118, 0.16)';
+        bgCtx.strokeStyle = gridColorsRef.current.stroke;
         bgCtx.lineWidth = 1 / scale;
 
         const grid = 30;

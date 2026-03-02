@@ -22,7 +22,9 @@ import type {
   WhiteboardLayoutDiagnostics,
 } from '@/types/agent';
 import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { AppHeader } from '@/components/app/AppHeader';
+import { AgentSidebar } from '@/components/app/AgentSidebar';
+import { WarningOverlay } from '@/components/app/WarningOverlay';
 import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 
 interface ChatSessionState {
@@ -668,23 +670,6 @@ export function AppShell() {
     [chatSessions],
   );
 
-  const warningsUI = useMemo(
-    () =>
-      (activeChat?.warnings.length ?? 0) > 0 ? (
-        <div className="absolute bottom-4 left-4 z-20 max-w-md space-y-2">
-          {activeChat?.warnings.map((warning, i) => (
-            <p
-              key={`${warning}-${i}`}
-              className="glass-panel rounded-xl border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-xs text-[var(--color-warning-text)] shadow-[var(--shadow-card)]"
-            >
-              {warning}
-            </p>
-          ))}
-        </div>
-      ) : null,
-    [activeChat.warnings],
-  );
-
   const statusLabel =
     status === 'idle'
       ? 'Ready'
@@ -743,15 +728,7 @@ export function AppShell() {
   return (
     <main className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
       <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
-        <header className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-4 sm:px-5">
-          <div>
-            <h1 className="font-[var(--font-display)] text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
-              AgentsLeague
-            </h1>
-            <p className="text-[11px] text-[var(--color-text-muted)]">Interleaved conversational whiteboard</p>
-          </div>
-          <StatusBadge status={status} />
-        </header>
+        <AppHeader status={status} />
 
         <div
           className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 md:flex-row"
@@ -845,36 +822,17 @@ export function AppShell() {
           )}
 
           {isAgentMode && (
-            <aside data-testid="agent-sidebar" className="absolute right-4 top-4 z-20 w-80 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-3 shadow-lg backdrop-blur">
-              <p className="text-sm font-semibold text-[var(--color-text-primary)]">Agent Mode</p>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                Domain: <span data-testid="agent-domain" className="font-medium">{agentDomain}</span> · Status: {statusLabel}
-              </p>
-              <p data-testid="agent-last-query" className="mt-2 line-clamp-3 text-xs text-[var(--color-text-muted)]">
-                Last query: {agentLastQuery || '—'}
-              </p>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  data-testid="agent-toggle"
-                  onClick={() => setAgentRunning((prev) => !prev)}
-                  className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-soft)]"
-                >
-                  {agentRunning ? 'Pause agent' : 'Resume agent'}
-                </button>
-                <button
-                  type="button"
-                  data-testid="agent-clear"
-                  onClick={clearForAgent}
-                  className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-soft)]"
-                >
-                  Clear
-                </button>
-              </div>
-            </aside>
+            <AgentSidebar
+              agentDomain={agentDomain}
+              statusLabel={statusLabel}
+              agentLastQuery={agentLastQuery}
+              agentRunning={agentRunning}
+              onToggleAgent={() => setAgentRunning((prev) => !prev)}
+              onClear={clearForAgent}
+            />
           )}
 
-          {warningsUI}
+          <WarningOverlay warnings={activeChat.warnings} />
         </div>
       </div>
       {!isAgentMode && (
