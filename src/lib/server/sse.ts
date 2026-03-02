@@ -1,5 +1,6 @@
 import type { AgentSSEEvent } from '@/types/agent';
 
+/** Returns HTTP headers for a Server-Sent Events response (text/event-stream, no-cache, keep-alive). */
 export function sseHeaders(): HeadersInit {
   return {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -8,6 +9,10 @@ export function sseHeaders(): HeadersInit {
   };
 }
 
+/**
+ * Serialize `payload` as a single SSE frame: `data: <JSON>\n\n`.
+ * The double newline terminates the event per the SSE specification.
+ */
 export function formatSSE(payload: AgentSSEEvent): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
