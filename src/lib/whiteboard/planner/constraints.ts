@@ -3,6 +3,36 @@ import type { PlannerConfig, PlannerConstraintResult } from './types';
 import { DEFAULT_PLANNER_CONFIG } from './types';
 import { boundsOf } from './bounds';
 
+export class BoundsCache {
+  private cache = new Map<string, WhiteboardBounds | null>();
+
+  get(el: DrawElement): WhiteboardBounds | null {
+    const id = el.id;
+    if (this.cache.has(id)) return this.cache.get(id)!;
+    const b = boundsOf(el);
+    this.cache.set(id, b);
+    return b;
+  }
+
+  invalidate(id: string): void {
+    this.cache.delete(id);
+  }
+
+  updateAfterShift(id: string, dx: number, dy: number): void {
+    const b = this.cache.get(id);
+    if (!b) {
+      this.cache.delete(id);
+      return;
+    }
+    this.cache.set(id, {
+      minX: b.minX + dx,
+      minY: b.minY + dy,
+      maxX: b.maxX + dx,
+      maxY: b.maxY + dy,
+    });
+  }
+}
+
 function shiftElement(el: DrawElement, dx: number, dy: number): DrawElement {
   if (el.type === 'rect') return { ...el, x: el.x + dx, y: el.y + dy };
   if (el.type === 'ellipse') return { ...el, cx: el.cx + dx, cy: el.cy + dy };
@@ -28,6 +58,10 @@ function isTextLike(el: DrawElement): boolean {
 
 function isShapeLike(el: DrawElement): boolean {
   return el.type === 'rect' || el.type === 'ellipse' || el.type === 'line' || el.type === 'arrow';
+}
+
+function isAreaShape(el: DrawElement): boolean {
+  return el.type === 'rect' || el.type === 'ellipse';
 }
 
 function ensureCanvasBounds(
@@ -136,6 +170,48 @@ function resolveLabelShapeSpacing(
         b = boundsOf(next[i]);
         if (!b) break;
         fixes.add('shift_y');
+      }
+    }
+  }
+
+  return next;
+}
+
+function resolveShapeSpacing(
+  elements: DrawElement[],
+  config: PlannerConfig,
+  fixes: Set<string>,
+  cache: BoundsCache,
+): DrawElement[] {
+  const shapeItems = elements
+    .map((el, idx) => ({ el, idx, b: cache.get(el) }))
+    .filter((entry): entry is { el: DrawElement; idx: number; b: WhiteboardBounds } =>
+      Boolean(entry.b) && isAreaShape(entry.el),
+    )
+    .sort((a, b) => (a.b.minY === b.b.minY ? a.b.minX - b.b.minX : a.b.minY - b.b.minY));
+
+  const next = [...elements];
+  for (let i = 1; i < shapeItems.length; i++) {
+    const current = shapeItems[i]!;
+    let currentBounds = cache.get(next[current.idx]!);
+    if (!currentBounds) continue;
+
+    for (let j = 0; j < i; j++) {
+      const prev = shapeItems[j]!;
+      const prevBounds = cache.get(next[prev.idx]!);
+      if (!prevBounds) continue;
+      if (horizontalOverlap(currentBounds, prevBounds) < 12) continue;
+
+      const verticalOverlap = Math.min(currentBounds.maxY, prevBounds.maxY) - Math.max(currentBounds.minY, prevBounds.minY);
+      if (verticalOverlap <= 0) continue;
+
+      const needed = prevBounds.maxY + config.minLabelGap - currentBounds.minY;
+      if (needed > 0) {
+        next[current.idx] = shiftElement(next[current.idx]!, 0, needed);
+        cache.invalidate(current.el.id);
+        currentBounds = cache.get(next[current.idx]!);
+        if (!currentBounds) break;
+        fixes.add('shape_spacing');
       }
     }
   }
@@ -259,6 +335,7 @@ export function enforceDrawBatchConstraints(
 ): PlannerConstraintResult {
   const config = { ...DEFAULT_PLANNER_CONFIG, ...partialConfig };
   const fixes = new Set<string>();
+  const cache = new BoundsCache();
 
   let elements = [...batch.elements];
   let prevElementHash = '';
@@ -266,6 +343,7 @@ export function enforceDrawBatchConstraints(
     elements = enforceArrowLegibility(elements, fixes);
     elements = resolveTextSpacing(elements, config, fixes);
     elements = resolveLabelShapeSpacing(elements, config, fixes);
+    elements = resolveShapeSpacing(elements, config, fixes, cache);
     elements = ensureCanvasBounds(elements, config, fixes);
 
     if (!hasTextOverlap(elements)) {
@@ -277,7 +355,7 @@ export function enforceDrawBatchConstraints(
     }
 
     // Fixed-point detection: stop if element positions didn't change
-    const curHash = elements.map((el) => el.id + JSON.stringify(boundsOf(el))).join('|');
+    const curHash = elements.map((el) => el.id + JSON.stringify(cache.get(el))).join('|');
     if (curHash === prevElementHash) break;
     prevElementHash = curHash;
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSemanticBatch } from '@/lib/whiteboard/planner';
+import { planSemanticBatch, measureBlock } from '@/lib/whiteboard/planner';
 import type { SemanticBatch } from '@/types/agent';
 
 describe('planner templates', () => {
@@ -208,6 +208,82 @@ describe('planner templates', () => {
     if (leftEq?.type === 'latex' && rightEq?.type === 'latex') {
       // Right lane content should be placed at a distinctly different x
       expect(rightEq.x).toBeGreaterThan(leftEq.x + 100);
+    }
+  });
+
+  it('measureBlock returns reasonable height for equation stack', () => {
+    const block = {
+      id: 'eq-measure',
+      kind: 'equation_stack' as const,
+      lines: [
+        { id: 'l1', tex: 'x=1', displayMode: true },
+        { id: 'l2', tex: 'y=2', displayMode: true },
+        { id: 'l3', tex: 'z=3', displayMode: true },
+      ],
+    };
+
+    const { height } = measureBlock(block, 600);
+    // 3 equation lines should produce meaningful height (> 100px)
+    expect(height).toBeGreaterThan(100);
+    expect(height).toBeLessThan(800);
+  });
+
+  it('measureBlock returns reasonable height for caption block', () => {
+    const block = {
+      id: 'cap-measure',
+      kind: 'caption' as const,
+      text: 'This is a short caption for testing.',
+    };
+
+    const { height } = measureBlock(block, 600);
+    expect(height).toBeGreaterThan(20);
+    expect(height).toBeLessThan(200);
+  });
+
+  it('measureBlock returns reasonable height for diagram panel', () => {
+    const block = {
+      id: 'dp-measure',
+      kind: 'diagram_panel' as const,
+      title: 'Test panel',
+      axes: { x_label: 'x', y_label: 'y' },
+    };
+
+    const { height } = measureBlock(block, 600);
+    // Should include title + panel min height (210)
+    expect(height).toBeGreaterThanOrEqual(210);
+  });
+
+  it('distributes auto-hinted blocks across lanes using balance tiebreak', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-balance',
+      template: 'freeform_semantic',
+      blocks: [
+        {
+          id: 'eq1',
+          kind: 'equation_stack',
+          lines: [{ id: 'l1', tex: 'a=1' }],
+        },
+        {
+          id: 'eq2',
+          kind: 'equation_stack',
+          lines: [{ id: 'l2', tex: 'b=2' }],
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    const eq1 = planned.elements.find(
+      (el) => el.type === 'latex' && el.id.startsWith('eq1'),
+    );
+    const eq2 = planned.elements.find(
+      (el) => el.type === 'latex' && el.id.startsWith('eq2'),
+    );
+
+    expect(eq1).toBeDefined();
+    expect(eq2).toBeDefined();
+    if (eq1?.type === 'latex' && eq2?.type === 'latex') {
+      // With balance tiebreak, two auto-hinted blocks should go to different lanes
+      expect(eq1.x).not.toBe(eq2.x);
     }
   });
 });

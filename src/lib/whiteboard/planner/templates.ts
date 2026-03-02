@@ -42,20 +42,31 @@ function compactText(input: string | undefined, maxChars: number): string | unde
 }
 
 function buildDefaultRegions(context?: StructuredWhiteboardContext): Record<string, PlannerRegion> {
-  const suggested = context?.suggested_next_regions?.[0];
-  const baseX = suggested ? suggested.x : 64;
-  const baseY = suggested ? suggested.y : 80;
-  const baseW = suggested ? Math.max(980, suggested.w) : 1320;
+  const suggested = context?.suggested_next_regions;
+  const primary = suggested?.[0];
+  const baseX = primary ? primary.x : 64;
+  const baseY = primary ? primary.y : 80;
+  const baseW = primary ? Math.max(980, primary.w) : 1320;
   const topH = 380;
 
   const laneGap = 56;
-  const leftW = Math.max(420, Math.floor((baseW - laneGap) / 2));
-  const rightW = Math.max(420, baseW - leftW - laneGap);
+
+  // When multiple suggested regions exist, use them to inform left/right bounds
+  const sugLeft = suggested?.[1]; // below_left
+  const sugRight = suggested?.[2]; // below_right
+  const leftW = sugLeft
+    ? Math.max(420, sugLeft.w)
+    : Math.max(420, Math.floor((baseW - laneGap) / 2));
+  const leftX = sugLeft ? sugLeft.x : baseX;
+  const rightW = sugRight
+    ? Math.max(420, sugRight.w)
+    : Math.max(420, baseW - leftW - laneGap);
+  const rightX = sugRight ? sugRight.x : leftX + leftW + laneGap;
   const centerW = Math.max(560, Math.floor(baseW * 0.66));
 
   return {
-    left: { name: 'left', x: baseX, y: baseY, w: leftW, h: topH, score: 1 },
-    right: { name: 'right', x: baseX + leftW + laneGap, y: baseY, w: rightW, h: topH, score: 0.94 },
+    left: { name: 'left', x: leftX, y: baseY, w: leftW, h: topH, score: 1 },
+    right: { name: 'right', x: rightX, y: baseY, w: rightW, h: topH, score: 0.94 },
     center: {
       name: 'center',
       x: baseX + Math.floor((baseW - centerW) / 2),
@@ -165,6 +176,61 @@ function estimateLatexVerticalAdvance(line: SemanticEquationLine, fontSize: numb
 
   const floor = displayMode ? Math.max(62, fontSize * 1.95) : Math.max(44, fontSize * 1.45);
   return Math.max(floor, base + extra);
+}
+
+export function measureEquationStack(
+  block: SemanticEquationStackBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  let h = 0;
+  if (block.title) {
+    const avgCharPx = Math.max(8, 22 * 0.5);
+    const maxChars = Math.max(16, Math.floor((regionWidth - 24) / avgCharPx));
+    const titleLines = wrapPlainText(block.title, maxChars);
+    h += titleLines.length * Math.max(23, Math.floor(22 * 1.24)) + 8;
+  }
+  for (const line of block.lines) {
+    const role = line.role ?? 'step';
+    const fontSize = role === 'result' ? 28 : role === 'note' ? 20 : 24;
+    h += estimateLatexVerticalAdvance(line, fontSize) + 12;
+  }
+  return { width: regionWidth, height: h };
+}
+
+export function measureDiagramPanel(
+  block: SemanticDiagramPanelBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  let h = 0;
+  if (block.title) {
+    const avgCharPx = Math.max(8, 22 * 0.5);
+    const maxChars = Math.max(16, Math.floor((regionWidth - 24) / avgCharPx));
+    const titleLines = wrapPlainText(block.title, maxChars);
+    h += titleLines.length * Math.max(23, Math.floor(22 * 1.24)) + 6;
+  }
+  h += Math.max(210, 336);
+  return { width: regionWidth, height: h };
+}
+
+export function measureCaptionBlock(
+  block: SemanticCaptionBlock,
+  regionWidth: number,
+): { width: number; height: number } {
+  const w = regionWidth - 20;
+  const avgCharPx = Math.max(8, 20 * 0.5);
+  const maxChars = Math.max(16, Math.floor((w - 24) / avgCharPx));
+  const lines = wrapPlainText(block.text, maxChars);
+  const h = lines.length * Math.max(23, Math.floor(20 * 1.24)) + 10;
+  return { width: w, height: h };
+}
+
+export function measureBlock(
+  block: SemanticBatch['blocks'][number],
+  regionWidth: number,
+): { width: number; height: number } {
+  if (block.kind === 'equation_stack') return measureEquationStack(block, regionWidth);
+  if (block.kind === 'diagram_panel') return measureDiagramPanel(block, regionWidth);
+  return measureCaptionBlock(block, regionWidth);
 }
 
 function placeEquationStack(
@@ -640,6 +706,7 @@ function buildTextLanes(
 function chooseLaneForBlock(
   block: SemanticBatch['blocks'][number],
   lanes: Record<Lane['name'], Lane>,
+  contentHeights?: Record<string, number>,
 ): Lane {
   const hint =
     block.kind === 'caption'
@@ -658,7 +725,29 @@ function chooseLaneForBlock(
   }
 
   const candidates = [lanes.left, lanes.right, lanes.center];
-  return candidates.reduce((best, lane) => (lane.cursorY < best.cursorY ? lane : best), candidates[0]!);
+  const minY = Math.min(...candidates.map((l) => l.cursorY));
+  const threshold = 30;
+  const tied = candidates.filter((l) => l.cursorY - minY <= threshold);
+
+  if (tied.length > 1 && contentHeights) {
+    // Break tie by choosing the lane that best balances left vs right height
+    let bestLane = tied[0]!;
+    let bestImbalance = Infinity;
+    for (const lane of tied) {
+      const leftH = contentHeights['left'] ?? 0;
+      const rightH = contentHeights['right'] ?? 0;
+      const addLeft = lane.name === 'left' ? 1 : 0;
+      const addRight = lane.name === 'right' ? 1 : 0;
+      const imbalance = Math.abs((leftH + addLeft) - (rightH + addRight));
+      if (imbalance < bestImbalance) {
+        bestImbalance = imbalance;
+        bestLane = lane;
+      }
+    }
+    return bestLane;
+  }
+
+  return tied[0] ?? candidates[0]!;
 }
 
 function findAnchorPoint(anchors: PlannerAnchor[], id: string | undefined): Point | null {
@@ -728,9 +817,10 @@ function buildAdaptiveLayout(
 
   // Track text block positions so cross-type relations (panel↔equation, panel↔caption) work
   const textBlockPositions = new Map<string, PanelPlacement>();
+  const contentHeights: Record<string, number> = { left: 0, right: 0, center: 0, bottom: 0 };
 
   for (const block of textBlocks) {
-    const lane = chooseLaneForBlock(block, lanes);
+    const lane = chooseLaneForBlock(block, lanes, contentHeights);
     // Ensure bottom lane starts below all other lanes
     if (lane.name === 'bottom') {
       lane.cursorY = Math.max(
@@ -747,6 +837,7 @@ function buildAdaptiveLayout(
     } else {
       lane.cursorY = placeCaptionBlock(block, lane.region, state, lane.cursorY);
     }
+    contentHeights[lane.name] = (contentHeights[lane.name] ?? 0) + (lane.cursorY - startY);
     const midY = (startY + lane.cursorY) / 2;
     const midX = lane.region.x + lane.region.w / 2;
     textBlockPositions.set(block.id, {

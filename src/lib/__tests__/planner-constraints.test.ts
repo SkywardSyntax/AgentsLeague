@@ -105,4 +105,47 @@ describe('planner constraints', () => {
       }
     }
   });
+
+  it('resolves overlapping rect shapes by shifting later one down', () => {
+    const batch: DrawBatch = {
+      batch_id: 'b5',
+      elements: [
+        { id: 'r1', type: 'rect', x: 100, y: 100, w: 200, h: 120 },
+        { id: 'r2', type: 'rect', x: 120, y: 110, w: 200, h: 120 },
+      ],
+    };
+
+    const repaired = enforceDrawBatchConstraints(batch);
+    const r1 = repaired.batch.elements.find((el) => el.id === 'r1')!;
+    const r2 = repaired.batch.elements.find((el) => el.id === 'r2')!;
+
+    expect(r1.type).toBe('rect');
+    expect(r2.type).toBe('rect');
+    if (r1.type !== 'rect' || r2.type !== 'rect') return;
+
+    // After resolving, r2 should not overlap r1 vertically
+    expect(r2.y).toBeGreaterThanOrEqual(r1.y + r1.h);
+  });
+
+  it('does not resolve spacing for line/arrow elements as area shapes', () => {
+    const batch: DrawBatch = {
+      batch_id: 'b6',
+      elements: [
+        { id: 'line1', type: 'line', from: { x: 100, y: 100 }, to: { x: 300, y: 100 } },
+        { id: 'line2', type: 'line', from: { x: 100, y: 100 }, to: { x: 300, y: 100 } },
+      ],
+    };
+
+    const repaired = enforceDrawBatchConstraints(batch);
+    const l1 = repaired.batch.elements.find((el) => el.id === 'line1')!;
+    const l2 = repaired.batch.elements.find((el) => el.id === 'line2')!;
+
+    expect(l1.type).toBe('line');
+    expect(l2.type).toBe('line');
+    if (l1.type !== 'line' || l2.type !== 'line') return;
+
+    // Lines should NOT be shifted apart by resolveShapeSpacing
+    expect(l2.from.y).toBe(l1.from.y);
+    expect(repaired.violationsFixed).not.toContain('shape_spacing');
+  });
 });
