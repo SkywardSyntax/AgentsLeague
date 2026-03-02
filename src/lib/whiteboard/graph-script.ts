@@ -569,7 +569,8 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
         });
         equationOrder.push(stackKey);
       }
-      const stack = equationStacks.get(stackKey)!;
+      const stack = equationStacks.get(stackKey);
+      if (!stack) continue;
       const displayArg = kv.display ?? kv.displaymode;
       stack.lines.push({
         id: lineId,
@@ -633,8 +634,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
   }
 
   const blocks = [
-    ...panelOrder.map((panelId) => panels.get(panelId)!).filter(Boolean),
-    ...equationOrder.map((stackId) => equationStacks.get(stackId)!).filter(Boolean),
+    ...panelOrder.map((panelId) => panels.get(panelId)).filter(
+      (b): b is NonNullable<typeof b> => b != null,
+    ),
+    ...equationOrder.map((stackId) => equationStacks.get(stackId)).filter(
+      (b): b is NonNullable<typeof b> => b != null,
+    ),
     ...captions,
   ];
 

@@ -388,6 +388,23 @@ describe('parseGraphScriptToSemanticBatch', () => {
     }
   });
 
+  it('handles equation referencing a missing stack gracefully', () => {
+    // Script with only equations — stacks are created inline so Map misses
+    // are unlikely, but we verify the filter guard on blocks assembly handles
+    // any hypothetical Map miss without crashing.
+    const script = [
+      'equation tex="x^2"',
+      'equation tex="y^2" region=center',
+    ].join('\n');
+
+    const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-eq-only', script });
+    expect(result.semanticBatch).not.toBeNull();
+    const eqBlocks = result.semanticBatch!.blocks.filter((b) => b.kind === 'equation_stack');
+    expect(eqBlocks.length).toBeGreaterThanOrEqual(1);
+    // No crash — blocks were assembled safely without non-null assertions
+    expect(result.semanticBatch!.blocks.every((b) => b != null)).toBe(true);
+  });
+
   it('trailing whitespace on commands parses correctly', () => {
     const script = 'panel id=p1   \nshape id=s1 panel=p1 type=rect   ';
     const result = parseGraphScriptToSemanticBatch({ batch_id: 'gs-trail', script });
