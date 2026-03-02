@@ -108,4 +108,85 @@ describe('createSSEHeartbeat', () => {
     vi.advanceTimersByTime(300);
     expect(chunks.length).toBe(countAfterStop);
   });
+
+  it('auto-stops when controller.enqueue throws (closed controller)', () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+    const controller = {
+      enqueue: () => {
+        callCount++;
+        throw new Error('Controller is closed');
+      },
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+
+    createSSEHeartbeat(controller, 100);
+    // First tick: enqueue throws, heartbeat should auto-clear
+    vi.advanceTimersByTime(100);
+    expect(callCount).toBe(1);
+    // Further ticks should not attempt enqueue (interval cleared)
+    vi.advanceTimersByTime(500);
+    expect(callCount).toBe(1);
+  });
+
+  it('stop() is idempotent — calling twice does not throw', () => {
+    vi.useFakeTimers();
+    const controller = {
+      enqueue: () => {},
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+
+    const hb = createSSEHeartbeat(controller, 100);
+    expect(() => {
+      hb.stop();
+      hb.stop();
+    }).not.toThrow();
+  });
+
+  it('no enqueue attempts after auto-stop from closed controller', () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+    const controller = {
+      enqueue: () => {
+        callCount++;
+        if (callCount >= 2) throw new Error('closed');
+      },
+    } as unknown as ReadableStreamDefaultController<Uint8Array>;
+
+    createSSEHeartbeat(controller, 50);
+    // First tick succeeds
+    vi.advanceTimersByTime(50);
+    expect(callCount).toBe(1);
+    // Second tick throws and auto-clears
+    vi.advanceTimersByTime(50);
+    expect(callCount).toBe(2);
+    // No further ticks
+    vi.advanceTimersByTime(500);
+    expect(callCount).toBe(2);
+  });
+});
+
+describe('formatSSE edge cases', () => {
+  it('handles payload with newlines and unicode', () => {
+    const result = formatSSE({ text: 'line1\nline2', emoji: '🎉' });
+    expect(result).toContain('data: ');
+    expect(result).toMatch(/\n\n$/)
+    // JSON.stringify escapes newlines, so no raw newline in the data line
+    expect(result).toContain('\\n');
+    expect(result).toContain('🎉');
+  });
+
+  it('handles deeply nested objects', () => {
+    const nested = { a: { b: { c: { d: [1, 2, 3] } } } };
+    const result = formatSSE(nested);
+    expect(result).toBe(`data: ${JSON.stringify(nested)}\n\n`);
+  });
+
+  it('handles null payload', () => {
+    const result = formatSSE(null);
+    expect(result).toBe('data: null\n\n');
+  });
+
+  it('handles numeric payload', () => {
+    const result = formatSSE(42);
+    expect(result).toBe('data: 42\n\n');
+  });
 });
