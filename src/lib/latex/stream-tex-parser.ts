@@ -14,7 +14,22 @@ interface Delimiter {
 }
 
 const DELIMITERS: Delimiter[] = [
+  { open: '\\begin{equation*}', close: '\\end{equation*}', display: true },
   { open: '\\begin{equation}', close: '\\end{equation}', display: true },
+  { open: '\\begin{align*}', close: '\\end{align*}', display: true },
+  { open: '\\begin{align}', close: '\\end{align}', display: true },
+  { open: '\\begin{gather*}', close: '\\end{gather*}', display: true },
+  { open: '\\begin{gather}', close: '\\end{gather}', display: true },
+  { open: '\\begin{cases}', close: '\\end{cases}', display: true },
+  { open: '\\begin{gathered}', close: '\\end{gathered}', display: true },
+  { open: '\\begin{bmatrix}', close: '\\end{bmatrix}', display: true },
+  { open: '\\begin{vmatrix}', close: '\\end{vmatrix}', display: true },
+  { open: '\\begin{Bmatrix}', close: '\\end{Bmatrix}', display: true },
+  { open: '\\begin{Vmatrix}', close: '\\end{Vmatrix}', display: true },
+  { open: '\\begin{pmatrix}', close: '\\end{pmatrix}', display: true },
+  { open: '\\begin{split}', close: '\\end{split}', display: true },
+  { open: '\\begin{multline*}', close: '\\end{multline*}', display: true },
+  { open: '\\begin{multline}', close: '\\end{multline}', display: true },
   { open: '$$', close: '$$', display: true },
   { open: '\\\\[', close: '\\\\]', display: true },
   { open: '\\[', close: '\\]', display: true },
@@ -93,14 +108,31 @@ function findMatchingBrace(input: string, from: number): number {
 function findClosing(input: string, from: number, delimiter: Delimiter): number {
   if (delimiter.braceBalanced) return findMatchingBrace(input, from);
 
+  if (delimiter.close === '$$') {
+    let braceDepth = 0;
+    for (let i = from; i < input.length; i++) {
+      const ch = input[i];
+      if (ch === '\\') { i += 1; continue; }
+      if (ch === '{') { braceDepth += 1; continue; }
+      if (ch === '}') { braceDepth = Math.max(0, braceDepth - 1); continue; }
+      if (braceDepth > 0) continue;
+      if (ch === '$' && input[i + 1] === '$') return i;
+    }
+    return -1;
+  }
+
   if (delimiter.close !== '$') {
     return input.indexOf(delimiter.close, from);
   }
 
+  let braceDepth = 0;
   for (let i = from; i < input.length; i++) {
-    if (input[i] !== '$') continue;
-    if (input.startsWith('$$', i)) continue;
-    if (isEscapedAt(input, i)) continue;
+    const ch = input[i];
+    if (ch === '\\') { i += 1; continue; }
+    if (ch === '{') { braceDepth += 1; continue; }
+    if (ch === '}') { braceDepth = Math.max(0, braceDepth - 1); continue; }
+    if (ch !== '$') continue;
+    if (braceDepth > 0) continue;
     return i;
   }
 

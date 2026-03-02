@@ -13,6 +13,12 @@ type Matrix2D = { a: number; b: number; c: number; d: number; e: number; f: numb
 let mathJaxContextPromise: Promise<MathJaxContext> | undefined;
 const renderCache = new Map<string, string>();
 const MAX_RENDER_CACHE = 400;
+const MAX_INIT_RETRIES = 3;
+let initAttempts = 0;
+
+let cacheHits = 0;
+let cacheMisses = 0;
+const pendingRenders = new Map<string, Promise<string>>();
 
 function identityMatrix(): Matrix2D {
   return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
@@ -136,48 +142,168 @@ function getSvgViewportMatrix(svgEl: SVGElement): Matrix2D {
   };
 }
 
+async function initMathJax(): Promise<MathJaxContext> {
+  const [
+    mathjaxMod,
+    texMod,
+    svgMod,
+    liteAdaptorMod,
+    registerHandlerMod,
+    allPackagesMod,
+  ] = await Promise.all([
+    import('mathjax-full/js/mathjax.js'),
+    import('mathjax-full/js/input/tex.js'),
+    import('mathjax-full/js/output/svg.js'),
+    import('mathjax-full/js/adaptors/liteAdaptor.js'),
+    import('mathjax-full/js/handlers/html.js'),
+    import('mathjax-full/js/input/tex/AllPackages.js'),
+  ]);
+
+  const adaptor = liteAdaptorMod.liteAdaptor();
+  registerHandlerMod.RegisterHTMLHandler(adaptor);
+  const tex = new texMod.TeX({ packages: allPackagesMod.AllPackages });
+  const svg = new svgMod.SVG({ fontCache: 'none' });
+  const html = mathjaxMod.mathjax.document('', { InputJax: tex, OutputJax: svg });
+
+  return {
+    html: html as MathJaxContext['html'],
+    adaptor: adaptor as unknown as MathJaxContext['adaptor'],
+  };
+}
+
 async function getMathJaxContext(): Promise<MathJaxContext> {
+  if (initAttempts >= MAX_INIT_RETRIES && !mathJaxContextPromise) {
+    throw new Error(`MathJax failed to initialize after ${MAX_INIT_RETRIES} attempts`);
+  }
+
   if (!mathJaxContextPromise) {
-    mathJaxContextPromise = (async () => {
-      const [
-        mathjaxMod,
-        texMod,
-        svgMod,
-        liteAdaptorMod,
-        registerHandlerMod,
-        allPackagesMod,
-      ] = await Promise.all([
-        import('mathjax-full/js/mathjax.js'),
-        import('mathjax-full/js/input/tex.js'),
-        import('mathjax-full/js/output/svg.js'),
-        import('mathjax-full/js/adaptors/liteAdaptor.js'),
-        import('mathjax-full/js/handlers/html.js'),
-        import('mathjax-full/js/input/tex/AllPackages.js'),
-      ]);
-
-      const adaptor = liteAdaptorMod.liteAdaptor();
-      registerHandlerMod.RegisterHTMLHandler(adaptor);
-      const tex = new texMod.TeX({ packages: allPackagesMod.AllPackages });
-      const svg = new svgMod.SVG({ fontCache: 'none' });
-      const html = mathjaxMod.mathjax.document('', { InputJax: tex, OutputJax: svg });
-
-      return {
-        html: html as MathJaxContext['html'],
-        adaptor: adaptor as unknown as MathJaxContext['adaptor'],
-      };
-    })();
+    initAttempts++;
+    mathJaxContextPromise = initMathJax().catch((error: unknown) => {
+      // Clear cached promise so the next call retries
+      mathJaxContextPromise = undefined;
+      throw error;
+    });
   }
 
   return mathJaxContextPromise;
 }
 
-export async function renderTexToSvg(tex: string, displayMode: boolean): Promise<string> {
+/** Reset init state — only for testing. */
+export function resetMathJaxInit(): void {
+  mathJaxContextPromise = undefined;
+  initAttempts = 0;
+}
+
+const MAX_TEX_LENGTH = 10_000;
+const RENDER_TIMEOUT_MS = 5_000;
+
+export class RenderTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`TeX rendering timed out after ${timeoutMs}ms`);
+    this.name = 'RenderTimeoutError';
+  }
+}
+
+export class TexParseError extends Error {
+  readonly source: string;
+  constructor(message: string, source: string) {
+    super(message);
+    this.name = 'TexParseError';
+    this.source = source;
+  }
+}
+
+export class TexRenderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TexRenderError';
+  }
+}
+
+const TEX_PARSE_ERROR_PATTERN =
+  /TeX parse error|Unknown command|Undefined control sequence|Missing close brace|Missing open brace|Extra close brace|Extra open brace|Double superscript|Double subscript|Misplaced &|Missing \$ inserted|Missing \\right|Missing \\left/i;
+
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new RenderTimeoutError(ms)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+export function getCachedSvg(tex: string, displayMode: boolean): string | undefined {
   const prepared = prepareTexForMathJax(tex, displayMode);
-  const cacheKey = `${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
+  const cacheKey = `render:${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
+  const cached = renderCache.get(cacheKey);
+  if (cached) {
+    cacheHits++;
+    renderCache.delete(cacheKey);
+    renderCache.set(cacheKey, cached);
+  } else {
+    cacheMisses++;
+  }
+  return cached;
+}
+
+export function clearRenderCache(): void {
+  renderCache.clear();
+  cacheHits = 0;
+  cacheMisses = 0;
+}
+
+export function renderCacheStats(): { size: number; maxSize: number; hits: number; misses: number; hitRate: number } {
+  const total = cacheHits + cacheMisses;
+  return {
+    size: renderCache.size,
+    maxSize: MAX_RENDER_CACHE,
+    hits: cacheHits,
+    misses: cacheMisses,
+    hitRate: total > 0 ? cacheHits / total : 0,
+  };
+}
+
+export async function renderTexToSvg(
+  tex: string,
+  displayMode: boolean,
+  timeoutMs: number = RENDER_TIMEOUT_MS,
+): Promise<string> {
+  if (tex.length > MAX_TEX_LENGTH) {
+    throw new Error(`TeX input exceeds maximum length of ${MAX_TEX_LENGTH} characters`);
+  }
+  const prepared = prepareTexForMathJax(tex, displayMode);
+  const cacheKey = `render:${prepared.displayMode ? 'D' : 'I'}:${prepared.tex}`;
 
   const cached = renderCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    cacheHits++;
+    renderCache.delete(cacheKey);
+    renderCache.set(cacheKey, cached);
+    return cached;
+  }
 
+  // Deduplicate concurrent renders for the same cache key
+  const pending = pendingRenders.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  cacheMisses++;
+  const renderPromise = withTimeout(renderTexToSvgInner(tex, prepared, cacheKey), timeoutMs);
+  pendingRenders.set(cacheKey, renderPromise);
+
+  try {
+    const result = await renderPromise;
+    return result;
+  } finally {
+    pendingRenders.delete(cacheKey);
+  }
+}
+
+async function renderTexToSvgInner(
+  tex: string,
+  prepared: { tex: string; displayMode: boolean },
+  cacheKey: string,
+): Promise<string> {
   const candidates = [prepared.tex];
   const rawTrimmed = tex.trim();
   if (rawTrimmed.length > 0 && rawTrimmed !== prepared.tex) {
@@ -185,7 +311,8 @@ export async function renderTexToSvg(tex: string, displayMode: boolean): Promise
   }
 
   const remember = (rendered: string) => {
-    if (renderCache.size > MAX_RENDER_CACHE) {
+    renderCache.delete(cacheKey);
+    if (renderCache.size >= MAX_RENDER_CACHE) {
       const oldest = renderCache.keys().next().value as string | undefined;
       if (oldest) renderCache.delete(oldest);
     }
@@ -239,7 +366,13 @@ export async function renderTexToSvg(tex: string, displayMode: boolean): Promise
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('Failed to render TeX');
+  if (lastError instanceof RenderTimeoutError) throw lastError;
+  if (lastError instanceof TexParseError) throw lastError;
+  const msg = lastError instanceof Error ? lastError.message : 'Failed to render TeX';
+  if (TEX_PARSE_ERROR_PATTERN.test(msg)) {
+    throw new TexParseError(msg, tex);
+  }
+  throw new TexRenderError(msg);
 }
 
 function parsePathPoints(d: string, matrix: Matrix2D, spacing: number): Point[] {

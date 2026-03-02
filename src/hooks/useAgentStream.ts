@@ -66,6 +66,32 @@ function computeDelay(attempt: number, reason: string, retryAfterMs?: number): n
   return retryAfterMs != null ? Math.max(retryAfterMs, jitter) : jitter;
 }
 
+export interface ParsedSSEResult {
+  events: string[];
+  remainder: string;
+}
+
+export function parseSSEBuffer(buffer: string): ParsedSSEResult {
+  const parts = buffer.split(/\r?\n\r?\n/);
+  if (parts.length <= 1) {
+    return { events: [], remainder: buffer };
+  }
+
+  const remainder = parts.pop() ?? '';
+  const events: string[] = [];
+  for (const chunk of parts) {
+    const lines = chunk
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('data:'));
+    for (const line of lines) {
+      const json = line.slice(5).trim();
+      if (json) events.push(json);
+    }
+  }
+  return { events, remainder };
+}
+
 
 export function useAgentStream() {
   const abortRef = useRef<AbortController | null>(null);
@@ -198,6 +224,7 @@ export function useAgentStream() {
                   }
                 }
               }
+            }
             }
           }
 

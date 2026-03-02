@@ -89,6 +89,38 @@ describe('QueryEngine.generateCrossDomain', () => {
   });
 });
 
+describe('SeededRandom edge cases', () => {
+  it('handles seed=0 via guard adjustment', () => {
+    const rng = new SeededRandom(0);
+    const val = rng.next();
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThan(1);
+  });
+
+  it('handles negative seed via guard adjustment', () => {
+    const rng = new SeededRandom(-5);
+    const val = rng.next();
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThan(1);
+  });
+
+  it('pick with single-element array always returns that element', () => {
+    const rng = new SeededRandom(42);
+    for (let i = 0; i < 20; i++) {
+      expect(rng.pick(['only'])).toBe('only');
+    }
+  });
+
+  it('next() returns values in [0, 1) over 1000 iterations', () => {
+    const rng = new SeededRandom(123);
+    for (let i = 0; i < 1000; i++) {
+      const v = rng.next();
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
+  });
+});
+
 describe('QueryEngine.generateBatch', () => {
   it('returns requested count of queries', () => {
     const engine = new QueryEngine(42);
@@ -120,5 +152,28 @@ describe('QueryEngine.generateBatch', () => {
     const batchA = a.generateBatch(10);
     const batchB = b.generateBatch(10);
     expect(batchA).toEqual(batchB);
+  });
+
+  it('returns empty array for count=0', () => {
+    const engine = new QueryEngine(42);
+    expect(engine.generateBatch(0)).toEqual([]);
+  });
+
+  it('returns single entry for count=1 with valid domain', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(1);
+    expect(batch).toHaveLength(1);
+    expect(AGENT_DOMAINS).toContain(batch[0]!.domain);
+    expect(batch[0]!.query.length).toBeGreaterThan(0);
+  });
+
+  it('covers all 4 domains in a deterministic batch of 20', () => {
+    const engine = new QueryEngine(42);
+    const batch = engine.generateBatch(20);
+    const domains = new Set(batch.map((b) => b.domain));
+    expect(domains.size).toBe(4);
+    for (const d of AGENT_DOMAINS) {
+      expect(domains.has(d)).toBe(true);
+    }
   });
 });
