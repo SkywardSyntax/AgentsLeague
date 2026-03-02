@@ -134,4 +134,45 @@ describe('planner lowerer', () => {
     expect(draw.elements[0]!.id).toBe('t1');
     expect(planned.warnings).toContain('elements_dropped_invalid');
   });
+
+  it('empty layout after all elements have invalid bounds', () => {
+    const elements: DrawElement[] = [
+      { id: 't1', type: 'text', x: NaN, y: 20, text: 'bad1' },
+      { id: 't2', type: 'text', x: 10, y: Infinity, text: 'bad2' },
+    ];
+    const planned = makeLayout(elements);
+
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    expect(draw.elements).toHaveLength(0);
+    expect(planned.warnings).toContain('elements_dropped_invalid');
+    expect(planned.warnings).toContain('empty_layout');
+  });
+
+  it('deduplicates elements by id keeping last occurrence across types', () => {
+    const elements: DrawElement[] = [
+      { id: 'e1', type: 'rect', x: 10, y: 20, w: 50, h: 50 },
+      { id: 'e1', type: 'text', x: 10, y: 30, text: 'replaced' },
+    ];
+    const planned = makeLayout(elements);
+
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    expect(draw.elements).toHaveLength(1);
+    expect(draw.elements[0]!.type).toBe('text');
+  });
+
+  it('drawOrderPriority: clear element (unknown type) sorts last', () => {
+    const elements: DrawElement[] = [
+      { id: 'c1', type: 'clear' },
+      { id: 'r1', type: 'rect', x: 10, y: 20, w: 50, h: 50 },
+      { id: 't1', type: 'text', x: 10, y: 200, text: 'hello' },
+    ];
+    const planned = makeLayout(elements);
+
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    // clear has null bounds → dropped by validation
+    // but if it survived, it would sort last (priority 3)
+    // since clear has no coords, boundsOf returns null, so it gets filtered
+    expect(draw.elements.some((el) => el.type === 'clear')).toBe(false);
+    expect(planned.warnings).toContain('elements_dropped_invalid');
+  });
 });

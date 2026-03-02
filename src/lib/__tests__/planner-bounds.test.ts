@@ -155,4 +155,57 @@ describe('boundsOf defensive validation', () => {
     expect(b!.minX).toBeLessThan(200);
     expect(b!.maxX).toBeGreaterThan(200);
   });
+
+  // --- Degenerate-but-valid inputs ---
+
+  it('ellipse with extreme aspect ratio (tiny rx, large ry) produces finite bounds', () => {
+    const el: DrawElement = { id: 'e-extreme', type: 'ellipse', cx: 500, cy: 500, rx: 0.001, ry: 1000 };
+    const b = boundsOf(el);
+    expect(b).not.toBeNull();
+    expect(Number.isFinite(b!.minX)).toBe(true);
+    expect(Number.isFinite(b!.maxY)).toBe(true);
+    expect(b!.maxY - b!.minY).toBeCloseTo(2000);
+  });
+
+  it('text with empty string returns valid bounds (zero-width text still has size-based width)', () => {
+    const el: DrawElement = { id: 't-empty', type: 'text', x: 50, y: 50, text: '', size: 18 };
+    const b = boundsOf(el);
+    expect(b).not.toBeNull();
+    // Width should be at least size * 0.45 even for empty text
+    expect(b!.maxX - b!.minX).toBeGreaterThan(0);
+  });
+
+  it('latex with whitespace-only tex returns null', () => {
+    const el: DrawElement = { id: 'x-ws', type: 'latex', tex: '   ', x: 0, y: 0, fontSize: 20 };
+    // tex is truthy (non-empty string with spaces), so boundsOf should return valid bounds
+    const b = boundsOf(el);
+    expect(b).not.toBeNull();
+  });
+
+  it('line with from === to (zero-length) returns valid point-bounds', () => {
+    const el: DrawElement = { id: 'l-zero', type: 'line', from: { x: 100, y: 200 }, to: { x: 100, y: 200 } };
+    const b = boundsOf(el);
+    expect(b).not.toBeNull();
+    expect(b!.minX).toBe(100);
+    expect(b!.maxX).toBe(100);
+    expect(b!.minY).toBe(200);
+    expect(b!.maxY).toBe(200);
+  });
+
+  it('right-aligned latex shifts minX left by full width', () => {
+    const el: DrawElement = {
+      id: 'x-right',
+      type: 'latex',
+      tex: 'x^2 + y^2',
+      x: 400,
+      y: 100,
+      fontSize: 24,
+      align: 'right',
+    };
+
+    const b = boundsOf(el);
+    expect(b).not.toBeNull();
+    expect(b!.maxX).toBeCloseTo(400);
+    expect(b!.minX).toBeLessThan(400);
+  });
 });

@@ -61,4 +61,24 @@ describe('BoundsCache', () => {
     expect(second).toEqual(first);
     expect(second).not.toBe(first);
   });
+
+  it('sequential updateAfterShift accumulates offsets', () => {
+    const cache = new BoundsCache();
+    cache.get(rect); // populate: minX=10, minY=20, maxX=110, maxY=70
+    cache.updateAfterShift('r1', 5, 10);
+    cache.updateAfterShift('r1', 5, 10);
+    const shifted = cache.get(rect);
+    expect(shifted).toEqual({
+      minX: 20,
+      minY: 40,
+      maxX: 120,
+      maxY: 90,
+    });
+  });
+
+  it('updateAfterShift on non-cached element is a no-op', () => {
+    const cache = new BoundsCache();
+    // 'missing' was never cached
+    expect(() => cache.updateAfterShift('missing', 10, 20)).not.toThrow();
+  });
 });

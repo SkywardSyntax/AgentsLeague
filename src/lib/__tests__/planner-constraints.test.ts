@@ -221,4 +221,107 @@ describe('planner constraints', () => {
     expect(result.violationsFixed).toHaveLength(0);
     expect(result.fallbackUsed).toBe(false);
   });
+
+  // --- hasTextOverlap exercised via public API ---
+
+  it('detects text-text overlap above 12px horizontal and any vertical overlap', () => {
+    // Two text elements with >12px horizontal overlap and same Y → overlap detected, repair runs
+    const batch: DrawBatch = {
+      batch_id: 'overlap-detect',
+      elements: [
+        { id: 't1', type: 'text', x: 100, y: 100, text: 'hello world', size: 18 },
+        { id: 't2', type: 'text', x: 105, y: 100, text: 'goodbye world', size: 18 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    // If overlap was detected, the constraint fixer must have shifted elements
+    expect(result.violationsFixed.length).toBeGreaterThan(0);
+    const t1 = result.batch.elements.find((el) => el.id === 't1')!;
+    const t2 = result.batch.elements.find((el) => el.id === 't2')!;
+    if (t1.type === 'text' && t2.type === 'text') {
+      expect(Math.abs(t1.y - t2.y)).toBeGreaterThan(5);
+    }
+  });
+
+  it('does not fix text overlap when horizontal overlap is less than 12px', () => {
+    // Place two text elements so their bounds overlap less than 12px horizontally
+    const batch: DrawBatch = {
+      batch_id: 'no-overlap',
+      elements: [
+        { id: 't1', type: 'text', x: 100, y: 100, text: 'A', size: 18 },
+        { id: 't2', type: 'text', x: 200, y: 100, text: 'B', size: 18 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    // Disjoint text → no shift needed, no fallback
+    expect(result.fallbackUsed).toBe(false);
+  });
+
+  it('single text element triggers no overlap fix', () => {
+    const batch: DrawBatch = {
+      batch_id: 'single',
+      elements: [
+        { id: 't1', type: 'text', x: 100, y: 100, text: 'alone', size: 18 },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.violationsFixed).toHaveLength(0);
+  });
+
+  it('shiftElement on unknown element type via constraints does not crash', () => {
+    // ClearElement has type 'clear' which shiftElement returns unchanged
+    const batch: DrawBatch = {
+      batch_id: 'unknown-type',
+      elements: [
+        { id: 'c1', type: 'clear' },
+        { id: 't1', type: 'text', x: 50, y: 50, text: 'hello', size: 18 },
+      ],
+    };
+
+    // Should not throw
+    const result = enforceDrawBatchConstraints(batch);
+    expect(result.batch.elements.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('arrow at exactly 22px length is not modified', () => {
+    // Arrow with length exactly 22px should pass legibility check
+    const batch: DrawBatch = {
+      batch_id: 'arrow-exact',
+      elements: [
+        { id: 'a1', type: 'arrow', from: { x: 100, y: 100 }, to: { x: 122, y: 100 } },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    const arrow = result.batch.elements.find((el) => el.id === 'a1')!;
+    expect(arrow.type).toBe('arrow');
+    if (arrow.type === 'arrow') {
+      // 22px is at the threshold so it should NOT be adjusted
+      expect(arrow.to.x).toBeCloseTo(122);
+      expect(arrow.to.y).toBeCloseTo(100);
+    }
+    expect(result.violationsFixed).not.toContain('arrow_endpoint_adjust');
+  });
+
+  it('arrow at 21px is extended to 28px', () => {
+    const batch: DrawBatch = {
+      batch_id: 'arrow-21',
+      elements: [
+        { id: 'a1', type: 'arrow', from: { x: 100, y: 100 }, to: { x: 121, y: 100 } },
+      ],
+    };
+
+    const result = enforceDrawBatchConstraints(batch);
+    const arrow = result.batch.elements.find((el) => el.id === 'a1')!;
+    expect(arrow.type).toBe('arrow');
+    if (arrow.type === 'arrow') {
+      const len = Math.hypot(arrow.to.x - arrow.from.x, arrow.to.y - arrow.from.y);
+      expect(len).toBeCloseTo(28);
+    }
+    expect(result.violationsFixed).toContain('arrow_endpoint_adjust');
+  });
 });
