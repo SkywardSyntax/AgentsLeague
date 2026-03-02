@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { ChatMessage } from '@/types/agent';
 import { MessageContent } from './MessageContent';
 import { StreamProgress, type StreamPhase } from './StreamProgress';
@@ -30,7 +31,7 @@ interface ChatPanelProps {
   disabled: boolean;
 }
 
-export function ChatPanel({
+export const ChatPanel = memo(function ChatPanel({
   chats,
   activeChatId,
   messages,
@@ -199,4 +200,4 @@ export function ChatPanel({
       </footer>
     </section>
   );
-}
+});

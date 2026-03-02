@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveStroke, DrawBatch, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
 import { createActiveBatch, easeOutCubic } from '@/lib/whiteboard/stroke-scheduler';
@@ -60,7 +60,7 @@ function drawStroke(
   }
 }
 
-export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
+export const WhiteboardCanvas = memo(function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLCanvasElement>(null);
   const committedRef = useRef<HTMLCanvasElement>(null);
@@ -332,4 +332,4 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       </div>
     </section>
   );
-}
+});

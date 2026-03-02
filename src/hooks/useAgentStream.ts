@@ -72,6 +72,7 @@ export function useAgentStream() {
   const mountedRef = useRef(true);
   const handlersRef = useRef<StreamHandlers | null>(null);
   const onRetryRef = useRef<((attempt: number, delayMs: number, reason: string) => void) | undefined>(undefined);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -98,6 +99,7 @@ export function useAgentStream() {
       cancel();
       handlersRef.current = args.handlers;
       onRetryRef.current = args.onRetry;
+      const gen = ++generationRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
       const maxRetries = args.maxRetries ?? 2;
@@ -174,7 +176,7 @@ export function useAgentStream() {
                   if (!event) {
                     consecutiveFailures++;
                     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                      if (mountedRef.current) {
+                      if (mountedRef.current && gen === generationRef.current) {
                         handlersRef.current?.onError('Stream corrupted — too many malformed events');
                       }
                       return;
@@ -183,13 +185,13 @@ export function useAgentStream() {
                   }
                   consecutiveFailures = 0;
                   lastEvent = event;
-                  if (mountedRef.current) {
+                  if (mountedRef.current && gen === generationRef.current) {
                     handlersRef.current?.onEvent(event);
                   }
                 } catch {
                   consecutiveFailures++;
                   if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                    if (mountedRef.current) {
+                    if (mountedRef.current && gen === generationRef.current) {
                       handlersRef.current?.onError('Stream corrupted — too many malformed events');
                     }
                     return;
@@ -208,7 +210,7 @@ export function useAgentStream() {
                 const event = validateSSEEvent(parsed);
                 if (event) {
                   lastEvent = event;
-                  if (mountedRef.current) {
+                  if (mountedRef.current && gen === generationRef.current) {
                     handlersRef.current?.onEvent(event);
                   }
                 }

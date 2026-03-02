@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
@@ -8,32 +8,17 @@ import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
 import { loadSession, saveSession } from '@/lib/client/persistence';
 import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
 import { buildWhiteboardContext, buildWhiteboardContextV2 } from '@/lib/whiteboard/context';
+import type { DrawBatch } from '@/types/agent';
 import {
-  removeStreamOverlayFromBatches,
-  removeStreamOverlayFromScene,
-} from '@/lib/whiteboard/stream-overlay';
-import type {
-  ChatMessage,
-  DrawBatch,
-  DrawElement,
-  SemanticBatch,
-  WhiteboardLayoutDiagnostics,
-} from '@/types/agent';
-import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
+  type ChatStore,
+  buildRestoreBatch,
+  chatSessionReducer,
+  createEmptyChatSession,
+  createInitialTurn,
+  createMessage,
+  withoutStreamOverlay,
+} from '@/lib/state/chatSessionReducer';
 import type { ValidatedAgentSSEEvent } from '@/lib/schema';
-
-interface ChatSessionState {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  messages: ChatMessage[];
-  scene: DrawElement[];
-  semanticScene: SemanticBatch[];
-  plannerMeta: WhiteboardLayoutDiagnostics[];
-  batches: DrawBatch[];
-  warnings: string[];
-}
 
 interface AgentAPI {
   submitQuery: (text: string) => Promise<void>;
@@ -56,109 +41,39 @@ function createId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function createMessage(role: ChatMessage['role'], content: string): ChatMessage {
-  return {
-    id: createId(),
-    role,
-    content,
-    createdAt: Date.now(),
-  };
-}
-
-function defaultChatTitle(index: number): string {
-  return `Chat ${index}`;
-}
-
-function looksDefaultTitle(title: string): boolean {
-  return /^Chat \d+$/.test(title.trim());
-}
-
-function buildChatTitleFromMessage(content: string): string {
-  const normalized = content.replace(/\s+/g, ' ').trim();
-  if (!normalized) return 'New Chat';
-  return normalized.length > 40 ? `${normalized.slice(0, 40)}…` : normalized;
-}
-
-function buildRestoreBatch(chatId: string, scene: DrawElement[]): DrawBatch[] {
-  if (scene.length === 0) return [];
-  return [
-    {
-      batch_id: `restore-${chatId}-${Date.now()}`,
-      style_preset: 'clean_pen_sketch',
-      elements: scene,
-    },
-  ];
-}
-
-function createEmptyChatSession(index: number): ChatSessionState {
-  const now = Date.now();
-  return {
-    id: createId(),
-    title: defaultChatTitle(index),
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
-    scene: [],
-    semanticScene: [],
-    plannerMeta: [],
-    batches: [],
-    warnings: [],
-  };
-}
-
-function withoutStreamOverlay(chat: ChatSessionState): ChatSessionState {
-  const nextScene = removeStreamOverlayFromScene(chat.scene);
-  const nextBatches = removeStreamOverlayFromBatches(chat.batches);
-  if (nextScene === chat.scene && nextBatches === chat.batches) return chat;
-  return {
-    ...chat,
-    scene: nextScene,
-    batches: nextBatches,
-  };
-}
-
 export function AppShell() {
   const [appMode, setAppMode] = useState<AppMode>(() => getInitialAppMode());
   const isAgentMode = appMode === 'agent';
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState<'idle' | 'thinking' | 'streaming' | 'drawing'>('idle');
   const [panelSizes, setPanelSizes] = useState<[number, number]>([62, 38]);
   const [agentRunning, setAgentRunning] = useState(isAgentMode);
   const [agentLastQuery, setAgentLastQuery] = useState('');
   const [agentDomainIndex, setAgentDomainIndex] = useState(0);
   const [didRestoreSession, setDidRestoreSession] = useState(false);
-  const [seedChat] = useState<ChatSessionState>(() => createEmptyChatSession(1));
+  const [seedChat] = useState(() => createEmptyChatSession(1));
 
-  const [chatSessions, setChatSessions] = useState<ChatSessionState[]>([seedChat]);
+  const [chatStore, dispatch] = useReducer(chatSessionReducer, undefined, (): ChatStore => ({
+    chatOrder: [seedChat.id],
+    chats: { [seedChat.id]: seedChat },
+    turn: createInitialTurn(),
+  }));
   const [activeChatId, setActiveChatId] = useState<string>(seedChat.id);
 
+  const status = chatStore.turn.status;
   const [sessionId] = useState(() => createId());
   const activeChatIdRef = useRef<string>(activeChatId);
-  const streamChatIdRef = useRef<string | null>(null);
-  const currentAssistantMessageId = useRef<string | null>(null);
-  const turnHadRenderableOutputRef = useRef(false);
-  const turnSawToolBatchRef = useRef(false);
   const agentQueryEngineRef = useRef(new QueryEngine());
   const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTurnEventsRef = useRef<string[]>([]);
   const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingDiagnosticsRef = useRef<
-    Map<
-      string,
-      {
-        batchId: string;
-        templateUsed: WhiteboardLayoutDiagnostics['templateUsed'];
-        fallbackUsed: boolean;
-        violationsFixed: string[];
-        semanticBatch?: SemanticBatch;
-      }
-    >
-  >(new Map());
   const { run, cancel } = useAgentStream();
 
   const activeChat = useMemo(
-    () => chatSessions.find((chat) => chat.id === activeChatId) ?? chatSessions[0] ?? null,
-    [activeChatId, chatSessions],
+    () => {
+      const firstId = chatStore.chatOrder[0];
+      return chatStore.chats[activeChatId] ?? (firstId ? chatStore.chats[firstId] : null) ?? null;
+    },
+    [activeChatId, chatStore],
   );
 
   useEffect(() => {
@@ -177,24 +92,30 @@ export function AppShell() {
   useEffect(() => {
     const restored = loadSession();
     if (restored && restored.chats.length > 0) {
-      const restoredChats: ChatSessionState[] = restored.chats.map((chat) => ({
-        id: chat.id,
-        title: chat.title,
-        createdAt: chat.createdAt,
-        updatedAt: chat.updatedAt,
-        messages: chat.messages,
-        scene: chat.scene,
-        semanticScene: chat.semanticScene ?? [],
-        plannerMeta: chat.plannerMeta ?? [],
-        batches: buildRestoreBatch(chat.id, chat.scene),
-        warnings: [],
-      }));
+      const activeExists = restored.chats.some((chat) => chat.id === restored.activeChatId);
+      const activeId = activeExists ? restored.activeChatId : restored.chats[0]!.id;
 
-      setChatSessions(restoredChats);
+      const newChats: Record<string, import('@/lib/state/chatSessionReducer').ChatSessionState> = {};
+      const newOrder: string[] = [];
+      for (const chat of restored.chats) {
+        newOrder.push(chat.id);
+        newChats[chat.id] = {
+          id: chat.id,
+          title: chat.title,
+          createdAt: chat.createdAt,
+          updatedAt: chat.updatedAt,
+          messages: chat.messages,
+          scene: chat.scene,
+          semanticScene: chat.semanticScene ?? [],
+          plannerMeta: chat.plannerMeta ?? [],
+          batches: chat.id === activeId ? buildRestoreBatch(chat.id, chat.scene) : [],
+          warnings: [],
+        };
+      }
+
+      dispatch({ type: 'RESTORE_SESSION', chats: newChats, chatOrder: newOrder });
       setPanelSizes(restored.prefs.panelSizes);
-
-      const activeExists = restoredChats.some((chat) => chat.id === restored.activeChatId);
-      setActiveChatId(activeExists ? restored.activeChatId : restoredChats[0]!.id);
+      setActiveChatId(activeId);
     }
 
     setDidRestoreSession(true);
@@ -206,21 +127,25 @@ export function AppShell() {
     if (persistTimeout.current) clearTimeout(persistTimeout.current);
 
     persistTimeout.current = setTimeout(() => {
-      if (chatSessions.length === 0) return;
+      if (chatStore.chatOrder.length === 0) return;
       saveSession({
         version: 3,
         updatedAt: Date.now(),
-        activeChatId: activeChat?.id ?? chatSessions[0]!.id,
-        chats: chatSessions.map((chat) => ({
-          id: chat.id,
-          title: chat.title,
-          createdAt: chat.createdAt,
-          updatedAt: chat.updatedAt,
-          messages: chat.messages,
-          scene: chat.scene,
-          semanticScene: chat.semanticScene,
-          plannerMeta: chat.plannerMeta,
-        })),
+        activeChatId: activeChat?.id ?? chatStore.chatOrder[0]!, // safe: guarded by length check above
+        chats: chatStore.chatOrder.map((id) => {
+          const chat = withoutStreamOverlay(chatStore.chats[id]!);
+          return {
+            id: chat.id,
+            title: chat.title,
+            createdAt: chat.createdAt,
+            updatedAt: chat.updatedAt,
+            messages: chat.messages,
+            scene: chat.scene,
+            semanticScene: chat.semanticScene,
+            plannerMeta: chat.plannerMeta,
+            warnings: chat.warnings.length > 0 ? chat.warnings : undefined,
+          };
+        }),
         prefs: { panelSizes },
       });
     }, 500);
@@ -228,137 +153,54 @@ export function AppShell() {
     return () => {
       if (persistTimeout.current) clearTimeout(persistTimeout.current);
     };
-  }, [activeChat?.id, chatSessions, didRestoreSession, panelSizes]);
+  }, [activeChat?.id, chatStore, didRestoreSession, panelSizes]);
 
   const pushWarning = useCallback((warning: string, chatIdOverride?: string) => {
-    const targetChatId = chatIdOverride ?? streamChatIdRef.current ?? activeChatIdRef.current;
+    const targetChatId = chatIdOverride ?? chatStore.turn.streamChatId ?? activeChatIdRef.current;
     if (!targetChatId) return;
-
-    setChatSessions((prev) =>
-      prev.map((chat) => {
-        if (chat.id !== targetChatId) return chat;
-        if (chat.warnings[chat.warnings.length - 1] === warning) return chat;
-        return {
-          ...chat,
-          updatedAt: Date.now(),
-          warnings: [...chat.warnings, warning].slice(-8),
-        };
-      }),
-    );
-  }, []);
+    dispatch({ type: 'PUSH_WARNING', chatId: targetChatId, warning });
+  }, [chatStore.turn.streamChatId]);
 
   const handleEvent = useCallback(
     (event: ValidatedAgentSSEEvent) => {
+      try {
       lastTurnEventsRef.current.push(event.type);
       if (lastTurnEventsRef.current.length > 80) {
         lastTurnEventsRef.current = lastTurnEventsRef.current.slice(-80);
       }
-      const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
+      const targetChatId = chatStore.turn.streamChatId ?? activeChatIdRef.current;
       if (!targetChatId) return;
 
       if (event.type === 'assistant.text.delta') {
-        turnHadRenderableOutputRef.current = true;
-        setStatus('streaming');
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
-
-            const currentId = currentAssistantMessageId.current;
-            if (!currentId) {
-              const nextMsg = createMessage('assistant', event.delta);
-              currentAssistantMessageId.current = nextMsg.id;
-              return {
-                ...chat,
-                updatedAt: Date.now(),
-                messages: [...chat.messages, nextMsg],
-              };
-            }
-
-            const hasTarget = chat.messages.some((msg) => msg.id === currentId);
-            if (!hasTarget) {
-              const nextMsg = createMessage('assistant', event.delta);
-              currentAssistantMessageId.current = nextMsg.id;
-              return {
-                ...chat,
-                updatedAt: Date.now(),
-                messages: [...chat.messages, nextMsg],
-              };
-            }
-
-            return {
-              ...chat,
-              updatedAt: Date.now(),
-              messages: chat.messages.map((msg) =>
-                msg.id === currentId ? { ...msg, content: `${msg.content}${event.delta}` } : msg,
-              ),
-            };
-          }),
-        );
+        dispatch({ type: 'APPEND_ASSISTANT_DELTA', chatId: targetChatId, delta: event.delta });
         return;
       }
 
       if (event.type === 'assistant.text.done') {
-        currentAssistantMessageId.current = null;
+        dispatch({ type: 'FINALIZE_ASSISTANT_MESSAGE' });
         return;
       }
 
       if (event.type === 'whiteboard.batch') {
-        turnHadRenderableOutputRef.current = true;
-        const isProvisionalStreamBatch = event.batch.batch_id.startsWith('stream-provisional-');
-        const firstToolBatch = !isProvisionalStreamBatch && !turnSawToolBatchRef.current;
-        if (!isProvisionalStreamBatch) {
-          turnSawToolBatchRef.current = true;
-        }
-        const diagnostics = pendingDiagnosticsRef.current.get(event.batch.batch_id);
-        if (diagnostics) pendingDiagnosticsRef.current.delete(event.batch.batch_id);
-        setStatus('drawing');
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
-            const baseChat = firstToolBatch ? withoutStreamOverlay(chat) : chat;
-            const hasClear = event.batch.elements.some((el) => el.type === 'clear');
-            const baseScene = hasClear ? [] : [...baseChat.scene];
-            event.batch.elements.forEach((element) => {
-              if (element.type !== 'clear') baseScene.push(element);
-            });
-
-            const nextPlannerMeta =
-              diagnostics != null
-                ? [
-                    ...baseChat.plannerMeta,
-                    {
-                      batchId: diagnostics.batchId,
-                      templateUsed: diagnostics.templateUsed,
-                      fallbackUsed: diagnostics.fallbackUsed,
-                      violationsFixed: diagnostics.violationsFixed,
-                    },
-                  ].slice(-40)
-                : baseChat.plannerMeta;
-
-            const semanticBatch =
-              diagnostics?.semanticBatch ??
-              fromLegacyDrawBatchToSemanticStub(event.batch.batch_id, event.batch.elements);
-            const nextSemanticScene = [...baseChat.semanticScene, semanticBatch].slice(-80);
-            return {
-              ...baseChat,
-              updatedAt: Date.now(),
-              scene: baseScene,
-              semanticScene: nextSemanticScene,
-              plannerMeta: nextPlannerMeta,
-              batches: [...baseChat.batches, event.batch],
-            };
-          }),
-        );
+        dispatch({
+          type: 'APPLY_WHITEBOARD_BATCH',
+          chatId: targetChatId,
+          batch: event.batch,
+        });
         return;
       }
 
       if (event.type === 'whiteboard.layout.diagnostics') {
-        pendingDiagnosticsRef.current.set(event.batchId, {
+        dispatch({
+          type: 'STORE_DIAGNOSTICS',
           batchId: event.batchId,
-          templateUsed: event.templateUsed,
-          fallbackUsed: event.fallbackUsed,
-          violationsFixed: event.violationsFixed,
-          semanticBatch: event.semanticBatch,
+          entry: {
+            batchId: event.batchId,
+            templateUsed: event.templateUsed,
+            fallbackUsed: event.fallbackUsed,
+            violationsFixed: event.violationsFixed,
+            semanticBatch: event.semanticBatch,
+          },
         });
         return;
       }
@@ -369,49 +211,19 @@ export function AppShell() {
       }
 
       if (event.type === 'error') {
-        currentAssistantMessageId.current = null;
-        streamChatIdRef.current = null;
-        setStatus('idle');
-        turnSawToolBatchRef.current = false;
-        pendingDiagnosticsRef.current.clear();
-        setChatSessions((prev) =>
-          prev.map((chat) =>
-            chat.id === targetChatId
-              ? {
-                  ...chat,
-                  updatedAt: Date.now(),
-                  messages: [...chat.messages, createMessage('assistant', `Error: ${event.message}`)],
-                }
-              : chat,
-          ),
-        );
+        dispatch({ type: 'TURN_ERROR', chatId: targetChatId, errorMessage: event.message });
         return;
       }
 
       if (event.type === 'turn.done') {
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
-            if (turnHadRenderableOutputRef.current) return chat;
-            return {
-              ...chat,
-              updatedAt: Date.now(),
-              messages: [
-                ...chat.messages,
-                createMessage('assistant', 'I could not produce output for that turn. Please try again.'),
-              ],
-            };
-          }),
-        );
-        turnHadRenderableOutputRef.current = false;
-        currentAssistantMessageId.current = null;
-        streamChatIdRef.current = null;
-        turnSawToolBatchRef.current = false;
-        pendingDiagnosticsRef.current.clear();
-        setStatus('idle');
+        dispatch({ type: 'TURN_DONE', chatId: targetChatId });
+      }
+      } catch (err) {
+        console.error('[handleEvent] Error processing event:', event?.type, err);
+        pushWarning(`Event processing error: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [pushWarning],
+    [chatStore.turn.streamChatId, pushWarning],
   );
 
   const sendMessage = useCallback(
@@ -426,27 +238,8 @@ export function AppShell() {
       const whiteboardContext = buildWhiteboardContext(activeChat.scene);
       const whiteboardContextV2 = buildWhiteboardContextV2(activeChat.scene, activeChat.semanticScene);
 
-      setChatSessions((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== chatId) return chat;
-          const nextTitle =
-            chat.messages.length === 0 || looksDefaultTitle(chat.title)
-              ? buildChatTitleFromMessage(message)
-              : chat.title;
-          return {
-            ...chat,
-            updatedAt: Date.now(),
-            title: nextTitle,
-            messages: [...chat.messages, userMessage],
-          };
-        }),
-      );
-      setStatus('thinking');
-      currentAssistantMessageId.current = null;
-      turnHadRenderableOutputRef.current = false;
-      turnSawToolBatchRef.current = false;
-      streamChatIdRef.current = chatId;
-      pendingDiagnosticsRef.current.clear();
+      dispatch({ type: 'ADD_USER_MESSAGE', chatId, message: userMessage, rawContent: message });
+      dispatch({ type: 'TURN_START', chatId });
       lastTurnEventsRef.current = ['turn.started'];
 
       void run({
@@ -459,33 +252,16 @@ export function AppShell() {
         handlers: {
           onEvent: handleEvent,
           onError: (msg) => {
-            const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
-            currentAssistantMessageId.current = null;
-            turnHadRenderableOutputRef.current = true;
-            streamChatIdRef.current = null;
-            setStatus('idle');
-            turnSawToolBatchRef.current = false;
-            pendingDiagnosticsRef.current.clear();
             lastTurnEventsRef.current.push('error');
+            const targetChatId = chatStore.turn.streamChatId ?? activeChatIdRef.current;
             if (!targetChatId) return;
-
-            setChatSessions((prev) =>
-              prev.map((chat) =>
-                chat.id === targetChatId
-                  ? {
-                      ...chat,
-                      updatedAt: Date.now(),
-                      messages: [...chat.messages, createMessage('assistant', `Stream error: ${msg}`)],
-                    }
-                  : chat,
-              ),
-            );
+            dispatch({ type: 'STREAM_ERROR', chatId: targetChatId, errorMessage: msg });
           },
         },
       });
       return true;
     },
-    [activeChat, handleEvent, run, sessionId, status],
+    [activeChat, chatStore.turn.streamChatId, handleEvent, run, sessionId, status],
   );
 
   const send = useCallback(() => {
@@ -495,28 +271,20 @@ export function AppShell() {
 
   const createChat = useCallback(() => {
     if (status !== 'idle') return;
-    const nextChat = createEmptyChatSession(chatSessions.length + 1);
-    setChatSessions((prev) => [nextChat, ...prev]);
+    const nextChat = createEmptyChatSession(chatStore.chatOrder.length + 1);
+    dispatch({ type: 'CREATE_CHAT', chat: nextChat });
     setActiveChatId(nextChat.id);
     setInput('');
-    currentAssistantMessageId.current = null;
-    turnHadRenderableOutputRef.current = false;
-    turnSawToolBatchRef.current = false;
-    streamChatIdRef.current = null;
-    pendingDiagnosticsRef.current.clear();
-  }, [chatSessions.length, status]);
+  }, [chatStore.chatOrder.length, status]);
 
   const selectChat = useCallback(
     (chatId: string) => {
       if (status !== 'idle') return;
       if (chatId === activeChatId) return;
+      lastTurnEventsRef.current = [];
+      dispatch({ type: 'SELECT_CHAT', chatId });
       setActiveChatId(chatId);
       setInput('');
-      currentAssistantMessageId.current = null;
-      turnHadRenderableOutputRef.current = false;
-      turnSawToolBatchRef.current = false;
-      streamChatIdRef.current = null;
-      pendingDiagnosticsRef.current.clear();
     },
     [activeChatId, status],
   );
@@ -524,50 +292,29 @@ export function AppShell() {
   const deleteChat = useCallback(
     (chatId: string) => {
       if (status !== 'idle') return;
+      const wasStreaming = chatStore.turn.streamChatId === chatId;
+      if (wasStreaming) cancel();
 
-      let nextActiveId: string | null = null;
-      setChatSessions((prev) => {
-        const index = prev.findIndex((chat) => chat.id === chatId);
-        if (index === -1) return prev;
+      dispatch({ type: 'DELETE_CHAT', chatId, activeChatId: activeChatIdRef.current });
 
-        if (prev.length === 1) {
-          const replacement = createEmptyChatSession(1);
-          nextActiveId = replacement.id;
-          return [replacement];
-        }
-
-        const remaining = prev.filter((chat) => chat.id !== chatId);
-        if (activeChatIdRef.current === chatId) {
-          nextActiveId = remaining[Math.max(0, index - 1)]?.id ?? remaining[0]!.id;
-        }
-        return remaining;
-      });
-
-      if (streamChatIdRef.current === chatId) {
-        cancel();
-        setStatus('idle');
-        streamChatIdRef.current = null;
-        currentAssistantMessageId.current = null;
-        turnHadRenderableOutputRef.current = false;
-        turnSawToolBatchRef.current = false;
-      }
-
-      if (nextActiveId) {
+      // Determine next active chat
+      const index = chatStore.chatOrder.indexOf(chatId);
+      if (index === -1) return;
+      if (chatStore.chatOrder.length === 1) {
+        // A replacement was created by the reducer; read it after dispatch settles
+        setInput('');
+      } else if (activeChatIdRef.current === chatId) {
+        const nextOrder = chatStore.chatOrder.filter((id) => id !== chatId);
+        const nextActiveId = nextOrder[Math.max(0, index - 1)] ?? nextOrder[0]!;
         setActiveChatId(nextActiveId);
         setInput('');
       }
     },
-    [cancel, status],
+    [cancel, chatStore.chatOrder, chatStore.turn.streamChatId, status],
   );
 
   const clearActiveChat = useCallback(() => {
     if (!activeChat || status !== 'idle') return;
-
-    currentAssistantMessageId.current = null;
-    turnHadRenderableOutputRef.current = false;
-    turnSawToolBatchRef.current = false;
-    streamChatIdRef.current = null;
-    pendingDiagnosticsRef.current.clear();
 
     const clearBatch: DrawBatch = {
       batch_id: `clear-${createId()}`,
@@ -575,22 +322,7 @@ export function AppShell() {
       elements: [{ id: `clear-${createId()}`, type: 'clear' }],
     };
 
-    setChatSessions((prev) =>
-      prev.map((chat) =>
-        chat.id === activeChat.id
-          ? {
-              ...chat,
-              updatedAt: Date.now(),
-              messages: [],
-              scene: [],
-              semanticScene: [],
-              plannerMeta: [],
-              warnings: [],
-              batches: [clearBatch],
-            }
-          : chat,
-      ),
-    );
+    dispatch({ type: 'CLEAR_CHAT', chatId: activeChat.id, clearBatch });
   }, [activeChat, status]);
 
   const clearForAgent = useCallback(() => {
@@ -607,7 +339,7 @@ export function AppShell() {
     if (status !== 'idle') return;
 
     // Auto-clear scene only (preserve domain progress) when crowded
-    if (activeChat.scene.length > AGENT_SCENE_LIMIT) {
+    if (activeChat && activeChat.scene.length > AGENT_SCENE_LIMIT) {
       agentDelayRef.current = setTimeout(() => {
         agentDelayRef.current = null;
         clearForAgent();
@@ -638,7 +370,7 @@ export function AppShell() {
         agentDelayRef.current = null;
       }
     };
-  }, [activeChat.scene.length, agentDomainIndex, agentRunning, clearForAgent, isAgentMode, sendMessage, status]);
+  }, [activeChat?.scene.length, agentDomainIndex, agentRunning, clearForAgent, isAgentMode, sendMessage, status]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isAgentMode || !activeChat) return;
@@ -672,17 +404,20 @@ export function AppShell() {
 
   const chatMeta = useMemo<ChatThreadMeta[]>(
     () =>
-      chatSessions.map((chat) => ({
-        id: chat.id,
-        title: chat.title,
-        messageCount: chat.messages.length,
-      })),
-    [chatSessions],
+      chatStore.chatOrder.map((id) => {
+        const chat = chatStore.chats[id]!;
+        return {
+          id: chat.id,
+          title: chat.title,
+          messageCount: chat.messages.length,
+        };
+      }),
+    [chatStore.chatOrder, chatStore.chats],
   );
 
   const warningsUI = useMemo(
     () =>
-      (activeChat?.warnings.length ?? 0) > 0 ? (
+      (activeChat?.warnings?.length ?? 0) > 0 ? (
         <div className="absolute bottom-4 left-4 z-20 max-w-md space-y-2">
           {activeChat?.warnings.map((warning, i) => (
             <p
@@ -694,7 +429,7 @@ export function AppShell() {
           ))}
         </div>
       ) : null,
-    [activeChat.warnings],
+    [activeChat?.id, activeChat?.warnings],
   );
 
   const statusLabel =
@@ -787,31 +522,15 @@ export function AppShell() {
                 onSend={send}
                 onCancel={() => {
                   cancel();
-                  streamChatIdRef.current = null;
-                  currentAssistantMessageId.current = null;
-                  turnHadRenderableOutputRef.current = false;
-                  turnSawToolBatchRef.current = false;
-                  pendingDiagnosticsRef.current.clear();
-                  setStatus('idle');
+                  // TURN_DONE resets all turn state to idle
+                  const targetChatId = chatStore.turn.streamChatId ?? activeChatIdRef.current;
+                  if (targetChatId) dispatch({ type: 'TURN_DONE', chatId: targetChatId });
                 }}
                 onSelectChat={selectChat}
                 onCreateChat={createChat}
                 onDeleteChat={deleteChat}
                 onDeleteMessage={(messageId) => {
-                  if (currentAssistantMessageId.current === messageId) {
-                    currentAssistantMessageId.current = null;
-                  }
-                  setChatSessions((prev) =>
-                    prev.map((chat) =>
-                      chat.id === activeChat.id
-                        ? {
-                            ...chat,
-                            updatedAt: Date.now(),
-                            messages: chat.messages.filter((m) => m.id !== messageId),
-                          }
-                        : chat,
-                    ),
-                  );
+                  dispatch({ type: 'DELETE_MESSAGE', chatId: activeChat.id, messageId });
                 }}
                 onClearChat={clearActiveChat}
                 disabled={status !== 'idle'}

@@ -1,104 +1,26 @@
 import type {
   DrawBatch,
-  DrawElement,
   Point,
   StrokeTrajectory,
-  StylePreset,
 } from '@/types/agent';
-import { hashString, seededRandom } from '@/lib/math/seed';
 import { renderTexToSvg, extractSvgStrokes } from '@/lib/latex/mathjax-client';
 import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
 import { resamplePolyline } from './geometry';
+import {
+  strokeWidthForPreset,
+  rectPoints,
+  ellipsePoints,
+  linePoints,
+  arrowHeadPoints,
+} from './shape-points';
+import { withJitter, withJitterAmount } from './stroke-jitter';
+
+// Re-export for cross-lane backward compatibility
+export { rectPoints } from './shape-points';
+export { withJitter } from './stroke-jitter';
 
 const DEFAULT_COLOR = '#1f2a44';
 const DEFAULT_BASE_WIDTH = 1.45;
-
-function strokeWidthForPreset(preset: StylePreset | undefined, base: number): number {
-  switch (preset) {
-    case 'rough_sketch':
-      return base * 1.15;
-    case 'blueprint_neat':
-      return base * 0.88;
-    default:
-      return base;
-  }
-}
-
-export function withJitter(points: Point[], seed: string, preset: StylePreset | undefined): Point[] {
-  const rnd = seededRandom(hashString(seed));
-  const amount = preset === 'rough_sketch' ? 0.85 : preset === 'blueprint_neat' ? 0.12 : 0.24;
-  if (amount <= 0) return points;
-
-  return points.map((p, idx) => {
-    if (idx === 0 || idx === points.length - 1) return p;
-    return {
-      x: p.x + (rnd() - 0.5) * amount,
-      y: p.y + (rnd() - 0.5) * amount,
-    };
-  });
-}
-
-function withJitterAmount(points: Point[], seed: string, amount: number): Point[] {
-  if (amount <= 0) return points;
-  const rnd = seededRandom(hashString(seed));
-  return points.map((p, idx) => {
-    if (idx === 0 || idx === points.length - 1) return p;
-    return {
-      x: p.x + (rnd() - 0.5) * amount,
-      y: p.y + (rnd() - 0.5) * amount,
-    };
-  });
-}
-
-export function rectPoints(el: Extract<DrawElement, { type: 'rect' }>): Point[] {
-  return [
-    { x: el.x, y: el.y },
-    { x: el.x + el.w, y: el.y },
-    { x: el.x + el.w, y: el.y + el.h },
-    { x: el.x, y: el.y + el.h },
-    { x: el.x, y: el.y },
-  ];
-}
-
-function ellipsePoints(el: Extract<DrawElement, { type: 'ellipse' }>): Point[] {
-  const circumference = Math.PI * (3 * (el.rx + el.ry) - Math.sqrt((3 * el.rx + el.ry) * (el.rx + 3 * el.ry)));
-  const steps = Math.max(36, Math.ceil(circumference / 5));
-  const pts: Point[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = (Math.PI * 2 * i) / steps;
-    pts.push({
-      x: el.cx + Math.cos(t) * el.rx,
-      y: el.cy + Math.sin(t) * el.ry,
-    });
-  }
-  return pts;
-}
-
-function linePoints(el: Extract<DrawElement, { type: 'line' } | { type: 'arrow' }>): Point[] {
-  return [el.from, el.to];
-}
-
-function arrowHeadPoints(el: Extract<DrawElement, { type: 'arrow' }>): Point[][] {
-  const dx = el.to.x - el.from.x;
-  const dy = el.to.y - el.from.y;
-  const angle = Math.atan2(dy, dx);
-  const headLen = 14;
-  const wing = Math.PI / 7;
-
-  const left: Point = {
-    x: el.to.x - Math.cos(angle - wing) * headLen,
-    y: el.to.y - Math.sin(angle - wing) * headLen,
-  };
-  const right: Point = {
-    x: el.to.x - Math.cos(angle + wing) * headLen,
-    y: el.to.y - Math.sin(angle + wing) * headLen,
-  };
-
-  return [
-    [left, el.to],
-    [right, el.to],
-  ];
-}
 
 async function compileTextLikeElement(
   tex: string,
