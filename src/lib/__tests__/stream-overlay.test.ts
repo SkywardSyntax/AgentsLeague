@@ -61,5 +61,36 @@ describe('stream overlay utils', () => {
     expect(toStreamTextKey(' 1)  Start with  ')).toBe('text:1) start with');
     expect(toStreamLatexKey(' x^2 + 1 ')).toBe('latex:x^2 + 1');
   });
+
+  it('returns empty array for empty input', () => {
+    expect(extractStreamStepLines('')).toEqual([]);
+  });
+
+  it('includes lines of exactly 96 chars ending with colon and excludes 97', () => {
+    const line96 = 'A'.repeat(95) + ':';
+    expect(line96).toHaveLength(96);
+    const result96 = extractStreamStepLines(line96 + '\n');
+    expect(result96).toEqual([line96]);
+
+    const line97 = 'A'.repeat(96) + ':';
+    expect(line97).toHaveLength(97);
+    const result97 = extractStreamStepLines(line97 + '\n');
+    expect(result97).toEqual([]);
+  });
+
+  it('excludes lines containing LaTeX commands', () => {
+    const content = '\\frac{a}{b} = c\n';
+    expect(extractStreamStepLines(content)).toEqual([]);
+  });
+
+  it('includes multi-digit numbered items', () => {
+    const content = '10. Step ten\n11) Another step\n';
+    const lines = extractStreamStepLines(content);
+    expect(lines).toEqual(['10. Step ten', '11) Another step']);
+  });
+
+  it('normalizes mixed whitespace in toStreamTextKey', () => {
+    expect(toStreamTextKey('\t1)  Start\t\twith  ')).toBe('text:1) start with');
+  });
 });
 
