@@ -4,7 +4,12 @@ import {
   createEmptyChatSession,
   createInitialTurn,
   createMessage,
+  looksDefaultTitle,
+  buildChatTitleFromMessage,
+  withoutStreamOverlay,
+  buildRestoreBatch,
   type ChatStore,
+  type ChatSessionState,
   type ChatAction,
   type PendingDiagnosticsEntry,
 } from '../state/chatSessionReducer';
@@ -708,6 +713,136 @@ describe('chatSessionReducer', () => {
       });
       const next = chatSessionReducer(s, { type: 'DELETE_CHAT', chatId: 'ghost', activeChatId: 'ghost' });
       expect(next).toBe(s);
+    });
+  });
+
+  describe('createMessage', () => {
+    it('returns a user message with id, role, content, and createdAt', () => {
+      const msg = createMessage('user', 'hello');
+      expect(msg.role).toBe('user');
+      expect(msg.content).toBe('hello');
+      expect(typeof msg.id).toBe('string');
+      expect(msg.id.length).toBeGreaterThan(0);
+      expect(typeof msg.createdAt).toBe('number');
+    });
+
+    it('returns an assistant message with empty content', () => {
+      const msg = createMessage('assistant', '');
+      expect(msg.role).toBe('assistant');
+      expect(msg.content).toBe('');
+    });
+
+    it('generates unique ids for successive calls', () => {
+      const a = createMessage('user', 'x');
+      const b = createMessage('user', 'x');
+      expect(a.id).not.toBe(b.id);
+    });
+  });
+
+  describe('looksDefaultTitle', () => {
+    it('returns true for "Chat 1"', () => {
+      expect(looksDefaultTitle('Chat 1')).toBe(true);
+    });
+
+    it('returns true for "Chat 99"', () => {
+      expect(looksDefaultTitle('Chat 99')).toBe(true);
+    });
+
+    it('returns false for a custom title', () => {
+      expect(looksDefaultTitle('My custom title')).toBe(false);
+    });
+
+    it('returns false for empty string', () => {
+      expect(looksDefaultTitle('')).toBe(false);
+    });
+
+    it('returns true for "Chat 1" with surrounding spaces', () => {
+      expect(looksDefaultTitle('  Chat 1  ')).toBe(true);
+    });
+  });
+
+  describe('buildChatTitleFromMessage', () => {
+    it('truncates to 40 chars with ellipsis for long content', () => {
+      const long = 'A'.repeat(60);
+      const title = buildChatTitleFromMessage(long);
+      expect(title).toBe('A'.repeat(40) + '…');
+    });
+
+    it('returns short content as-is', () => {
+      expect(buildChatTitleFromMessage('Hello world')).toBe('Hello world');
+    });
+
+    it('returns "New Chat" for empty string', () => {
+      expect(buildChatTitleFromMessage('')).toBe('New Chat');
+    });
+
+    it('returns "New Chat" for whitespace-only string', () => {
+      expect(buildChatTitleFromMessage('   ')).toBe('New Chat');
+    });
+
+    it('collapses internal whitespace', () => {
+      expect(buildChatTitleFromMessage('hello   world')).toBe('hello world');
+    });
+  });
+
+  describe('withoutStreamOverlay', () => {
+    it('removes stream overlay elements from scene and batches', () => {
+      const chat: ChatSessionState = {
+        ...createEmptyChatSession(1),
+        scene: [
+          { id: 'keep-1', type: 'rect', x: 0, y: 0, width: 10, height: 10 } as any,
+          { id: 'stream-text-1', type: 'text', x: 0, y: 0, content: 'hi' } as any,
+        ],
+        batches: [
+          {
+            batch_id: 'b1',
+            style_preset: 'clean_pen_sketch',
+            elements: [
+              { id: 'stream-latex-1', type: 'text', x: 0, y: 0, content: 'x' } as any,
+            ],
+          },
+        ],
+      };
+      const result = withoutStreamOverlay(chat);
+      expect(result.scene).toHaveLength(1);
+      expect(result.scene[0].id).toBe('keep-1');
+      expect(result.batches).toHaveLength(0); // batch had only overlay elements
+    });
+
+    it('returns equivalent object when no overlay elements exist', () => {
+      const chat: ChatSessionState = {
+        ...createEmptyChatSession(1),
+        scene: [{ id: 'normal-1', type: 'rect', x: 0, y: 0, width: 10, height: 10 } as any],
+        batches: [
+          {
+            batch_id: 'b1',
+            style_preset: 'clean_pen_sketch',
+            elements: [{ id: 'normal-1', type: 'rect', x: 0, y: 0, width: 10, height: 10 } as any],
+          },
+        ],
+      };
+      const result = withoutStreamOverlay(chat);
+      expect(result.scene).toHaveLength(1);
+      expect(result.scene[0].id).toBe('normal-1');
+      expect(result.batches).toHaveLength(1);
+    });
+  });
+
+  describe('buildRestoreBatch', () => {
+    it('returns a single batch containing the scene elements', () => {
+      const elements = [
+        { id: 'el-1', type: 'rect', x: 0, y: 0, width: 10, height: 10 } as any,
+        { id: 'el-2', type: 'line', points: [] } as any,
+      ];
+      const batches = buildRestoreBatch('chat-42', elements);
+      expect(batches).toHaveLength(1);
+      expect(batches[0].batch_id).toContain('chat-42');
+      expect(batches[0].batch_id).toMatch(/^restore-chat-42-/);
+      expect(batches[0].elements).toBe(elements);
+    });
+
+    it('returns empty array for empty scene', () => {
+      expect(buildRestoreBatch('chat-42', [])).toEqual([]);
     });
   });
 });
