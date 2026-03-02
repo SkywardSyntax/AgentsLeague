@@ -13,6 +13,8 @@ type Matrix2D = { a: number; b: number; c: number; d: number; e: number; f: numb
 let mathJaxContextPromise: Promise<MathJaxContext> | undefined;
 const renderCache = new Map<string, string>();
 const MAX_RENDER_CACHE = 400;
+const MAX_INIT_RETRIES = 3;
+let initAttempts = 0;
 
 let cacheHits = 0;
 let cacheMisses = 0;
@@ -140,39 +142,56 @@ function getSvgViewportMatrix(svgEl: SVGElement): Matrix2D {
   };
 }
 
+async function initMathJax(): Promise<MathJaxContext> {
+  const [
+    mathjaxMod,
+    texMod,
+    svgMod,
+    liteAdaptorMod,
+    registerHandlerMod,
+    allPackagesMod,
+  ] = await Promise.all([
+    import('mathjax-full/js/mathjax.js'),
+    import('mathjax-full/js/input/tex.js'),
+    import('mathjax-full/js/output/svg.js'),
+    import('mathjax-full/js/adaptors/liteAdaptor.js'),
+    import('mathjax-full/js/handlers/html.js'),
+    import('mathjax-full/js/input/tex/AllPackages.js'),
+  ]);
+
+  const adaptor = liteAdaptorMod.liteAdaptor();
+  registerHandlerMod.RegisterHTMLHandler(adaptor);
+  const tex = new texMod.TeX({ packages: allPackagesMod.AllPackages });
+  const svg = new svgMod.SVG({ fontCache: 'none' });
+  const html = mathjaxMod.mathjax.document('', { InputJax: tex, OutputJax: svg });
+
+  return {
+    html: html as MathJaxContext['html'],
+    adaptor: adaptor as unknown as MathJaxContext['adaptor'],
+  };
+}
+
 async function getMathJaxContext(): Promise<MathJaxContext> {
+  if (initAttempts >= MAX_INIT_RETRIES && !mathJaxContextPromise) {
+    throw new Error(`MathJax failed to initialize after ${MAX_INIT_RETRIES} attempts`);
+  }
+
   if (!mathJaxContextPromise) {
-    mathJaxContextPromise = (async () => {
-      const [
-        mathjaxMod,
-        texMod,
-        svgMod,
-        liteAdaptorMod,
-        registerHandlerMod,
-        allPackagesMod,
-      ] = await Promise.all([
-        import('mathjax-full/js/mathjax.js'),
-        import('mathjax-full/js/input/tex.js'),
-        import('mathjax-full/js/output/svg.js'),
-        import('mathjax-full/js/adaptors/liteAdaptor.js'),
-        import('mathjax-full/js/handlers/html.js'),
-        import('mathjax-full/js/input/tex/AllPackages.js'),
-      ]);
-
-      const adaptor = liteAdaptorMod.liteAdaptor();
-      registerHandlerMod.RegisterHTMLHandler(adaptor);
-      const tex = new texMod.TeX({ packages: allPackagesMod.AllPackages });
-      const svg = new svgMod.SVG({ fontCache: 'none' });
-      const html = mathjaxMod.mathjax.document('', { InputJax: tex, OutputJax: svg });
-
-      return {
-        html: html as MathJaxContext['html'],
-        adaptor: adaptor as unknown as MathJaxContext['adaptor'],
-      };
-    })();
+    initAttempts++;
+    mathJaxContextPromise = initMathJax().catch((error: unknown) => {
+      // Clear cached promise so the next call retries
+      mathJaxContextPromise = undefined;
+      throw error;
+    });
   }
 
   return mathJaxContextPromise;
+}
+
+/** Reset init state — only for testing. */
+export function resetMathJaxInit(): void {
+  mathJaxContextPromise = undefined;
+  initAttempts = 0;
 }
 
 const MAX_TEX_LENGTH = 10_000;

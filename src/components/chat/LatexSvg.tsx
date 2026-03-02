@@ -9,16 +9,60 @@ interface LatexSvgProps {
   displayMode: boolean;
 }
 
-const DANGEROUS_SVG_PATTERN =
-  /(<script[\s>]|on\w+\s*=|javascript\s*:|data\s*:\s*text\/html)/i;
+const DANGEROUS_TAGS = new Set([
+  'script', 'foreignobject', 'iframe', 'object', 'embed', 'applet',
+]);
 
-function sanitizeSvg(raw: string): string {
-  let svg = raw.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
-  svg = svg.replace(/\s*on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
-  svg = svg.replace(/href\s*=\s*"javascript:[^"]*"/gi, 'href=""');
-  svg = svg.replace(/href\s*=\s*'javascript:[^']*'/gi, "href=''");
-  if (DANGEROUS_SVG_PATTERN.test(svg)) return '';
-  return svg;
+function isSafeSvgAttribute(name: string, value: string): boolean {
+  const lower = name.toLowerCase();
+  // Block event handler attributes (on*)
+  if (lower.startsWith('on')) return false;
+  // Block dangerous href/xlink:href values
+  if (lower === 'href' || lower === 'xlink:href') {
+    // Decode entities and normalize whitespace before checking
+    const decoded = value.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\s+/g, '')
+      .toLowerCase();
+    if (decoded.startsWith('javascript:') || decoded.startsWith('data:text/html')) return false;
+  }
+  return true;
+}
+
+function sanitizeNode(node: Element): void {
+  const children = Array.from(node.children);
+  for (const child of children) {
+    const tag = child.tagName.toLowerCase();
+    if (DANGEROUS_TAGS.has(tag)) {
+      child.remove();
+      continue;
+    }
+    // Remove unsafe attributes
+    const attrs = Array.from(child.attributes);
+    for (const attr of attrs) {
+      if (!isSafeSvgAttribute(attr.name, attr.value)) {
+        child.removeAttribute(attr.name);
+      }
+    }
+    sanitizeNode(child);
+  }
+}
+
+export function sanitizeSvg(raw: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(raw, 'image/svg+xml');
+  // Detect parse errors (DOMParser embeds a <parsererror> element)
+  if (doc.querySelector('parsererror')) return '';
+  const root = doc.documentElement;
+  // Remove unsafe attributes on the root element itself
+  const rootAttrs = Array.from(root.attributes);
+  for (const attr of rootAttrs) {
+    if (!isSafeSvgAttribute(attr.name, attr.value)) {
+      root.removeAttribute(attr.name);
+    }
+  }
+  sanitizeNode(root);
+  return new XMLSerializer().serializeToString(root);
 }
 
 function copyToClipboard(text: string): void {
@@ -54,6 +98,8 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [retried, setRetried] = useState(false);
   const texRef = useRef(tex);
   texRef.current = tex;
+  const retryButtonRef = useRef<HTMLButtonElement>(null);
+  const copyButtonRef = useRef<HTMLButtonElement>(null);
   const cached = getCachedSvg(tex, displayMode);
 
   useEffect(() => {
@@ -83,6 +129,17 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     };
   }, [cached, displayMode, tex]);
 
+  // Focus the retry button (or copy fallback) when an error appears
+  useEffect(() => {
+    if (error) {
+      if (retryButtonRef.current) {
+        retryButtonRef.current.focus();
+      } else if (copyButtonRef.current) {
+        copyButtonRef.current.focus();
+      }
+    }
+  }, [error]);
+
   const handleRetry = useCallback(async () => {
     if (retrying) return;
     const currentTex = texRef.current;
@@ -109,6 +166,7 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const visibleError = cached ? null : error;
 
   if (visibleError) {
+    const showRetry = timedOut && !retried;
     return (
       <code
         className="rounded-md bg-[var(--color-surface-soft)] px-1 py-0.5 text-[var(--color-danger)]"
@@ -117,9 +175,10 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
         aria-label={`LaTeX error: ${visibleError}`}
       >
         {timedOut ? '⏱ ' : ''}{tex}
-        {timedOut && !retried && (
+        {showRetry && (
           <button
-            className="ml-1 text-xs underline"
+            ref={retryButtonRef}
+            className="ml-1 text-xs underline focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
             onClick={handleRetry}
             disabled={retrying}
             aria-label="Retry rendering"
@@ -128,7 +187,8 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
           </button>
         )}
         <button
-          className="ml-1 text-xs underline"
+          ref={copyButtonRef}
+          className="ml-1 text-xs underline focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
           onClick={() => copyToClipboard(tex)}
           aria-label="Copy TeX to clipboard"
         >
@@ -144,11 +204,15 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
 
   const safeSvg = sanitizeSvg(visibleSvg);
 
+  const ariaLabel = tex.length <= 40 ? `Math: ${tex}` : 'Mathematical expression';
+
   return (
     <span
       className={displayMode ? 'block overflow-x-auto py-1' : 'inline-block align-middle'}
       role="math"
-      aria-label={`LaTeX: ${tex}`}
+      aria-label={ariaLabel}
+      tabIndex={0}
+      title={tex.length > 40 ? tex : undefined}
       dangerouslySetInnerHTML={{ __html: safeSvg }}
     />
   );
