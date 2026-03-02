@@ -188,4 +188,128 @@ describe('persistence', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('V1 → V3 migration', () => {
+    it('migrates V1 blob to V3 with semanticScene and plannerMeta', () => {
+      const v1 = {
+        version: 1,
+        updatedAt: 1000,
+        messages: [
+          { id: 'msg-1', role: 'user', content: 'hello', createdAt: 500 },
+        ],
+        scene: [
+          { id: 'r1', type: 'rect', x: 0, y: 0, w: 10, h: 10 },
+        ],
+        prefs: { panelSizes: [50, 50] },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(v1));
+      const loaded = loadSession();
+      expect(loaded).not.toBeNull();
+      expect(loaded!.version).toBe(3);
+      expect(loaded!.chats).toHaveLength(1);
+      const chat = loaded!.chats[0]!;
+      expect(chat.messages).toEqual(v1.messages);
+      expect(chat.plannerMeta).toEqual([]);
+      expect(chat.semanticScene).toHaveLength(1);
+      expect(chat.semanticScene[0]!.batch_id).toMatch(/^imported-/);
+      expect(chat.semanticScene[0]!.template).toBe('freeform_semantic');
+      expect(chat.semanticScene[0]!.blocks).toHaveLength(1);
+      const block = chat.semanticScene[0]!.blocks[0]!;
+      expect(block.kind).toBe('caption');
+      if (block.kind === 'caption') {
+        expect(block.text).toContain('1 elements');
+      }
+      expect(chat.title).toBe('Chat 1');
+      expect(loaded!.activeChatId).toBe(chat.id);
+    });
+
+    it('creates backup before V1 migration', () => {
+      const v1 = {
+        version: 1,
+        updatedAt: 2000,
+        messages: [],
+        scene: [],
+        prefs: { panelSizes: [40, 60] },
+      };
+      const raw = JSON.stringify(v1);
+      localStorage.setItem(STORAGE_KEY, raw);
+      loadSession();
+      expect(localStorage.getItem('agentsleague:session:backup')).toBe(raw);
+    });
+  });
+
+  describe('V2 → V3 migration', () => {
+    it('migrates V2 blob adding semanticScene and plannerMeta', () => {
+      const v2 = {
+        version: 2,
+        updatedAt: 3000,
+        activeChatId: 'chat-a',
+        chats: [
+          {
+            id: 'chat-a',
+            title: 'My Chat',
+            createdAt: 1000,
+            updatedAt: 2000,
+            messages: [{ id: 'm1', role: 'user', content: 'test', createdAt: 1000 }],
+            scene: [{ id: 'r1', type: 'rect', x: 0, y: 0, w: 5, h: 5 }],
+          },
+          {
+            id: 'chat-b',
+            title: 'Second',
+            createdAt: 1500,
+            updatedAt: 2500,
+            messages: [],
+            scene: [],
+          },
+        ],
+        prefs: { panelSizes: [60, 40] },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(v2));
+      const loaded = loadSession();
+      expect(loaded).not.toBeNull();
+      expect(loaded!.version).toBe(3);
+      expect(loaded!.activeChatId).toBe('chat-a');
+      expect(loaded!.chats).toHaveLength(2);
+
+      const chatA = loaded!.chats[0]!;
+      expect(chatA.plannerMeta).toEqual([]);
+      expect(chatA.semanticScene).toHaveLength(1);
+      expect(chatA.semanticScene[0]!.batch_id).toMatch(/^imported-chat-a$/);
+      const blockA = chatA.semanticScene[0]!.blocks[0]!;
+      expect(blockA.kind).toBe('caption');
+      if (blockA.kind === 'caption') expect(blockA.text).toContain('1 elements');
+
+      const chatB = loaded!.chats[1]!;
+      expect(chatB.plannerMeta).toEqual([]);
+      expect(chatB.semanticScene).toHaveLength(1);
+      const blockB = chatB.semanticScene[0]!.blocks[0]!;
+      expect(blockB.kind).toBe('caption');
+      if (blockB.kind === 'caption') expect(blockB.text).toContain('0 elements');
+    });
+
+    it('creates backup before V2 migration', () => {
+      const v2 = {
+        version: 2,
+        updatedAt: 1000,
+        activeChatId: 'c1',
+        chats: [{ id: 'c1', title: 'X', createdAt: 1, updatedAt: 2, messages: [], scene: [] }],
+        prefs: { panelSizes: [50, 50] },
+      };
+      const raw = JSON.stringify(v2);
+      localStorage.setItem(STORAGE_KEY, raw);
+      loadSession();
+      expect(localStorage.getItem('agentsleague:session:backup')).toBe(raw);
+    });
+  });
+
+  describe('unrecognized schema', () => {
+    it('returns null for wrong version number', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 99, foo: 'bar' }));
+      const loaded = loadSession();
+      expect(loaded).toBeNull();
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No schema matched'));
+      consoleSpy.mockRestore();
+    });
+  });
 });

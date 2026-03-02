@@ -6,35 +6,7 @@ import type {
   WhiteboardContext,
 } from '@/types/agent';
 import { buildStructuredWhiteboardContext } from './planner/context-v2';
-
-function elementBounds(el: DrawElement): WhiteboardBounds | null {
-  if (el.type === 'rect') {
-    return { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h };
-  }
-  if (el.type === 'ellipse') {
-    return { minX: el.cx - el.rx, minY: el.cy - el.ry, maxX: el.cx + el.rx, maxY: el.cy + el.ry };
-  }
-  if (el.type === 'line' || el.type === 'arrow') {
-    return {
-      minX: Math.min(el.from.x, el.to.x),
-      minY: Math.min(el.from.y, el.to.y),
-      maxX: Math.max(el.from.x, el.to.x),
-      maxY: Math.max(el.from.y, el.to.y),
-    };
-  }
-  if (el.type === 'text') {
-    const size = el.size ?? 18;
-    const width = Math.max(size * 0.45, el.text.length * size * 0.52);
-    return { minX: el.x, minY: el.y - size * 0.9, maxX: el.x + width, maxY: el.y + size * 0.5 };
-  }
-  if (el.type === 'latex') {
-    const size = el.fontSize ?? 20;
-    const width = Math.max(size * 1.2, el.tex.length * size * 0.5);
-    const height = size * (el.displayMode ? 2.1 : 1.5);
-    return { minX: el.x, minY: el.y - size * 0.9, maxX: el.x + width, maxY: el.y + height };
-  }
-  return null;
-}
+import { boundsOf } from './bounds';
 
 function textPreview(el: DrawElement): string | undefined {
   if (el.type === 'text') return el.text.slice(0, 70);
@@ -48,7 +20,7 @@ export function buildWhiteboardContext(elements: DrawElement[]): WhiteboardConte
 
   elements.forEach((el) => {
     counts[el.type] = (counts[el.type] ?? 0) + 1;
-    const b = elementBounds(el);
+    const b = boundsOf(el);
     if (!b) return;
     if (!bounds) {
       bounds = { ...b };
