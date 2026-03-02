@@ -104,7 +104,7 @@ export function useAgentStream() {
           }
         }
       } catch (error) {
-        if ((error as Error).name === 'AbortError') return;
+        if (error instanceof Error && error.name === 'AbortError') return;
         args.handlers.onError(error instanceof Error ? error.message : 'Stream aborted unexpectedly');
       } finally {
         abortRef.current = null;

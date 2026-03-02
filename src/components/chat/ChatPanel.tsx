@@ -96,6 +96,16 @@ export function ChatPanel({
   }, []);
 
   useEffect(() => {
+    if (!showExportMenu) return;
+    const close = (e: MouseEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest('[data-export-menu]')) return;
+      setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showExportMenu]);
+
+  useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
     // Only auto-scroll if user is near the bottom (within 120px)
@@ -193,7 +203,7 @@ export function ChatPanel({
             Export
           </button>
           {showExportMenu && (
-            <div className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-white shadow-md">
+            <div data-export-menu className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-white shadow-md">
               <button
                 type="button"
                 onClick={() => { downloadChatAsMarkdown(messages, activeChat?.title ?? 'Chat', setExportError); setShowExportMenu(false); }}
