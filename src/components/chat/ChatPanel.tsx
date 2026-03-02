@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import type { ChatMessage } from '@/types/agent';
 import { MessageContent } from './MessageContent';
 
@@ -44,9 +45,24 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
   const canManageChats = status === 'idle';
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    // Only auto-scroll if user is near the bottom (within 120px)
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   return (
-    <section className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-card)]">
+    <section
+      aria-label="Chat"
+      className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-card)]"
+    >
       <div className="border-b border-[var(--color-border)] px-3 py-2">
         <div className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-0.5">
           {chats.map((chat) => {
@@ -93,6 +109,7 @@ export function ChatPanel({
         </div>
         <button
           type="button"
+          aria-label="Stop generating"
           onClick={onCancel}
           disabled={status === 'idle'}
           className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -104,6 +121,7 @@ export function ChatPanel({
       <div className="flex items-center justify-end gap-2 border-b border-[var(--color-border)] px-4 py-2">
         <button
           type="button"
+          aria-label="Delete current chat"
           onClick={() => onDeleteChat(activeChatId)}
           disabled={chats.length <= 1 || !canManageChats}
           className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
@@ -112,6 +130,7 @@ export function ChatPanel({
         </button>
         <button
           type="button"
+          aria-label="Clear chat messages"
           onClick={onClearChat}
           disabled={messages.length === 0 || status !== 'idle'}
           className="rounded-full border border-[var(--color-border)] bg-white/70 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
@@ -120,7 +139,13 @@ export function ChatPanel({
         </button>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <div
+        ref={messagesContainerRef}
+        role="log"
+        aria-label="Chat messages"
+        aria-live="polite"
+        className="flex-1 space-y-3 overflow-y-auto px-4 py-4"
+      >
         {messages.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--color-border)]/90 bg-[var(--color-surface-soft)]/80 p-4 text-sm text-[var(--color-text-muted)]">
             Ask a question, request a diagram, or include LaTeX like <code>\(\int_0^1 x^2 dx\)</code>.
@@ -156,35 +181,44 @@ export function ChatPanel({
             </article>
           );
         })}
+        <div ref={messagesEndRef} />
       </div>
 
       <footer className="border-t border-[var(--color-border)] bg-[var(--color-surface-soft)]/55 p-3">
-        <textarea
-          value={input}
-          onChange={(e) => onInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
+        <form
+          aria-label="Send a message"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSend();
           }}
-          placeholder="Explain this concept and draw it out..."
-          rows={3}
-          disabled={disabled}
-          className="w-full resize-none rounded-2xl border border-[var(--color-border)] bg-white/88 px-3 py-2 text-sm outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
-        />
+        >
+          <textarea
+            aria-label="Message input"
+            value={input}
+            onChange={(e) => onInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onSend();
+              }
+            }}
+            placeholder="Explain this concept and draw it out..."
+            rows={3}
+            disabled={disabled}
+            className="w-full resize-none rounded-2xl border border-[var(--color-border)] bg-white/88 px-3 py-2 text-sm outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+          />
 
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline</p>
-          <button
-            type="button"
-            onClick={onSend}
-            disabled={disabled || input.trim().length === 0}
-            className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Send
-          </button>
-        </div>
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline</p>
+            <button
+              type="submit"
+              disabled={disabled || input.trim().length === 0}
+              className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+        </form>
       </footer>
     </section>
   );

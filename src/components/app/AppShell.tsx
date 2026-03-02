@@ -156,6 +156,20 @@ export function AppShell() {
   >(new Map());
   const { run, cancel } = useAgentStream();
 
+  const resetStreamState = useCallback(() => {
+    streamChatIdRef.current = null;
+    currentAssistantMessageId.current = null;
+    turnHadRenderableOutputRef.current = false;
+    turnSawToolBatchRef.current = false;
+    pendingDiagnosticsRef.current.clear();
+  }, []);
+
+  const cancelAndReset = useCallback(() => {
+    cancel();
+    resetStreamState();
+    setStatus('idle');
+  }, [cancel, resetStreamState]);
+
   const activeChat = useMemo(
     () => chatSessions.find((chat) => chat.id === activeChatId) ?? chatSessions[0] ?? null,
     [activeChatId, chatSessions],
@@ -369,11 +383,8 @@ export function AppShell() {
       }
 
       if (event.type === 'error') {
-        currentAssistantMessageId.current = null;
-        streamChatIdRef.current = null;
+        resetStreamState();
         setStatus('idle');
-        turnSawToolBatchRef.current = false;
-        pendingDiagnosticsRef.current.clear();
         setChatSessions((prev) =>
           prev.map((chat) =>
             chat.id === targetChatId
@@ -404,14 +415,11 @@ export function AppShell() {
           }),
         );
         turnHadRenderableOutputRef.current = false;
-        currentAssistantMessageId.current = null;
-        streamChatIdRef.current = null;
-        turnSawToolBatchRef.current = false;
-        pendingDiagnosticsRef.current.clear();
+        resetStreamState();
         setStatus('idle');
       }
     },
-    [pushWarning],
+    [pushWarning, resetStreamState],
   );
 
   const sendMessage = useCallback(
@@ -442,11 +450,8 @@ export function AppShell() {
         }),
       );
       setStatus('thinking');
-      currentAssistantMessageId.current = null;
-      turnHadRenderableOutputRef.current = false;
-      turnSawToolBatchRef.current = false;
+      resetStreamState();
       streamChatIdRef.current = chatId;
-      pendingDiagnosticsRef.current.clear();
       lastTurnEventsRef.current = ['turn.started'];
 
       void run({
@@ -460,12 +465,9 @@ export function AppShell() {
           onEvent: handleEvent,
           onError: (msg) => {
             const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
-            currentAssistantMessageId.current = null;
             turnHadRenderableOutputRef.current = true;
-            streamChatIdRef.current = null;
+            resetStreamState();
             setStatus('idle');
-            turnSawToolBatchRef.current = false;
-            pendingDiagnosticsRef.current.clear();
             lastTurnEventsRef.current.push('error');
             if (!targetChatId) return;
 
@@ -485,7 +487,7 @@ export function AppShell() {
       });
       return true;
     },
-    [activeChat, handleEvent, run, sessionId, status],
+    [activeChat, handleEvent, resetStreamState, run, sessionId, status],
   );
 
   const send = useCallback(() => {
@@ -499,12 +501,8 @@ export function AppShell() {
     setChatSessions((prev) => [nextChat, ...prev]);
     setActiveChatId(nextChat.id);
     setInput('');
-    currentAssistantMessageId.current = null;
-    turnHadRenderableOutputRef.current = false;
-    turnSawToolBatchRef.current = false;
-    streamChatIdRef.current = null;
-    pendingDiagnosticsRef.current.clear();
-  }, [chatSessions.length, status]);
+    resetStreamState();
+  }, [chatSessions.length, resetStreamState, status]);
 
   const selectChat = useCallback(
     (chatId: string) => {
@@ -512,13 +510,9 @@ export function AppShell() {
       if (chatId === activeChatId) return;
       setActiveChatId(chatId);
       setInput('');
-      currentAssistantMessageId.current = null;
-      turnHadRenderableOutputRef.current = false;
-      turnSawToolBatchRef.current = false;
-      streamChatIdRef.current = null;
-      pendingDiagnosticsRef.current.clear();
+      resetStreamState();
     },
-    [activeChatId, status],
+    [activeChatId, resetStreamState, status],
   );
 
   const deleteChat = useCallback(
@@ -544,12 +538,7 @@ export function AppShell() {
       });
 
       if (streamChatIdRef.current === chatId) {
-        cancel();
-        setStatus('idle');
-        streamChatIdRef.current = null;
-        currentAssistantMessageId.current = null;
-        turnHadRenderableOutputRef.current = false;
-        turnSawToolBatchRef.current = false;
+        cancelAndReset();
       }
 
       if (nextActiveId) {
@@ -557,17 +546,13 @@ export function AppShell() {
         setInput('');
       }
     },
-    [cancel, status],
+    [cancelAndReset, status],
   );
 
   const clearActiveChat = useCallback(() => {
     if (!activeChat || status !== 'idle') return;
 
-    currentAssistantMessageId.current = null;
-    turnHadRenderableOutputRef.current = false;
-    turnSawToolBatchRef.current = false;
-    streamChatIdRef.current = null;
-    pendingDiagnosticsRef.current.clear();
+    resetStreamState();
 
     const clearBatch: DrawBatch = {
       batch_id: `clear-${createId()}`,
@@ -591,7 +576,7 @@ export function AppShell() {
           : chat,
       ),
     );
-  }, [activeChat, status]);
+  }, [activeChat, resetStreamState, status]);
 
   const clearForAgent = useCallback(() => {
     clearActiveChat();
@@ -694,7 +679,7 @@ export function AppShell() {
           ))}
         </div>
       ) : null,
-    [activeChat.warnings],
+    [activeChat?.warnings],
   );
 
   const statusLabel =
@@ -750,7 +735,28 @@ export function AppShell() {
             <div
               role="separator"
               aria-orientation="vertical"
-              className="group relative hidden w-2 cursor-col-resize rounded-full bg-transparent lg:block"
+              aria-valuenow={Math.round(panelSizes[0])}
+              aria-valuemin={42}
+              aria-valuemax={75}
+              aria-label="Resize panels"
+              tabIndex={0}
+              className="group relative hidden w-2 cursor-col-resize rounded-full bg-transparent lg:block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+              onKeyDown={(e) => {
+                const step = e.shiftKey ? 5 : 1;
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  resizeBy(-step);
+                } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  resizeBy(step);
+                } else if (e.key === 'Home') {
+                  e.preventDefault();
+                  resizeBy(-75);
+                } else if (e.key === 'End') {
+                  e.preventDefault();
+                  resizeBy(75);
+                }
+              }}
               onPointerDown={(e) => {
                 const startX = e.clientX;
                 const target = e.currentTarget;
@@ -785,21 +791,13 @@ export function AppShell() {
                 status={status}
                 onInput={setInput}
                 onSend={send}
-                onCancel={() => {
-                  cancel();
-                  streamChatIdRef.current = null;
-                  currentAssistantMessageId.current = null;
-                  turnHadRenderableOutputRef.current = false;
-                  turnSawToolBatchRef.current = false;
-                  pendingDiagnosticsRef.current.clear();
-                  setStatus('idle');
-                }}
+                onCancel={cancelAndReset}
                 onSelectChat={selectChat}
                 onCreateChat={createChat}
                 onDeleteChat={deleteChat}
                 onDeleteMessage={(messageId) => {
                   if (currentAssistantMessageId.current === messageId) {
-                    currentAssistantMessageId.current = null;
+                    cancelAndReset();
                   }
                   setChatSessions((prev) =>
                     prev.map((chat) =>
