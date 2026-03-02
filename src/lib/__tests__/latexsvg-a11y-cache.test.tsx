@@ -41,6 +41,16 @@ describe('LatexSvg accessibility', () => {
     expect(label.endsWith('…')).toBe(true);
   });
 
+  it('rendered SVG container has title attribute with full TeX source', async () => {
+    const texStr = 'E = mc^2';
+    mockRender.mockResolvedValue('<svg>energy</svg>');
+    await act(async () => {
+      render(<LatexSvg tex={texStr} displayMode={false} />);
+    });
+    const img = screen.getByRole('img');
+    expect(img.getAttribute('title')).toBe(texStr);
+  });
+
   it('error fallback has aria-label="LaTeX rendering failed"', async () => {
     mockRender.mockRejectedValue(new Error('bad'));
     await act(async () => {

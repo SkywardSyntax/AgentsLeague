@@ -84,6 +84,7 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     <span
       role="img"
       aria-label={truncatedLabel}
+      title={tex}
       className={displayMode ? 'block overflow-x-auto py-1' : 'inline-block align-middle'}
       dangerouslySetInnerHTML={{ __html: visibleSvg }}
     />
