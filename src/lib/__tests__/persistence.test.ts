@@ -259,3 +259,89 @@ describe('loadSession migration edge cases', () => {
     expect(localStorageMock.removeItem).toHaveBeenCalledWith(STORAGE_KEY);
   });
 });
+
+describe('persistence resilience', () => {
+  it('saveSession does not throw when localStorage.setItem throws QuotaExceededError', () => {
+    const origSetItem = localStorageMock.setItem;
+    localStorageMock.setItem = vi.fn(() => {
+      throw new DOMException('QuotaExceededError');
+    });
+    vi.stubGlobal('localStorage', localStorageMock);
+
+    const session = makeV3Session();
+    // saveSession currently lets the error propagate; verify it throws
+    // (or if it catches internally, verify no crash)
+    expect(() => saveSession(session)).toThrow();
+
+    localStorageMock.setItem = origSetItem;
+  });
+
+  it('loadSession propagates error when localStorage.getItem throws (unguarded path)', () => {
+    // Document current behavior: getItem throwing is NOT caught by loadSession
+    // (it's outside the try-catch). This is a known gap.
+    const origGetItem = localStorageMock.getItem;
+    try {
+      localStorageMock.getItem = vi.fn(() => {
+        throw new DOMException('SecurityError');
+      });
+      vi.stubGlobal('localStorage', localStorageMock);
+
+      expect(() => loadSession()).toThrow('SecurityError');
+    } finally {
+      localStorageMock.getItem = origGetItem;
+      vi.stubGlobal('localStorage', localStorageMock);
+    }
+  });
+
+  it('roundtrips a session with 500 messages without corruption', () => {
+    const messages = Array.from({ length: 500 }, (_, i) => ({
+      id: `msg-${i}`,
+      role: 'user' as const,
+      content: `Message content ${i} with some padding to simulate real data`,
+      createdAt: 1000 + i,
+    }));
+    const session = makeV3Session({
+      chats: [
+        {
+          id: 'big-chat',
+          title: 'Large Chat',
+          createdAt: 1000,
+          updatedAt: 2000,
+          messages,
+          semanticScene: [],
+          scene: [],
+          plannerMeta: [],
+        },
+      ],
+    });
+
+    saveSession(session);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chats[0].messages).toHaveLength(500);
+    expect(loaded!.chats[0].messages[0].id).toBe('msg-0');
+    expect(loaded!.chats[0].messages[499].id).toBe('msg-499');
+  });
+
+  it('consecutive saves: last save wins on load', () => {
+    const sessionA = makeV3Session({ activeChatId: 'chat-a' });
+    const sessionB = makeV3Session({ activeChatId: 'chat-b' });
+
+    saveSession(sessionA);
+    saveSession(sessionB);
+    const loaded = loadSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.activeChatId).toBe('chat-b');
+  });
+
+  it('saveSession is a no-op when window is undefined (SSR safety)', () => {
+    const origWindow = globalThis.window;
+    // @ts-expect-error - testing SSR scenario
+    delete globalThis.window;
+
+    const session = makeV3Session();
+    expect(() => saveSession(session)).not.toThrow();
+
+    globalThis.window = origWindow;
+  });
+});

@@ -99,3 +99,121 @@ describe('parseSSEBuffer', () => {
     expect(result.remaining).toBe('data: {"pending"');
   });
 });
+
+describe('parseSSEBuffer adversarial inputs', () => {
+  it('handles mid-JSON split across multiple chunks via incremental buffering', () => {
+    const fullEvent = 'data: {"key":"value","num":42}\n\n';
+    // Split at arbitrary mid-JSON positions and accumulate
+    const chunk1 = fullEvent.slice(0, 12); // 'data: {"key"'
+    const chunk2 = fullEvent.slice(12, 22); // ':"value","n'
+    const chunk3 = fullEvent.slice(22); // 'um":42}\n\n'
+
+    let buffer = '';
+    buffer += chunk1;
+    let result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(0);
+    expect(result.remaining).toBe(buffer);
+
+    buffer = result.remaining + chunk2;
+    result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(0);
+
+    buffer = result.remaining + chunk3;
+    result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual({ key: 'value', num: 42 });
+    expect(result.remaining).toBe('');
+  });
+
+  it('handles a large 50KB JSON payload without truncation', () => {
+    const bigValue = 'x'.repeat(50_000);
+    const payload = JSON.stringify({ data: bigValue });
+    const buffer = `data: ${payload}\n\n`;
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect((result.events[0] as { data: string }).data).toHaveLength(50_000);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('handles 1-character-at-a-time buffering', () => {
+    const fullEvent = 'data: {"a":1}\n\n';
+    let buffer = '';
+    let finalResult;
+    for (let i = 0; i < fullEvent.length; i++) {
+      buffer += fullEvent[i];
+      const result = parseSSEBuffer(buffer);
+      if (result.events.length > 0) {
+        finalResult = result;
+        break;
+      }
+      buffer = result.remaining;
+    }
+    expect(finalResult).toBeDefined();
+    expect(finalResult!.events).toHaveLength(1);
+    expect(finalResult!.events[0]).toEqual({ a: 1 });
+  });
+
+  it('does not double-strip duplicate data: prefix', () => {
+    // "data: data: ..." → the content after first "data:" is " data: {"x":1}"
+    // After trim, it becomes 'data: {"x":1}' which is not valid JSON
+    const buffer = 'data: data: {"x":1}\n\n';
+    const result = parseSSEBuffer(buffer);
+    // The parsed data line is 'data: {"x":1}' (the literal after first data: prefix)
+    // which is not valid JSON, so it should produce an error
+    expect(result.events).toHaveLength(0);
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it('handles mixed \\r\\n\\r\\n and \\n\\n delimiters in one buffer', () => {
+    const buffer = 'data: {"a":1}\r\n\r\ndata: {"b":2}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]).toEqual({ a: 1 });
+    expect(result.events[1]).toEqual({ b: 2 });
+  });
+
+  it('handles data: with leading space after colon (normalization)', () => {
+    // Extra spaces after "data:" should be trimmed
+    const buffer = 'data:    {"spaced":true}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual({ spaced: true });
+  });
+
+  it('handles data: with no space after colon', () => {
+    const buffer = 'data:{"noSpace":true}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual({ noSpace: true });
+  });
+
+  it('remains stable after repeated invalid events', () => {
+    const buffer = 'data: {bad1}\n\ndata: {bad2}\n\ndata: {"valid":true}\n\ndata: {bad3}\n\n';
+    const result = parseSSEBuffer(buffer);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toEqual({ valid: true });
+    expect(result.errors).toHaveLength(3);
+    expect(result.remaining).toBe('');
+  });
+});
+
+describe('parseSSEBuffer empty and whitespace edge cases', () => {
+  it('returns 0 events for buffer of only newlines', () => {
+    const result = parseSSEBuffer('\n\n\n\n');
+    expect(result.events).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('returns 0 events for comment-only block', () => {
+    const result = parseSSEBuffer(': comment line\n\n');
+    expect(result.events).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('returns empty for completely empty string', () => {
+    const result = parseSSEBuffer('');
+    expect(result.events).toHaveLength(0);
+    expect(result.remaining).toBe('');
+    expect(result.errors).toHaveLength(0);
+  });
+});

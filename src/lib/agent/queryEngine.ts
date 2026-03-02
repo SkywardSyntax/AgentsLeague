@@ -114,7 +114,8 @@ export class SeededRandom {
   }
 
   pick<T>(items: T[]): T {
-    return items[Math.floor(this.next() * items.length)]!;
+    const idx = Math.min(Math.floor(this.next() * items.length), items.length - 1);
+    return items[idx]!;
   }
 }
 
