@@ -162,4 +162,37 @@ describe('parseStreamingLatex', () => {
       expect(latexSegments[0]).toMatchObject({ kind: 'latex', display: true });
     }
   });
+
+  // --- Iteration 5 tests: nested environment parsing ---
+
+  it('parses \\begin{aligned} containing \\begin{cases} as single display block', () => {
+    const input = '$$\\begin{aligned} x &= \\begin{cases} 1 \\\\ 0 \\end{cases} \\end{aligned}$$';
+    const parsed = parseStreamingLatex(input);
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(1);
+    expect(latexSegments[0]).toMatchObject({ kind: 'latex', display: true });
+    expect(latexSegments[0]!.value).toContain('\\begin{aligned}');
+    expect(latexSegments[0]!.value).toContain('\\begin{cases}');
+    expect(latexSegments[0]!.value).toContain('\\end{cases}');
+    expect(latexSegments[0]!.value).toContain('\\end{aligned}');
+  });
+
+  it('parses consecutive different environments as separate blocks', () => {
+    const input = '\\begin{aligned} a \\end{aligned} then \\begin{cases} b \\end{cases}';
+    const parsed = parseStreamingLatex(input);
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments).toHaveLength(2);
+    const textSegments = parsed.filter((s) => s.kind === 'text');
+    expect(textSegments.some((s) => s.value.includes('then'))).toBe(true);
+  });
+
+  it('handles mismatched \\end inside nested env gracefully', () => {
+    const input = '\\begin{aligned} \\begin{cases} x \\end{aligned}';
+    const parsed = parseStreamingLatex(input);
+    // Characterization: parser should produce at least one segment without crashing
+    expect(parsed.length).toBeGreaterThan(0);
+    // The parser finds \\begin{aligned} and its \\end{aligned}, treating inner mismatch as content
+    const latexSegments = parsed.filter((s) => s.kind === 'latex');
+    expect(latexSegments.length).toBeGreaterThanOrEqual(1);
+  });
 });

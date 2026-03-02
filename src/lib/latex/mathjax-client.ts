@@ -181,6 +181,25 @@ export class RenderTimeoutError extends Error {
   }
 }
 
+export class TexParseError extends Error {
+  readonly source: string;
+  constructor(message: string, source: string) {
+    super(message);
+    this.name = 'TexParseError';
+    this.source = source;
+  }
+}
+
+export class TexRenderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TexRenderError';
+  }
+}
+
+const TEX_PARSE_ERROR_PATTERN =
+  /TeX parse error|Unknown command|Undefined control sequence|Missing close brace|Missing open brace|Extra close brace|Extra open brace|Double superscript|Double subscript|Misplaced &|Missing \$ inserted|Missing \\right|Missing \\left/i;
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new RenderTimeoutError(ms)), ms);
@@ -297,7 +316,13 @@ async function renderTexToSvgInner(
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('Failed to render TeX');
+  if (lastError instanceof RenderTimeoutError) throw lastError;
+  if (lastError instanceof TexParseError) throw lastError;
+  const msg = lastError instanceof Error ? lastError.message : 'Failed to render TeX';
+  if (TEX_PARSE_ERROR_PATTERN.test(msg)) {
+    throw new TexParseError(msg, tex);
+  }
+  throw new TexRenderError(msg);
 }
 
 function parsePathPoints(d: string, matrix: Matrix2D, spacing: number): Point[] {
