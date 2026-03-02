@@ -65,18 +65,6 @@ export function AppShell() {
   const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTurnEventsRef = useRef<string[]>([]);
   const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingDiagnosticsRef = useRef<
-    Map<
-      string,
-      {
-        batchId: string;
-        templateUsed: import('@/types/agent').WhiteboardLayoutDiagnostics['templateUsed'];
-        fallbackUsed: boolean;
-        violationsFixed: string[];
-        semanticBatch?: import('@/types/agent').SemanticBatch;
-      }
-    >
-  >(new Map());
   const { run, cancel } = useAgentStream();
 
   const activeChat = useMemo(
@@ -189,33 +177,25 @@ export function AppShell() {
       }
 
       if (event.type === 'whiteboard.batch') {
-        const isProvisionalStreamBatch = event.batch.batch_id.startsWith('stream-provisional-');
-        const firstToolBatch = !isProvisionalStreamBatch && !chatStore.turn.turnSawToolBatch;
-        const diagnostics = pendingDiagnosticsRef.current.get(event.batch.batch_id);
-        if (diagnostics) pendingDiagnosticsRef.current.delete(event.batch.batch_id);
         dispatch({
           type: 'APPLY_WHITEBOARD_BATCH',
           chatId: targetChatId,
           batch: event.batch,
-          diagnostics: diagnostics ?? undefined,
-          firstToolBatch,
         });
         return;
       }
 
       if (event.type === 'whiteboard.layout.diagnostics') {
-        // Leak cap: gate on non-idle status, enforce size limit
-        if (chatStore.turn.status === 'idle') return;
-        if (pendingDiagnosticsRef.current.size > 50) {
-          console.warn('[handleEvent] pendingDiagnostics cap reached, clearing');
-          pendingDiagnosticsRef.current.clear();
-        }
-        pendingDiagnosticsRef.current.set(event.batchId, {
+        dispatch({
+          type: 'STORE_DIAGNOSTICS',
           batchId: event.batchId,
-          templateUsed: event.templateUsed,
-          fallbackUsed: event.fallbackUsed,
-          violationsFixed: event.violationsFixed,
-          semanticBatch: event.semanticBatch,
+          entry: {
+            batchId: event.batchId,
+            templateUsed: event.templateUsed,
+            fallbackUsed: event.fallbackUsed,
+            violationsFixed: event.violationsFixed,
+            semanticBatch: event.semanticBatch,
+          },
         });
         return;
       }
@@ -226,13 +206,11 @@ export function AppShell() {
       }
 
       if (event.type === 'error') {
-        pendingDiagnosticsRef.current.clear();
         dispatch({ type: 'TURN_ERROR', chatId: targetChatId, errorMessage: event.message });
         return;
       }
 
       if (event.type === 'turn.done') {
-        pendingDiagnosticsRef.current.clear();
         dispatch({ type: 'TURN_DONE', chatId: targetChatId });
       }
       } catch (err) {
@@ -240,7 +218,7 @@ export function AppShell() {
         pushWarning(`Event processing error: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [chatStore.turn.streamChatId, chatStore.turn.turnSawToolBatch, chatStore.turn.status, pushWarning],
+    [chatStore.turn.streamChatId, pushWarning],
   );
 
   const sendMessage = useCallback(
@@ -257,7 +235,6 @@ export function AppShell() {
 
       dispatch({ type: 'ADD_USER_MESSAGE', chatId, message: userMessage, rawContent: message });
       dispatch({ type: 'TURN_START', chatId });
-      pendingDiagnosticsRef.current.clear();
       lastTurnEventsRef.current = ['turn.started'];
 
       void run({
@@ -270,7 +247,6 @@ export function AppShell() {
         handlers: {
           onEvent: handleEvent,
           onError: (msg) => {
-            pendingDiagnosticsRef.current.clear();
             lastTurnEventsRef.current.push('error');
             const targetChatId = chatStore.turn.streamChatId ?? activeChatIdRef.current;
             if (!targetChatId) return;
@@ -540,7 +516,6 @@ export function AppShell() {
                 onSend={send}
                 onCancel={() => {
                   cancel();
-                  pendingDiagnosticsRef.current.clear();
                   // TURN_DONE resets all turn state to idle
                   const targetChatId = chatStore.turn.streamChatId ?? activeChatIdRef.current;
                   if (targetChatId) dispatch({ type: 'TURN_DONE', chatId: targetChatId });

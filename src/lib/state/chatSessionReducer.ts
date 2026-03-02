@@ -27,12 +27,21 @@ export interface ChatSessionState {
   warnings: string[];
 }
 
+export interface PendingDiagnosticsEntry {
+  batchId: string;
+  templateUsed: WhiteboardLayoutDiagnostics['templateUsed'];
+  fallbackUsed: boolean;
+  violationsFixed: string[];
+  semanticBatch?: SemanticBatch;
+}
+
 export interface TurnState {
   status: AppStatus;
   currentAssistantMessageId: string | null;
   turnHadRenderableOutput: boolean;
   turnSawToolBatch: boolean;
   streamChatId: string | null;
+  pendingDiagnostics: Record<string, PendingDiagnosticsEntry>;
 }
 
 export interface ChatStore {
@@ -118,6 +127,7 @@ const IDLE_TURN: TurnState = {
   turnHadRenderableOutput: false,
   turnSawToolBatch: false,
   streamChatId: null,
+  pendingDiagnostics: {},
 };
 
 export function createInitialTurn(): TurnState {
@@ -131,19 +141,8 @@ export type ChatAction =
   | { type: 'PUSH_WARNING'; chatId: string; warning: string }
   | { type: 'APPEND_ASSISTANT_DELTA'; chatId: string; delta: string }
   | { type: 'FINALIZE_ASSISTANT_MESSAGE' }
-  | {
-      type: 'APPLY_WHITEBOARD_BATCH';
-      chatId: string;
-      batch: DrawBatch;
-      diagnostics?: {
-        batchId: string;
-        templateUsed: WhiteboardLayoutDiagnostics['templateUsed'];
-        fallbackUsed: boolean;
-        violationsFixed: string[];
-        semanticBatch?: SemanticBatch;
-      };
-      firstToolBatch: boolean;
-    }
+  | { type: 'APPLY_WHITEBOARD_BATCH'; chatId: string; batch: DrawBatch }
+  | { type: 'STORE_DIAGNOSTICS'; batchId: string; entry: PendingDiagnosticsEntry }
   | { type: 'TURN_START'; chatId: string }
   | { type: 'TURN_ERROR'; chatId: string; errorMessage: string }
   | { type: 'TURN_DONE'; chatId: string }
@@ -215,18 +214,21 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
 
     case 'APPLY_WHITEBOARD_BATCH': {
       const nextStatus = transitionStatus(state.turn.status, 'drawing');
+      const isProvisional = action.batch.batch_id.startsWith('stream-provisional-');
+      const firstToolBatch = !isProvisional && !state.turn.turnSawToolBatch;
+      const diagnostics = state.turn.pendingDiagnostics[action.batch.batch_id];
+      const { [action.batch.batch_id]: _, ...remainingDiagnostics } = state.turn.pendingDiagnostics;
       const nextTurn: TurnState = {
         ...state.turn,
         status: nextStatus,
         turnHadRenderableOutput: true,
-        turnSawToolBatch: action.batch.batch_id.startsWith('stream-provisional-')
-          ? state.turn.turnSawToolBatch
-          : true,
+        turnSawToolBatch: isProvisional ? state.turn.turnSawToolBatch : true,
+        pendingDiagnostics: remainingDiagnostics,
       };
       const base: ChatStore = { ...state, turn: nextTurn };
 
       return updateChat(base, action.chatId, (chat) => {
-        const baseChat = action.firstToolBatch ? withoutStreamOverlay(chat) : chat;
+        const baseChat = firstToolBatch ? withoutStreamOverlay(chat) : chat;
         const hasClear = action.batch.elements.some((el) => el.type === 'clear');
         const baseScene = hasClear ? [] : [...baseChat.scene];
         action.batch.elements.forEach((element) => {
@@ -234,20 +236,20 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
         });
 
         const nextPlannerMeta =
-          action.diagnostics != null
+          diagnostics != null
             ? [
                 ...baseChat.plannerMeta,
                 {
-                  batchId: action.diagnostics.batchId,
-                  templateUsed: action.diagnostics.templateUsed,
-                  fallbackUsed: action.diagnostics.fallbackUsed,
-                  violationsFixed: action.diagnostics.violationsFixed,
+                  batchId: diagnostics.batchId,
+                  templateUsed: diagnostics.templateUsed,
+                  fallbackUsed: diagnostics.fallbackUsed,
+                  violationsFixed: diagnostics.violationsFixed,
                 },
               ].slice(-40)
             : baseChat.plannerMeta;
 
         const semanticBatch =
-          action.diagnostics?.semanticBatch ??
+          diagnostics?.semanticBatch ??
           fromLegacyDrawBatchToSemanticStub(action.batch.batch_id, action.batch.elements);
         const nextSemanticScene = [...baseChat.semanticScene, semanticBatch].slice(-80);
         return {
@@ -270,6 +272,7 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
           turnHadRenderableOutput: false,
           turnSawToolBatch: false,
           streamChatId: action.chatId,
+          pendingDiagnostics: {},
         },
       };
 
@@ -399,6 +402,16 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
         updatedAt: Date.now(),
         messages: chat.messages.filter((m) => m.id !== action.messageId),
       }));
+    }
+
+    case 'STORE_DIAGNOSTICS': {
+      if (state.turn.status === 'idle') return state;
+      const current = state.turn.pendingDiagnostics;
+      if (Object.keys(current).length > 50) {
+        console.warn('[chatSessionReducer] pendingDiagnostics cap reached, clearing');
+        return { ...state, turn: { ...state.turn, pendingDiagnostics: { [action.batchId]: action.entry } } };
+      }
+      return { ...state, turn: { ...state.turn, pendingDiagnostics: { ...current, [action.batchId]: action.entry } } };
     }
 
     default:

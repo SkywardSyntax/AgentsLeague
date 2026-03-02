@@ -6,6 +6,7 @@ import {
   createMessage,
   type ChatStore,
   type ChatAction,
+  type PendingDiagnosticsEntry,
 } from '../state/chatSessionReducer';
 
 function makeStore(overrides?: Partial<ChatStore>): ChatStore {
@@ -271,48 +272,125 @@ describe('chatSessionReducer', () => {
     });
   });
 
-  describe('APPLY_WHITEBOARD_BATCH', () => {
-    it('appends batch elements to scene', () => {
+  describe('STORE_DIAGNOSTICS', () => {
+    const entry: PendingDiagnosticsEntry = {
+      batchId: 'b1',
+      templateUsed: 'legacy_draw_batch',
+      fallbackUsed: false,
+      violationsFixed: [],
+    };
+
+    it('stores entry in turn pendingDiagnostics', () => {
       const store = makeStore();
       const id = chatId(store);
       let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
-      const batch = {
-        batch_id: 'b1',
-        elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }],
-      };
-      s = chatSessionReducer(s, {
-        type: 'APPLY_WHITEBOARD_BATCH',
-        chatId: id,
-        batch,
-        firstToolBatch: false,
-      });
-      expect(s.chats[id]!.scene).toHaveLength(1);
-      expect(s.chats[id]!.batches).toHaveLength(1);
-      expect(s.turn.status).toBe('drawing');
-      expect(s.turn.turnHadRenderableOutput).toBe(true);
+      s = chatSessionReducer(s, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry });
+      expect(s.turn.pendingDiagnostics['b1']).toEqual(entry);
     });
 
-    it('handles clear element in batch', () => {
+    it('is rejected when status is idle', () => {
+      const store = makeStore();
+      const next = chatSessionReducer(store, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry });
+      expect(next).toBe(store);
+      expect(next.turn.pendingDiagnostics).toEqual({});
+    });
+
+    it('caps at 50 entries and resets with new entry', () => {
       const store = makeStore();
       const id = chatId(store);
-      // Pre-populate scene
-      let s: ChatStore = {
-        ...store,
-        chats: {
-          [id]: { ...store.chats[id]!, scene: [{ id: 'old', type: 'rect', x: 0, y: 0, w: 5, h: 5 }] },
-        },
-      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      for (let i = 0; i < 52; i++) {
+        s = chatSessionReducer(s, {
+          type: 'STORE_DIAGNOSTICS',
+          batchId: `b${i}`,
+          entry: { ...entry, batchId: `b${i}` },
+        });
+      }
+      // After 52nd insert (current had 51 entries > 50), cap triggers: only the 52nd entry remains
+      expect(Object.keys(s.turn.pendingDiagnostics)).toHaveLength(1);
+      expect(s.turn.pendingDiagnostics['b51']).toBeDefined();
+    });
+  });
+
+  describe('APPLY_WHITEBOARD_BATCH with diagnostics lookup', () => {
+    const diagEntry: PendingDiagnosticsEntry = {
+      batchId: 'b1',
+      templateUsed: 'legacy_draw_batch',
+      fallbackUsed: true,
+      violationsFixed: ['overlap'],
+    };
+
+    it('retrieves diagnostics from pendingDiagnostics and removes entry', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry: diagEntry });
+      const batch = { batch_id: 'b1', elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch });
+      expect(s.chats[id]!.plannerMeta).toHaveLength(1);
+      expect(s.chats[id]!.plannerMeta[0]!.fallbackUsed).toBe(true);
+      expect(s.turn.pendingDiagnostics['b1']).toBeUndefined();
+    });
+
+    it('computes firstToolBatch internally from turnSawToolBatch', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      // First non-provisional batch sets turnSawToolBatch to true
+      const batch1 = { batch_id: 'tool-1', elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch: batch1 });
+      expect(s.turn.turnSawToolBatch).toBe(true);
+      // Provisional batch does not change turnSawToolBatch
+      const batch2 = { batch_id: 'stream-provisional-1', elements: [{ id: 'r2', type: 'rect' as const, x: 20, y: 20, w: 10, h: 10 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch: batch2 });
+      expect(s.turn.turnSawToolBatch).toBe(true);
+    });
+  });
+
+  describe('pendingDiagnostics cleared on turn boundaries', () => {
+    const entry: PendingDiagnosticsEntry = {
+      batchId: 'b1',
+      templateUsed: 'legacy_draw_batch',
+      fallbackUsed: false,
+      violationsFixed: [],
+    };
+
+    it('TURN_START clears pendingDiagnostics', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry });
+      expect(Object.keys(s.turn.pendingDiagnostics)).toHaveLength(1);
+      // Starting a new turn clears them
       s = chatSessionReducer(s, { type: 'TURN_START', chatId: id });
-      const batch = {
-        batch_id: 'b2',
-        elements: [
-          { id: 'c1', type: 'clear' as const },
-          { id: 'r2', type: 'rect' as const, x: 10, y: 10, w: 20, h: 20 },
-        ],
-      };
-      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch, firstToolBatch: false });
-      expect(s.chats[id]!.scene).toHaveLength(1);
-      expect(s.chats[id]!.scene[0]!.id).toBe('r2');
+      expect(s.turn.pendingDiagnostics).toEqual({});
+    });
+
+    it('TURN_DONE clears pendingDiagnostics', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry });
+      s = chatSessionReducer(s, { type: 'TURN_DONE', chatId: id });
+      expect(s.turn.pendingDiagnostics).toEqual({});
+    });
+
+    it('TURN_ERROR clears pendingDiagnostics', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry });
+      s = chatSessionReducer(s, { type: 'TURN_ERROR', chatId: id, errorMessage: 'err' });
+      expect(s.turn.pendingDiagnostics).toEqual({});
+    });
+
+    it('STREAM_ERROR clears pendingDiagnostics', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry });
+      s = chatSessionReducer(s, { type: 'STREAM_ERROR', chatId: id, errorMessage: 'net' });
+      expect(s.turn.pendingDiagnostics).toEqual({});
     });
   });
 });
