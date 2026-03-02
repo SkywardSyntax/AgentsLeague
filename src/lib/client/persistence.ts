@@ -138,6 +138,10 @@ function migrateV1toV3(legacy: z.infer<typeof LegacyPersistedSessionV1Schema>): 
   };
 }
 
+/**
+ * Loads the persisted session from localStorage, migrating from V1/V2 if needed.
+ * Returns null and clears storage if the data is corrupt or unparseable.
+ */
 export function loadSession(): PersistedSessionV3 | null {
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -168,6 +172,7 @@ export function loadSession(): PersistedSessionV3 | null {
   }
 }
 
+/** Persists the current session state to localStorage as a V3 payload. */
 export function saveSession(session: PersistedSessionV3): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(session));

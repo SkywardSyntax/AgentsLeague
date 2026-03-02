@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeSemanticBatchPayload, SemanticBatchSchema } from '@/lib/schema';
+import {
+  normalizeDrawBatchPayload,
+  normalizeSemanticBatchPayload,
+  DrawBatchSchema,
+  SemanticBatchSchema,
+} from '@/lib/schema';
 
 describe('normalizeSemanticBatchPayload', () => {
   it('repairs out-of-range relative_pose values to pass semantic schema', () => {
@@ -44,5 +49,41 @@ describe('normalizeSemanticBatchPayload', () => {
     expect(pose?.x).toBeLessThanOrEqual(1);
     expect(pose?.y).toBeGreaterThanOrEqual(0);
     expect(pose?.y).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('normalizeDrawBatchPayload → DrawBatchSchema contract', () => {
+  it('normalized output passes schema validation for valid input', () => {
+    const raw = {
+      batch_id: 'contract-draw',
+      elements: [
+        { id: 'r1', type: 'rect', x: '10', y: '20', w: '30', h: '40' },
+        { id: 't1', type: 'text', x: 50, y: 60, text: 'hello', size: 18 },
+      ],
+    };
+    const { normalized } = normalizeDrawBatchPayload(raw);
+    expect(normalized).not.toBeNull();
+    const parsed = DrawBatchSchema.safeParse(normalized);
+    expect(parsed.success).toBe(true);
+  });
+
+  it('normalized output passes schema for elements with string-typed numbers', () => {
+    const raw = {
+      batch_id: 'contract-coerce',
+      elements: [
+        { id: 'e1', type: 'ellipse', cx: '100', cy: '200', rx: '50', ry: '30' },
+      ],
+    };
+    const { normalized } = normalizeDrawBatchPayload(raw);
+    expect(normalized).not.toBeNull();
+    const parsed = DrawBatchSchema.safeParse(normalized);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      const el = parsed.data.elements[0]!;
+      expect(el.type).toBe('ellipse');
+      if (el.type === 'ellipse') {
+        expect(typeof el.cx).toBe('number');
+      }
+    }
   });
 });

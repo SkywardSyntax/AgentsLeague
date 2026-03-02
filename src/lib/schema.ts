@@ -5,9 +5,11 @@ const PointSchema = z.object({
   y: z.number().finite(),
 });
 
+const COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$|^[a-z]+$/i;
+
 const BaseElementSchema = z.object({
-  id: z.string().min(1),
-  color: z.string().optional(),
+  id: z.string().min(1).max(64),
+  color: z.string().max(30).regex(COLOR_REGEX).optional(),
   stroke_width: z.number().positive().optional(),
 });
 
@@ -43,7 +45,7 @@ const TextSchema = BaseElementSchema.extend({
   type: z.literal('text'),
   x: z.number().finite(),
   y: z.number().finite(),
-  text: z.string(),
+  text: z.string().max(500),
   size: z.number().positive().optional(),
 });
 
@@ -51,7 +53,7 @@ const LatexSchema = BaseElementSchema.extend({
   type: z.literal('latex'),
   x: z.number().finite(),
   y: z.number().finite(),
-  tex: z.string(),
+  tex: z.string().max(2_000),
   displayMode: z.boolean().optional(),
   fontSize: z.number().positive().optional(),
   align: z.enum(['left', 'center', 'right']).optional(),
@@ -72,15 +74,15 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
 ]);
 
 export const DrawBatchSchema = z.object({
-  batch_id: z.string().min(1),
+  batch_id: z.string().min(1).max(64),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
-  elements: z.array(DrawElementSchema),
+  elements: z.array(DrawElementSchema).max(200),
 });
 
 const ChatMessageSchema = z.object({
   id: z.string().min(1),
   role: z.enum(['user', 'assistant', 'system']),
-  content: z.string(),
+  content: z.string().max(50_000),
   createdAt: z.number().int().optional(),
 });
 
@@ -174,26 +176,26 @@ const RelativePoseSchema = z.object({
 });
 
 const SemanticEquationLineSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(64),
   tex: z.string().min(1),
   displayMode: z.boolean().optional(),
   role: z.enum(['step', 'result', 'note']).optional(),
 });
 
 const SemanticEquationStackBlockSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(64),
   kind: z.literal('equation_stack'),
   region_hint: z.enum(['left', 'right', 'center', 'bottom', 'auto']).optional(),
-  title: z.string().optional(),
+  title: z.string().max(200).optional(),
   lines: z.array(SemanticEquationLineSchema).min(1),
   align: z.enum(['left', 'center']).optional(),
 });
 
 const SemanticDiagramPanelBlockSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(64),
   kind: z.literal('diagram_panel'),
   region_hint: z.enum(['left', 'right', 'center', 'auto']).optional(),
-  title: z.string().optional(),
+  title: z.string().max(200).optional(),
   axes: z
     .object({
       x_label: z.string().min(1),
@@ -203,9 +205,9 @@ const SemanticDiagramPanelBlockSchema = z.object({
   shapes: z
     .array(
       z.object({
-        id: z.string().min(1),
+        id: z.string().min(1).max(64),
         type: z.enum(['rect', 'parallelogram', 'line', 'arrow']),
-        label: z.string().optional(),
+        label: z.string().max(200).optional(),
         relative_pose: RelativePoseSchema.optional(),
       }),
     )
@@ -213,7 +215,7 @@ const SemanticDiagramPanelBlockSchema = z.object({
   captions: z
     .array(
       z.object({
-        id: z.string().min(1),
+        id: z.string().min(1).max(64),
         text: z.string().min(1),
         anchor: z.enum(['top', 'bottom', 'left', 'right', 'center']),
       }),
@@ -222,7 +224,7 @@ const SemanticDiagramPanelBlockSchema = z.object({
 });
 
 const SemanticCaptionBlockSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(64),
   kind: z.literal('caption'),
   text: z.string().min(1),
   region_hint: z.enum(['bottom', 'center', 'auto']).optional(),
@@ -235,27 +237,29 @@ const SemanticBlockSchema = z.discriminatedUnion('kind', [
 ]);
 
 const SemanticRelationSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(64),
   type: z.enum(['maps_to', 'explains', 'derived_from', 'points_to']),
-  from_block_id: z.string().min(1),
-  to_block_id: z.string().min(1),
+  from_block_id: z.string().min(1).max(64),
+  to_block_id: z.string().min(1).max(64),
   from_anchor: z.string().min(1).optional(),
   to_anchor: z.string().min(1).optional(),
-  label: z.string().optional(),
+  label: z.string().max(200).optional(),
 });
 
 export const SemanticBatchSchema = z.object({
-  batch_id: z.string().min(1),
+  batch_id: z.string().min(1).max(64),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
   template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic']),
-  blocks: z.array(SemanticBlockSchema).min(1),
-  relations: z.array(SemanticRelationSchema).optional(),
+  blocks: z.array(SemanticBlockSchema).min(1).max(50),
+  relations: z.array(SemanticRelationSchema).max(100).optional(),
   intent: z.enum(['teach', 'derive', 'compare', 'summarize']).optional(),
 });
 
+const SESSION_ID_REGEX = /^[\w-]+$/;
+
 export const AgentStreamRequestSchema = z.object({
-  sessionId: z.string().min(1),
-  userMessage: z.string().min(1),
+  sessionId: z.string().min(1).max(128).regex(SESSION_ID_REGEX),
+  userMessage: z.string().min(1).max(10_000),
   history: z.array(ChatMessageSchema).max(100),
   plannerMode: z.enum(['semantic_preferred', 'legacy_draw_only']).optional(),
   whiteboardContext: WhiteboardContextSchema.optional(),
@@ -265,6 +269,83 @@ export const AgentStreamRequestSchema = z.object({
 export type DrawBatchInput = z.infer<typeof DrawBatchSchema>;
 export type SemanticBatchInput = z.infer<typeof SemanticBatchSchema>;
 export type AgentStreamRequestInput = z.infer<typeof AgentStreamRequestSchema>;
+
+// ---------- SSE Event Validation ----------
+
+const TokenUsageSchema = z.object({
+  prompt: z.number().int().nonnegative().optional(),
+  completion: z.number().int().nonnegative().optional(),
+  total: z.number().int().nonnegative().optional(),
+});
+
+const SEMANTIC_TEMPLATES = [
+  'equation_derivation_vertical',
+  'jacobian_mapping_2panel',
+  'freeform_semantic',
+] as const;
+
+const SemanticBatchRefSchema = z.object({
+  batch_id: z.string().min(1),
+  style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
+  template: z.enum(SEMANTIC_TEMPLATES),
+  blocks: z.array(SemanticBlockSchema).min(1),
+  relations: z.array(SemanticRelationSchema).optional(),
+  intent: z.enum(['teach', 'derive', 'compare', 'summarize']).optional(),
+});
+
+export const AgentSSEEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('assistant.text.delta'),
+    turnId: z.string().min(1),
+    delta: z.string(),
+  }),
+  z.object({
+    type: z.literal('assistant.text.done'),
+    turnId: z.string().min(1),
+    messageId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('whiteboard.batch'),
+    turnId: z.string().min(1),
+    batch: DrawBatchSchema,
+  }),
+  z.object({
+    type: z.literal('whiteboard.layout.diagnostics'),
+    turnId: z.string().min(1),
+    batchId: z.string().min(1),
+    violationsFixed: z.array(z.string()),
+    templateUsed: z.enum([...SEMANTIC_TEMPLATES, 'legacy_draw_batch']),
+    fallbackUsed: z.boolean(),
+    semanticBatch: SemanticBatchRefSchema.optional(),
+  }),
+  z.object({
+    type: z.literal('warning'),
+    turnId: z.string().min(1),
+    code: z.string().min(1),
+    message: z.string().min(1),
+    context: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('error'),
+    turnId: z.string().min(1),
+    code: z.string().min(1),
+    message: z.string().min(1),
+    retryable: z.boolean(),
+  }),
+  z.object({
+    type: z.literal('turn.done'),
+    turnId: z.string().min(1),
+    usage: TokenUsageSchema.optional(),
+  }),
+]);
+
+export type ValidatedAgentSSEEvent = z.infer<typeof AgentSSEEventSchema>;
+
+/** Validate an SSE event payload; returns the parsed event or null on failure. */
+export function validateSSEEvent(event: unknown): ValidatedAgentSSEEvent | null {
+  const result = AgentSSEEventSchema.safeParse(event);
+  return result.success ? result.data : null;
+}
 
 function asRecord(input: unknown): Record<string, unknown> | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
@@ -285,6 +366,7 @@ function asString(input: unknown): string | null {
 }
 
 function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
 }
 
@@ -297,6 +379,11 @@ function pointFrom(input: unknown): { x: number; y: number } | null {
   return { x, y };
 }
 
+/**
+ * Normalizes raw LLM output into a valid {@link DrawBatchInput}.
+ * Handles missing fields, type coercion, and alternate key names (e.g. `width` → `w`).
+ * Returns warnings for each element that could not be salvaged.
+ */
 export function normalizeDrawBatchPayload(payload: unknown): {
   normalized: DrawBatchInput | null;
   warnings: string[];
@@ -334,7 +421,10 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         warnings.push(`Rect ${id} has invalid coordinates`);
         continue;
       }
-      elements.push({ id, type, x, y, w, h, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      const cw = Math.max(1, Math.abs(w));
+      const ch = Math.max(1, Math.abs(h));
+      if (cw !== w || ch !== h) warnings.push(`Rect ${id} dimensions clamped to positive`);
+      elements.push({ id, type, x, y, w: cw, h: ch, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
       continue;
     }
 
@@ -347,7 +437,10 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         warnings.push(`Ellipse ${id} has invalid coordinates`);
         continue;
       }
-      elements.push({ id, type, cx, cy, rx, ry, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      const crx = Math.max(1, Math.abs(rx));
+      const cry = Math.max(1, Math.abs(ry));
+      if (crx !== rx || cry !== ry) warnings.push(`Ellipse ${id} radii clamped to positive`);
+      elements.push({ id, type, cx, cy, rx: crx, ry: cry, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
       continue;
     }
 
@@ -421,17 +514,20 @@ export function normalizeDrawBatchPayload(payload: unknown): {
   return { normalized, warnings };
 }
 
-const STYLE_PRESETS = ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat'] as const;
-const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic'] as const;
-const INTENTS = ['teach', 'derive', 'compare', 'summarize'] as const;
-const EQUATION_ROLES = ['step', 'result', 'note'] as const;
-const EQUATION_ALIGN = ['left', 'center'] as const;
-const REGION_HINTS = ['left', 'right', 'center', 'bottom', 'auto'] as const;
-const PANEL_REGION_HINTS = ['left', 'right', 'center', 'auto'] as const;
-const CAPTION_REGION_HINTS = ['bottom', 'center', 'auto'] as const;
-const PANEL_SHAPE_TYPES = ['rect', 'parallelogram', 'line', 'arrow'] as const;
-const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
-const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
+export const STYLE_PRESETS = ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat'] as const;
+export const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic'] as const;
+export const INTENTS = ['teach', 'derive', 'compare', 'summarize'] as const;
+export const EQUATION_ROLES = ['step', 'result', 'note'] as const;
+export const EQUATION_ALIGN = ['left', 'center'] as const;
+export const REGION_HINTS = ['left', 'right', 'center', 'bottom', 'auto'] as const;
+export const PANEL_REGION_HINTS = ['left', 'right', 'center', 'auto'] as const;
+export const CAPTION_REGION_HINTS = ['bottom', 'center', 'auto'] as const;
+export const PANEL_SHAPE_TYPES = ['rect', 'parallelogram', 'line', 'arrow'] as const;
+export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
+export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear'] as const;
+export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
+export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption'] as const;
 
 function asEnum<T extends readonly string[]>(value: unknown, allowed: T): T[number] | null {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -443,6 +539,11 @@ function asBoolean(input: unknown): boolean | null {
   return typeof input === 'boolean' ? input : null;
 }
 
+/**
+ * Normalizes raw LLM output into a valid {@link SemanticBatchInput}.
+ * Applies defaults for missing templates/intents and validates all nested blocks.
+ * Returns warnings for each block or field that could not be salvaged.
+ */
 export function normalizeSemanticBatchPayload(payload: unknown): {
   normalized: SemanticBatchInput | null;
   warnings: string[];
@@ -671,7 +772,30 @@ export function normalizeSemanticBatchPayload(payload: unknown): {
     return { normalized: null, warnings: [...warnings, 'No valid semantic blocks in payload'] };
   }
 
-  const rawRelations = Array.isArray(rec.relations) ? rec.relations : [];
+  // Deduplicate block IDs — suffix duplicates with -2, -3, etc.
+  const seenBlockIds = new Map<string, number>();
+  for (const block of blocks) {
+    const count = seenBlockIds.get(block.id) ?? 0;
+    seenBlockIds.set(block.id, count + 1);
+    if (count > 0) {
+      const oldId = block.id;
+      let suffix = count + 1;
+      let newId = `${oldId}-${suffix}`;
+      while (seenBlockIds.has(newId)) {
+        suffix++;
+        newId = `${oldId}-${suffix}`;
+      }
+      (block as { id: string }).id = newId;
+      seenBlockIds.set(newId, 1);
+      warnings.push(`Duplicate block id '${oldId}' renamed to '${newId}'`);
+    }
+  }
+
+  const blockIds = new Set(blocks.map((b) => b.id));
+  const rawRelations = Array.isArray(rec.relations) ? rec.relations.slice(0, 100) : [];
+  if (Array.isArray(rec.relations) && rec.relations.length > 100) {
+    warnings.push('Relations array truncated to 100 entries');
+  }
   const relations: NonNullable<SemanticBatchInput['relations']> = [];
   for (let idx = 0; idx < rawRelations.length; idx++) {
     const rawRel = asRecord(rawRelations[idx]);
@@ -680,6 +804,14 @@ export function normalizeSemanticBatchPayload(payload: unknown): {
     const from_block_id = asString(rawRel.from_block_id);
     const to_block_id = asString(rawRel.to_block_id);
     if (!type || !from_block_id || !to_block_id) continue;
+    if (from_block_id === to_block_id) {
+      warnings.push(`Relation ${asString(rawRel.id) ?? idx} is self-referencing; dropped`);
+      continue;
+    }
+    if (!blockIds.has(from_block_id) || !blockIds.has(to_block_id)) {
+      warnings.push(`Relation ${asString(rawRel.id) ?? idx} references non-existent block`);
+      continue;
+    }
     relations.push({
       id: asString(rawRel.id) ?? `rel-${idx + 1}`,
       type,
@@ -691,14 +823,74 @@ export function normalizeSemanticBatchPayload(payload: unknown): {
     });
   }
 
+  // Cycle detection via DFS on the relation adjacency graph
+  const filteredRelations = filterCyclicRelations(relations, warnings);
+
   const normalized: SemanticBatchInput = {
     batch_id,
     template,
     blocks,
     ...(style_preset ? { style_preset } : {}),
-    ...(relations.length > 0 ? { relations } : {}),
+    ...(filteredRelations.length > 0 ? { relations: filteredRelations } : {}),
     ...(intent ? { intent } : {}),
   };
 
   return { normalized, warnings };
+}
+
+function filterCyclicRelations(
+  relations: NonNullable<SemanticBatchInput['relations']>,
+  warnings: string[],
+): NonNullable<SemanticBatchInput['relations']> {
+  // Build adjacency list and check for cycles using DFS
+  const adj = new Map<string, Set<string>>();
+  const result: NonNullable<SemanticBatchInput['relations']> = [];
+
+  for (const rel of relations) {
+    // Try adding edge; if it creates a cycle, skip it
+    if (!adj.has(rel.from_block_id)) adj.set(rel.from_block_id, new Set());
+    const neighbors = adj.get(rel.from_block_id)!;
+    neighbors.add(rel.to_block_id);
+
+    if (hasCycle(adj)) {
+      neighbors.delete(rel.to_block_id);
+      if (neighbors.size === 0) adj.delete(rel.from_block_id);
+      warnings.push(`Relation ${rel.id} creates a cycle; dropped`);
+    } else {
+      result.push(rel);
+    }
+  }
+
+  return result;
+}
+
+function hasCycle(adj: Map<string, Set<string>>): boolean {
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = new Map<string, number>();
+
+  for (const node of adj.keys()) {
+    if ((color.get(node) ?? WHITE) === WHITE) {
+      const stack: Array<{ node: string; iter: Iterator<string> }> = [];
+      color.set(node, GRAY);
+      stack.push({ node, iter: (adj.get(node) ?? new Set()).values() });
+
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        const next = top.iter.next();
+        if (next.done) {
+          color.set(top.node, BLACK);
+          stack.pop();
+        } else {
+          const neighbor = next.value;
+          const c = color.get(neighbor) ?? WHITE;
+          if (c === GRAY) return true;
+          if (c === WHITE) {
+            color.set(neighbor, GRAY);
+            stack.push({ node: neighbor, iter: (adj.get(neighbor) ?? new Set()).values() });
+          }
+        }
+      }
+    }
+  }
+  return false;
 }

@@ -114,6 +114,7 @@ export class SeededRandom {
   }
 
   pick<T>(items: T[]): T {
+    if (items.length === 0) throw new Error('pick() called with empty array');
     return items[Math.floor(this.next() * items.length)]!;
   }
 }

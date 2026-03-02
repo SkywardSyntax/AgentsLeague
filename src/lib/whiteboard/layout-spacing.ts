@@ -72,6 +72,10 @@ function groupedBoundsByElementId(strokes: StrokeTrajectory[]): Bounds[] {
     .filter((b): b is Bounds => b !== null);
 }
 
+/**
+ * Adjusts vertical positions of text/LaTeX strokes in a batch to avoid overlapping
+ * existing scene strokes. Mutates {@link batchStrokes} in place.
+ */
 export function normalizeBatchTextSpacingAgainstScene(
   batch: DrawBatch,
   batchStrokes: StrokeTrajectory[],

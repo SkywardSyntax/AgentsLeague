@@ -13,7 +13,6 @@ import {
   removeStreamOverlayFromScene,
 } from '@/lib/whiteboard/stream-overlay';
 import type {
-  AgentSSEEvent,
   ChatMessage,
   DrawBatch,
   DrawElement,
@@ -21,6 +20,7 @@ import type {
   WhiteboardLayoutDiagnostics,
 } from '@/types/agent';
 import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
+import type { ValidatedAgentSSEEvent } from '@/lib/schema';
 
 interface ChatSessionState {
   id: string;
@@ -248,7 +248,7 @@ export function AppShell() {
   }, []);
 
   const handleEvent = useCallback(
-    (event: AgentSSEEvent) => {
+    (event: ValidatedAgentSSEEvent) => {
       lastTurnEventsRef.current.push(event.type);
       if (lastTurnEventsRef.current.length > 80) {
         lastTurnEventsRef.current = lastTurnEventsRef.current.slice(-80);
