@@ -213,6 +213,12 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
       return { ...state, turn: { ...state.turn, currentAssistantMessageId: null } };
 
     case 'APPLY_WHITEBOARD_BATCH': {
+      // Idempotency guard: skip if this batch_id was already applied
+      const targetChat = state.chats[action.chatId];
+      if (targetChat && targetChat.batches.some((b) => b.batch_id === action.batch.batch_id)) {
+        return state;
+      }
+
       const nextStatus = transitionStatus(state.turn.status, 'drawing');
       const isProvisional = action.batch.batch_id.startsWith('stream-provisional-');
       const firstToolBatch = !isProvisional && !state.turn.turnSawToolBatch;
@@ -277,15 +283,23 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
       };
 
     case 'TURN_ERROR': {
+      const partialId = state.turn.currentAssistantMessageId;
       const next: ChatStore = {
         ...state,
         turn: { ...IDLE_TURN },
       };
-      return updateChat(next, action.chatId, (chat) => ({
-        ...chat,
-        updatedAt: Date.now(),
-        messages: [...chat.messages, createMessage('assistant', `Error: ${action.errorMessage}`)],
-      }));
+      return updateChat(next, action.chatId, (chat) => {
+        // Remove partial assistant message if it belongs to this chat
+        const filtered =
+          partialId && chat.messages.some((m) => m.id === partialId)
+            ? chat.messages.filter((m) => m.id !== partialId)
+            : chat.messages;
+        return {
+          ...chat,
+          updatedAt: Date.now(),
+          messages: [...filtered, createMessage('assistant', `Error: ${action.errorMessage}`)],
+        };
+      });
     }
 
     case 'TURN_DONE': {

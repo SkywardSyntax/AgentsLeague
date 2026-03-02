@@ -16,6 +16,7 @@ export interface PersistedChatV3 {
   semanticScene: SemanticBatch[];
   scene: DrawElement[];
   plannerMeta: WhiteboardLayoutDiagnostics[];
+  warnings?: string[];
 }
 
 export interface PersistedSessionV3 {
@@ -52,6 +53,7 @@ const PersistedSessionV3Schema = z.object({
       semanticScene: z.array(z.any()),
       scene: z.array(z.any()),
       plannerMeta: z.array(z.any()),
+      warnings: z.array(z.string()).optional(),
     }),
   ),
   prefs: z.object({ panelSizes: z.tuple([z.number(), z.number()]) }),
@@ -146,7 +148,8 @@ function sanitizeSession(session: PersistedSessionV3): PersistedSessionV3 {
     chats: session.chats.map((chat) => {
       const { valid: scene } = sanitizeScene(chat.scene);
       const semanticScene = sanitizeSemanticScene(chat.semanticScene);
-      return { ...chat, scene, semanticScene };
+      const warnings = chat.warnings ? chat.warnings.slice(-8) : undefined;
+      return { ...chat, scene, semanticScene, warnings };
     }),
   };
 }

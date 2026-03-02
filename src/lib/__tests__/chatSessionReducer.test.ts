@@ -143,6 +143,50 @@ describe('chatSessionReducer', () => {
       expect(s.chats[id]!.messages).toHaveLength(1);
       expect(s.chats[id]!.messages[0]!.content).toBe('Error: boom');
     });
+
+    it('removes partial assistant message on error after delta', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'partial...' });
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.turn.currentAssistantMessageId).not.toBeNull();
+      s = chatSessionReducer(s, { type: 'TURN_ERROR', chatId: id, errorMessage: 'fail' });
+      // Partial message removed, only error message remains
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.chats[id]!.messages[0]!.content).toBe('Error: fail');
+      expect(s.turn.status).toBe('idle');
+    });
+
+    it('only adds error message when no delta was sent', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'TURN_ERROR', chatId: id, errorMessage: 'nope' });
+      expect(s.chats[id]!.messages).toHaveLength(1);
+      expect(s.chats[id]!.messages[0]!.content).toBe('Error: nope');
+    });
+
+    it('does not remove messages from a different chat', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      // Start turn on chat1, send delta
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: chat1.id, delta: 'hello' });
+      const partialMsgId = s.turn.currentAssistantMessageId!;
+      expect(s.chats[chat1.id]!.messages).toHaveLength(1);
+      // Error on chat2 should not remove chat1's partial message
+      s = chatSessionReducer(s, { type: 'TURN_ERROR', chatId: chat2.id, errorMessage: 'wrong chat' });
+      expect(s.chats[chat1.id]!.messages).toHaveLength(1);
+      expect(s.chats[chat1.id]!.messages[0]!.id).toBe(partialMsgId);
+      expect(s.chats[chat2.id]!.messages).toHaveLength(1);
+      expect(s.chats[chat2.id]!.messages[0]!.content).toBe('Error: wrong chat');
+    });
   });
 
   describe('STREAM_ERROR', () => {
@@ -345,6 +389,58 @@ describe('chatSessionReducer', () => {
       s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch: batch2 });
       expect(s.turn.turnSawToolBatch).toBe(true);
     });
+
+    it('appends batch elements to scene', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const batch = { batch_id: 'b1', elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch });
+      expect(s.chats[id]!.scene).toHaveLength(1);
+      expect(s.chats[id]!.scene[0]!.id).toBe('r1');
+      expect(s.chats[id]!.batches).toHaveLength(1);
+      expect(s.turn.status).toBe('drawing');
+    });
+
+    it('handles clear element in batch', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const batch1 = { batch_id: 'b1', elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch: batch1 });
+      expect(s.chats[id]!.scene).toHaveLength(1);
+      const batch2 = { batch_id: 'b2', elements: [{ id: 'c1', type: 'clear' as const }, { id: 'r2', type: 'rect' as const, x: 5, y: 5, w: 20, h: 20 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch: batch2 });
+      expect(s.chats[id]!.scene).toHaveLength(1);
+      expect(s.chats[id]!.scene[0]!.id).toBe('r2');
+    });
+
+    it('ignores duplicate batch_id (idempotency guard)', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const batch = { batch_id: 'dup-1', elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch });
+      expect(s.chats[id]!.scene).toHaveLength(1);
+      expect(s.chats[id]!.batches).toHaveLength(1);
+      // Apply same batch_id again — should be no-op
+      const s2 = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch });
+      expect(s2).toBe(s);
+      expect(s2.chats[id]!.scene).toHaveLength(1);
+      expect(s2.chats[id]!.batches).toHaveLength(1);
+    });
+
+    it('allows different batch_ids', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      const batch1 = { batch_id: 'a', elements: [{ id: 'r1', type: 'rect' as const, x: 0, y: 0, w: 10, h: 10 }] };
+      const batch2 = { batch_id: 'b', elements: [{ id: 'r2', type: 'rect' as const, x: 5, y: 5, w: 10, h: 10 }] };
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch: batch1 });
+      s = chatSessionReducer(s, { type: 'APPLY_WHITEBOARD_BATCH', chatId: id, batch: batch2 });
+      expect(s.chats[id]!.scene).toHaveLength(2);
+      expect(s.chats[id]!.batches).toHaveLength(2);
+    });
   });
 
   describe('pendingDiagnostics cleared on turn boundaries', () => {
@@ -391,6 +487,22 @@ describe('chatSessionReducer', () => {
       s = chatSessionReducer(s, { type: 'STORE_DIAGNOSTICS', batchId: 'b1', entry });
       s = chatSessionReducer(s, { type: 'STREAM_ERROR', chatId: id, errorMessage: 'net' });
       expect(s.turn.pendingDiagnostics).toEqual({});
+    });
+  });
+
+  describe('SELECT_CHAT guards', () => {
+    it('SELECT_CHAT with unknown chatId is a no-op', () => {
+      const store = makeStore();
+      const next = chatSessionReducer(store, { type: 'SELECT_CHAT', chatId: 'nonexistent-id' });
+      expect(next).toBe(store);
+    });
+  });
+
+  describe('DELETE_CHAT guards', () => {
+    it('DELETE_CHAT with chatId not in chatOrder is a no-op', () => {
+      const store = makeStore();
+      const next = chatSessionReducer(store, { type: 'DELETE_CHAT', chatId: 'nonexistent-id', activeChatId: chatId(store) });
+      expect(next).toBe(store);
     });
   });
 });

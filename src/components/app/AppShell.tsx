@@ -139,6 +139,7 @@ export function AppShell() {
             scene: chat.scene,
             semanticScene: chat.semanticScene,
             plannerMeta: chat.plannerMeta,
+            warnings: chat.warnings.length > 0 ? chat.warnings : undefined,
           };
         }),
         prefs: { panelSizes },
