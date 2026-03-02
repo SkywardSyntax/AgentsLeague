@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveStroke, DrawBatch, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
-import { createActiveBatch, easeOutCubic } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, prefersReducedMotion } from '@/lib/whiteboard/stroke-scheduler';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
   partialPolylineByLength,
@@ -46,6 +46,7 @@ function drawStroke(
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!;
     const b = points[i]!;
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
     const t = i / n;
 
     const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
@@ -61,6 +62,8 @@ function drawStroke(
   }
 }
 
+const MAX_RETRY_ATTEMPTS = 3;
+
 export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLCanvasElement>(null);
@@ -75,6 +78,9 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const rafRef = useRef<number | null>(null);
   const committedDirtyRef = useRef(true);
   const drawErrorCountRef = useRef(0);
+  const retryAttemptsRef = useRef(0);
+
+  const [renderError, setRenderError] = useState(false);
 
   // Store onWarning in a ref to avoid re-running batch effect on callback identity changes
   const onWarningRef = useRef(onWarning);
@@ -164,8 +170,15 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
             compiled.strokes,
             committedStrokesRef.current.concat(activeStrokesRef.current),
           );
-          const active = createActiveBatch(compiled.strokes, performance.now());
-          activeStrokesRef.current.push(...active);
+          const rm = prefersReducedMotion();
+          if (rm) {
+            // Reduced motion: commit strokes immediately, no animation
+            committedStrokesRef.current = committedStrokesRef.current.concat(compiled.strokes);
+            committedDirtyRef.current = true;
+          } else {
+            const active = createActiveBatch(compiled.strokes, performance.now());
+            activeStrokesRef.current.push(...active);
+          }
         }
       }
     };
@@ -176,6 +189,9 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       cancelled = true;
     };
   }, [batches]);
+
+  // RAF loop generation: incrementing restarts the loop via useEffect dependency
+  const [rafGeneration, setRafGeneration] = useState(0);
 
   useEffect(() => {
     let lastClearGeneration = clearGenerationRef.current;
@@ -332,6 +348,9 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         drawErrorCountRef.current += 1;
         console.error('WhiteboardCanvas draw error:', err);
         if (drawErrorCountRef.current >= 10) {
+          onWarningRef.current('Rendering paused due to repeated errors. Try resizing the window.');
+          setRenderError(true);
+          rafRef.current = null;
           return;
         }
       }
@@ -342,8 +361,9 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     rafRef.current = requestAnimationFrame(drawFrame);
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     };
-  }, []);
+  }, [rafGeneration]);
 
   const fitToContent = useCallback(() => {
     const strokes = committedStrokesRef.current;
@@ -375,6 +395,15 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     if (!result) return;
     cameraRef.current = result;
     committedDirtyRef.current = true;
+  }, []);
+
+  const retryRendering = useCallback(() => {
+    if (retryAttemptsRef.current >= MAX_RETRY_ATTEMPTS) return;
+    retryAttemptsRef.current += 1;
+    drawErrorCountRef.current = 0;
+    setRenderError(false);
+    committedDirtyRef.current = true;
+    setRafGeneration((g) => g + 1);
   }, []);
 
   useEffect(() => {
@@ -524,7 +553,8 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     <section className="relative h-full overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-paper)] shadow-[var(--shadow-card)]">
       <div
         ref={containerRef}
-        className="relative h-full w-full cursor-grab active:cursor-grabbing"
+        tabIndex={0}
+        className="relative h-full w-full cursor-grab active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
         style={{ touchAction: 'none' }}
         aria-label="Whiteboard"
         role="application"
@@ -534,6 +564,26 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         <canvas ref={activeRef} className="absolute inset-0" />
       </div>
 
+      {renderError && (
+        <div
+          role="alert"
+          className="absolute inset-x-0 bottom-12 mx-auto w-fit rounded-lg bg-red-50 px-4 py-2 text-sm text-red-800 shadow-md"
+        >
+          Rendering paused —{' '}
+          {retryAttemptsRef.current < MAX_RETRY_ATTEMPTS ? (
+            <button
+              onClick={retryRendering}
+              className="underline font-medium hover:text-red-900 focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
+              aria-label="Retry rendering"
+            >
+              click to retry
+            </button>
+          ) : (
+            <span>max retries reached, please reload</span>
+          )}
+        </div>
+      )}
+
       <div className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
         <div ref={statsZoomElRef}>Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
         <div ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
@@ -542,7 +592,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
       <button
         onClick={fitToContent}
-        className="glass-panel absolute bottom-3 right-3 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:text-[var(--color-text-primary)] transition-colors"
+        className="glass-panel absolute bottom-3 right-3 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:text-[var(--color-text-primary)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
         aria-label="Fit to content"
         title="Fit to content (Home)"
       >

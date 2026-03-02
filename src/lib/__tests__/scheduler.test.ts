@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { createActiveBatch, easeOutCubic, strokeDurationMs, staggeredStartTimes, MAX_TOTAL_STAGGER_MS } from '@/lib/whiteboard/stroke-scheduler';
+import { describe, expect, it, afterEach } from 'vitest';
+import { createActiveBatch, easeOutCubic, strokeDurationMs, staggeredStartTimes, MAX_TOTAL_STAGGER_MS, prefersReducedMotion } from '@/lib/whiteboard/stroke-scheduler';
 
 describe('stroke scheduler', () => {
   it('uses same startedAt timestamp for a batch', () => {
@@ -160,5 +160,65 @@ describe('createActiveBatch with stagger', () => {
   it('returns empty array for empty strokes input with stagger', () => {
     const active = createActiveBatch([], 1000, true);
     expect(active).toEqual([]);
+  });
+});
+
+describe('prefersReducedMotion', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    Object.defineProperty(window, 'matchMedia', { value: originalMatchMedia, writable: true, configurable: true });
+  });
+
+  it('returns false when matchMedia is unavailable', () => {
+    Object.defineProperty(window, 'matchMedia', { value: undefined, writable: true, configurable: true });
+    expect(prefersReducedMotion()).toBe(false);
+  });
+
+  it('returns true when prefers-reduced-motion matches', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      value: () => ({ matches: true }),
+      writable: true,
+      configurable: true,
+    });
+    expect(prefersReducedMotion()).toBe(true);
+  });
+
+  it('returns false when prefers-reduced-motion does not match', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      value: () => ({ matches: false }),
+      writable: true,
+      configurable: true,
+    });
+    expect(prefersReducedMotion()).toBe(false);
+  });
+});
+
+describe('strokeDurationMs with reducedMotion', () => {
+  it('returns 0 when reducedMotion is true', () => {
+    expect(strokeDurationMs(500, true)).toBe(0);
+    expect(strokeDurationMs(0, true)).toBe(0);
+    expect(strokeDurationMs(1_000_000, true)).toBe(0);
+  });
+
+  it('returns normal duration when reducedMotion is false', () => {
+    expect(strokeDurationMs(500, false)).toBeGreaterThan(0);
+  });
+});
+
+describe('createActiveBatch with reducedMotion', () => {
+  it('sets durationMs to 0 for all strokes when reducedMotion is true', () => {
+    const strokes = [makeStroke('s1'), makeStroke('s2')];
+    const active = createActiveBatch(strokes, 1000, false, true);
+    for (const s of active) {
+      expect(s.durationMs).toBe(0);
+    }
+  });
+
+  it('disables stagger when reducedMotion is true', () => {
+    const strokes = [makeStroke('s1'), makeStroke('s2'), makeStroke('s3')];
+    const active = createActiveBatch(strokes, 1000, true, true);
+    const times = active.map(s => s.startedAt);
+    expect(new Set(times).size).toBe(1);
   });
 });

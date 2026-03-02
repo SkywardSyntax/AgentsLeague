@@ -3,7 +3,15 @@ import { cumulativeLengths, totalLength } from './geometry';
 
 export const STROKE_SPEED_PX_PER_SECOND = 180;
 
-export function strokeDurationMs(length: number): number {
+/** Runtime check for prefers-reduced-motion; re-evaluated on every call so it
+ *  picks up live OS setting changes. Safe for SSR (returns false). */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+export function strokeDurationMs(length: number, reducedMotion = false): number {
+  if (reducedMotion) return 0;
   const raw = (length / STROKE_SPEED_PX_PER_SECOND) * 1000;
   return Math.min(2600, Math.max(220, raw));
 }
@@ -30,9 +38,10 @@ export function createActiveBatch(
   strokes: StrokeTrajectory[],
   startedAt = performance.now(),
   stagger = false,
+  reducedMotion = false,
 ): ActiveStroke[] {
   const valid = strokes.filter((s) => s.points.length >= 2);
-  const times = stagger
+  const times = stagger && !reducedMotion
     ? staggeredStartTimes(valid.length, startedAt)
     : null;
   return valid.map((stroke, i) => {
@@ -41,7 +50,7 @@ export function createActiveBatch(
     return {
       ...stroke,
       startedAt: times ? times[i]! : startedAt,
-      durationMs: strokeDurationMs(length),
+      durationMs: strokeDurationMs(length, reducedMotion),
       length,
       cumulativeLengths: cumulative,
     };
