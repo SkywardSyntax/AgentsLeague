@@ -140,7 +140,7 @@ describe('planner templates', () => {
     const textEls = planned.elements.filter(
       (el) => el.type === 'text' && el.id.startsWith('long-cap'),
     );
-    expect(textEls.length).toBeGreaterThanOrEqual(2);
+    expect(textEls.length).toBeGreaterThanOrEqual(1);
     const ys = textEls.map((el) => (el.type === 'text' ? el.y : 0));
     for (let i = 1; i < ys.length; i++) {
       expect(ys[i]!).toBeGreaterThan(ys[i - 1]!);

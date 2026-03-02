@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ChatPanel } from '@/components/chat/ChatPanel';
@@ -6,6 +6,11 @@ import { WarningOverlay } from '@/components/app/WarningOverlay';
 import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 
 afterEach(cleanup);
+
+beforeEach(() => {
+  // jsdom doesn't implement scrollIntoView
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 describe('accessibility annotations', () => {
   it('StatusBadge has role="status" and aria-live="polite"', () => {

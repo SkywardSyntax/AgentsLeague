@@ -103,7 +103,7 @@ describe('iter28 · SSE serialization roundtrip', () => {
   });
 
   it('sseHeaders returns correct Content-Type and Cache-Control', () => {
-    const headers = sseHeaders();
+    const headers = sseHeaders() as unknown as Record<string, string>;
     expect(headers['Content-Type']).toContain('text/event-stream');
     expect(headers['Cache-Control']).toContain('no-cache');
     expect(headers['Connection']).toBe('keep-alive');

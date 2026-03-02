@@ -72,7 +72,7 @@ describe('DEFAULT_PLANNER_CONFIG', () => {
 
   it('has expected margins and gaps', () => {
     expect(DEFAULT_PLANNER_CONFIG.margin).toBe(24);
-    expect(DEFAULT_PLANNER_CONFIG.maxRepairIterations).toBe(3);
+    expect(DEFAULT_PLANNER_CONFIG.maxRepairIterations).toBe(6);
     expect(DEFAULT_PLANNER_CONFIG.minTextGap).toBe(14);
     expect(DEFAULT_PLANNER_CONFIG.minLabelGap).toBe(10);
     expect(DEFAULT_PLANNER_CONFIG.maxScaleDownPerBlock).toBe(0.15);

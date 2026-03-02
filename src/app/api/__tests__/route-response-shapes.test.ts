@@ -112,7 +112,7 @@ describe('Lane 10 — Route Response Shapes', () => {
   });
 
   it('sseHeaders includes text/event-stream content type', () => {
-    const headers = sseHeaders();
+    const headers = sseHeaders() as unknown as Record<string, string>;
     expect(headers['Content-Type']).toMatchInlineSnapshot(
       `"text/event-stream; charset=utf-8"`,
     );

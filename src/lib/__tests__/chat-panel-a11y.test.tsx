@@ -1,6 +1,10 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 afterEach(cleanup);
 
@@ -37,22 +41,22 @@ describe('ChatPanel accessibility', () => {
 
   it('has aria-label on New Chat button', () => {
     render(<ChatPanel {...defaultProps} />);
-    expect(screen.getByRole('button', { name: 'New chat' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '+ New Chat' })).toBeDefined();
   });
 
   it('has aria-label on Stop generation button', () => {
     render(<ChatPanel {...defaultProps} />);
-    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeDefined();
   });
 
   it('has aria-label on Delete current chat button', () => {
     render(<ChatPanel {...defaultProps} />);
-    expect(screen.getByRole('button', { name: 'Delete current chat' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Delete Chat' })).toBeDefined();
   });
 
   it('has aria-label on Clear messages button', () => {
     render(<ChatPanel {...defaultProps} />);
-    expect(screen.getByRole('button', { name: 'Clear messages' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Clear Chat' })).toBeDefined();
   });
 
   it('has aria-label on Send message button', () => {

@@ -143,7 +143,7 @@ describe('iter28 · State migration chain', () => {
     setStorage(v1Session);
     const result = loadSession()!;
     expect(result.chats[0]!.scene).toHaveLength(1);
-    const el = result.chats[0]!.scene[0] as Record<string, unknown>;
+    const el = result.chats[0]!.scene[0] as unknown as Record<string, unknown>;
     expect(el.type).toBe('rect');
     expect(el.id).toBe('r1');
   });

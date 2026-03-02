@@ -29,8 +29,8 @@ describe('WhiteboardCanvas a11y', () => {
 
   it('stats overlay has aria-live="polite"', () => {
     render(<WhiteboardCanvas batches={[]} onWarning={vi.fn()} />);
-    const zoomTexts = screen.getAllByText(/Zoom:/);
-    // The aria-live attribute is on the parent container of the stat lines
-    expect(zoomTexts[0]!.parentElement).toHaveAttribute('aria-live', 'polite');
+    // The aria-live attribute is on the zoom-level span
+    const zoomLevels = screen.getAllByTestId('zoom-level');
+    expect(zoomLevels[0]).toHaveAttribute('aria-live', 'polite');
   });
 });

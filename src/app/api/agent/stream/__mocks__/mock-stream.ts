@@ -4,7 +4,7 @@
  * Gated by server-only env AGENT_STREAM_MODE=mock (never NEXT_PUBLIC_*).
  */
 
-import { createSSESender, sseHeaders, formatSSEComment } from '@/lib/server/sse';
+import { createSSESender, sseHeaders, formatSSEComment, formatSSE } from '@/lib/server/sse';
 import type { DrawBatch } from '@/types/agent';
 
 export type MockScenario =
@@ -228,7 +228,7 @@ export function mockAgentStream(body: { userMessage: string; scenario?: MockScen
         violationsFixed: [],
         templateUsed: 'legacy_draw_batch',
         fallbackUsed: false,
-        semanticBatch: null,
+        semanticBatch: undefined,
       });
       send({ type: 'whiteboard.batch', turnId, batch });
 

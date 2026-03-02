@@ -37,13 +37,13 @@ describe('lowerPlannedLayoutToDrawBatch', () => {
     expect(result.style_preset).toBe('rough_sketch');
   });
 
-  it('passes elements array by reference', () => {
+  it('passes elements through dedup, validation, and sort (not by reference)', () => {
     const elements: DrawElement[] = [
       { id: 'e1', type: 'rect', x: 0, y: 0, w: 10, h: 10 },
     ];
     const layout = makeLayout({ elements });
     const result = lowerPlannedLayoutToDrawBatch(layout);
-    expect(result.elements).toBe(elements);
+    expect(result.elements).toEqual(elements);
   });
 
   it('does NOT include anchors, warnings, semanticBatch in output', () => {

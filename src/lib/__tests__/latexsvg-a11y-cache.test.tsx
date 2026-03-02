@@ -2,8 +2,14 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 
 // Mock mathjax-client before importing LatexSvg
+const mockCacheStore = new Map<string, string>();
+
 vi.mock('@/lib/latex/mathjax-client', () => ({
   renderTexToSvg: vi.fn(),
+  getCachedSvg: vi.fn((tex: string, displayMode: boolean) => {
+    const key = `${displayMode ? 'D' : 'I'}:${tex}`;
+    return mockCacheStore.get(key);
+  }),
 }));
 
 // Must import after mock setup
@@ -24,7 +30,7 @@ describe('LatexSvg accessibility', () => {
     await act(async () => {
       render(<LatexSvg tex="x^2" displayMode={false} />);
     });
-    const img = screen.getByRole('img');
+    const img = screen.getByRole('math');
     expect(img).toBeTruthy();
     expect(img.getAttribute('aria-label')).toBe('x^2');
   });
@@ -35,8 +41,8 @@ describe('LatexSvg accessibility', () => {
     await act(async () => {
       render(<LatexSvg tex={longTex} displayMode={false} />);
     });
-    const img = screen.getByRole('img');
-    const label = img.getAttribute('aria-label')!;
+    const el = screen.getByRole('math');
+    const label = el.getAttribute('aria-label')!;
     expect(label.length).toBeLessThanOrEqual(82); // 80 + "…"
     expect(label.endsWith('…')).toBe(true);
   });
@@ -47,8 +53,8 @@ describe('LatexSvg accessibility', () => {
     await act(async () => {
       render(<LatexSvg tex={texStr} displayMode={false} />);
     });
-    const img = screen.getByRole('img');
-    expect(img.getAttribute('title')).toBe(texStr);
+    const el = screen.getByRole('math');
+    expect(el.getAttribute('title')).toBe(texStr);
   });
 
   it('error fallback has aria-label="LaTeX rendering failed"', async () => {
@@ -56,7 +62,7 @@ describe('LatexSvg accessibility', () => {
     await act(async () => {
       render(<LatexSvg tex="\\invalid" displayMode={false} />);
     });
-    const fallback = screen.getByLabelText('LaTeX rendering failed');
+    const fallback = screen.getByRole('alert');
     expect(fallback).toBeTruthy();
     expect(fallback.tagName).toBe('CODE');
     expect(fallback.textContent).toContain('invalid');
@@ -66,7 +72,7 @@ describe('LatexSvg accessibility', () => {
 describe('LatexSvg LRU cache', () => {
   beforeEach(() => {
     mockRender.mockReset();
-    // Clear the module-level cache by re-rendering with unique keys
+    mockCacheStore.clear();
   });
 
   it('same TeX returns cached SVG without re-calling renderTexToSvg', async () => {
@@ -78,6 +84,9 @@ describe('LatexSvg LRU cache', () => {
     });
     expect(mockRender).toHaveBeenCalledTimes(1);
     unmount();
+
+    // Simulate the render cache having stored the result
+    mockCacheStore.set('I:unique_cache_test_1', '<svg>cached</svg>');
 
     // Second render with same TeX should use cache
     mockRender.mockClear();
@@ -109,6 +118,9 @@ describe('LatexSvg LRU cache', () => {
       return render(<LatexSvg tex="mode_test" displayMode={false} />);
     });
     u1();
+
+    // Only cache the inline version
+    mockCacheStore.set('I:mode_test', '<svg>inline</svg>');
 
     mockRender.mockClear();
     mockRender.mockResolvedValue('<svg>display</svg>');

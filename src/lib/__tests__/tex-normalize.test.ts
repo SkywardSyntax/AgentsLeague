@@ -119,8 +119,8 @@ describe('tex normalization', () => {
     expect(prepared).toEqual({ tex: '\\text{hello}', displayMode: false });
   });
 
-  it('does not strip \\begin{align} delimiters (only equation supported)', () => {
+  it('strips \\begin{align} delimiters (align is stripped like equation)', () => {
     const prepared = prepareTexForMathJax('\\begin{align}x+1\\end{align}');
-    expect(prepared).toEqual({ tex: '\\begin{align}x+1\\end{align}', displayMode: false });
+    expect(prepared).toEqual({ tex: 'x+1', displayMode: true });
   });
 });

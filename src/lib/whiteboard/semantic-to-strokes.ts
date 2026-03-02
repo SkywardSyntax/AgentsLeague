@@ -18,7 +18,7 @@ import {
 import { withJitter, withJitterAmount } from './stroke-jitter';
 
 // Re-export for cross-lane backward compatibility
-export { rectPoints } from './shape-points';
+export { rectPoints, ellipsePoints, linePoints, arrowHeadPoints } from './shape-points';
 export { withJitter } from './stroke-jitter';
 
 const DEFAULT_COLOR = '#1f2a44';
@@ -60,7 +60,7 @@ export function looksMathLikeText(input: string): boolean {
   return false;
 }
 
-function strokesBounds(strokes: StrokeTrajectory[]) {
+export function strokesBounds(strokes: StrokeTrajectory[]) {
   return strokesBoundingBox(strokes);
 }
 

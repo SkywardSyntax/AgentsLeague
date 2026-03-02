@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import type { ChatMessage } from '@/types/agent';
@@ -27,11 +27,16 @@ function renderChatPanel(overrides: Partial<Parameters<typeof ChatPanel>[0]> = {
 
 describe('ChatPanel concurrency guards', () => {
   afterEach(cleanup);
+
+  beforeEach(() => {
+    // jsdom doesn't implement scrollIntoView
+    Element.prototype.scrollIntoView = vi.fn();
+  });
   it('Send button is disabled when disabled prop is true (status !== idle)', () => {
     const onSend = vi.fn();
     renderChatPanel({ status: 'thinking', disabled: true, input: 'hello', onSend });
 
-    const sendButton = screen.getByRole('button', { name: 'Send' });
+    const sendButton = screen.getByRole('button', { name: 'Send message' });
     expect(sendButton).toBeDisabled();
 
     sendButton.click();
@@ -42,7 +47,7 @@ describe('ChatPanel concurrency guards', () => {
     const onSend = vi.fn();
     renderChatPanel({ status: 'idle', disabled: false, input: '', onSend });
 
-    const sendButton = screen.getByRole('button', { name: 'Send' });
+    const sendButton = screen.getByRole('button', { name: 'Send message' });
     expect(sendButton).toBeDisabled();
   });
 
@@ -50,7 +55,7 @@ describe('ChatPanel concurrency guards', () => {
     const onSend = vi.fn();
     renderChatPanel({ status: 'idle', disabled: false, input: 'hello', onSend });
 
-    const sendButton = screen.getByRole('button', { name: 'Send' });
+    const sendButton = screen.getByRole('button', { name: 'Send message' });
     expect(sendButton).not.toBeDisabled();
 
     fireEvent.click(sendButton);

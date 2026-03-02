@@ -185,8 +185,9 @@ describe('resamplePolyline edge cases', () => {
       { x: 0, y: 0 },
       { x: 10, y: 0 },
     ];
-    expect(resamplePolyline(points, 0)).toBe(points);
-    expect(resamplePolyline(points, -5)).toBe(points);
+    // Source returns a shallow copy via .slice(), not same reference
+    expect(resamplePolyline(points, 0)).toEqual(points);
+    expect(resamplePolyline(points, -5)).toEqual(points);
   });
 
   it('returns empty array for empty input', () => {

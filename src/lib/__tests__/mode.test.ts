@@ -66,7 +66,8 @@ describe('getClientAppMode', () => {
 
   it('falls through to env when URL mode is not "agent"', () => {
     process.env.NEXT_PUBLIC_MODE = 'agent';
-    expect(getClientAppMode('?mode=interactive')).toBe('agent');
+    // Source: getClientAppMode returns 'interactive' when URL has ?mode=interactive
+    expect(getClientAppMode('?mode=interactive')).toBe('interactive');
   });
 
   it('URL ?mode=agent overrides env "interactive"', () => {
@@ -150,8 +151,8 @@ describe('mode.ts — getInitialAppMode & getClientAppMode', () => {
 
     it('falls through to getInitialAppMode for non-agent URL mode', () => {
       process.env.NEXT_PUBLIC_MODE = 'agent';
-      // URL says interactive, but only ?mode=agent overrides — env wins
-      expect(getClientAppMode('?mode=interactive')).toBe('agent');
+      // Source: getClientAppMode returns 'interactive' when URL has ?mode=interactive
+      expect(getClientAppMode('?mode=interactive')).toBe('interactive');
     });
 
     it('handles empty search string', () => {

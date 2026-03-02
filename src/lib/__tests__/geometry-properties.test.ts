@@ -24,7 +24,7 @@ describe('clamp — idempotent and bounded', () => {
         fc.double({ noNaN: true, noDefaultInfinity: true }),
         fc.double({ noNaN: true, noDefaultInfinity: true }),
         fc.double({ noNaN: true, noDefaultInfinity: true }),
-        (v, a, b) => {
+        (v: number, a: number, b: number) => {
           const min = Math.min(a, b);
           const max = Math.max(a, b);
           const result = clamp(v, min, max);
@@ -40,7 +40,7 @@ describe('clamp — idempotent and bounded', () => {
 describe('distance — symmetry and triangle inequality', () => {
   it('is symmetric, non-negative, and zero for identical points', () => {
     fc.assert(
-      fc.property(pointArb, pointArb, (a, b) => {
+      fc.property(pointArb, pointArb, (a: Point, b: Point) => {
         expect(distance(a, b)).toBeCloseTo(distance(b, a), 10);
         expect(distance(a, b)).toBeGreaterThanOrEqual(0);
         expect(distance(a, a)).toBe(0);
@@ -52,7 +52,7 @@ describe('distance — symmetry and triangle inequality', () => {
 describe('cumulativeLengths — monotonic non-decreasing', () => {
   it('output length matches input, starts at 0, is monotonic, and last equals totalLength', () => {
     fc.assert(
-      fc.property(polylineArb, (points) => {
+      fc.property(polylineArb, (points: Point[]) => {
         const cum = cumulativeLengths(points);
         expect(cum).toHaveLength(points.length);
         expect(cum[0]).toBe(0);
@@ -71,7 +71,7 @@ describe('resamplePolyline — output spacing invariant', () => {
       fc.property(
         polylineArb,
         fc.double({ min: 5, max: 100, noNaN: true }),
-        (points, spacing) => {
+        (points: Point[], spacing: number) => {
           const result = resamplePolyline(points, spacing);
           expect(result.length).toBeGreaterThanOrEqual(2);
           expect(result[0]).toEqual(points[0]);
@@ -90,7 +90,7 @@ describe('easeOutCubic — range and monotonicity', () => {
       fc.property(
         fc.double({ min: 0, max: 1, noNaN: true }),
         fc.double({ min: 0, max: 1, noNaN: true }),
-        (a, b) => {
+        (a: number, b: number) => {
           const t1 = Math.min(a, b);
           const t2 = Math.max(a, b);
           const r1 = easeOutCubic(t1);

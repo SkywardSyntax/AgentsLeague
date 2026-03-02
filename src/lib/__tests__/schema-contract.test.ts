@@ -139,6 +139,7 @@ describe('Schema contract stability', () => {
       expect(keys).toEqual([
         'history',
         'plannerMode',
+        'scenario',
         'sessionId',
         'userMessage',
         'whiteboardContext',

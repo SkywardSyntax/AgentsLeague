@@ -59,11 +59,11 @@ describe('LatexSvg accessibility', () => {
     render(React.createElement(LatexSvg, { tex: shortTex, displayMode: false }));
 
     const mathEl = screen.getByRole('math');
-    expect(mathEl).toHaveAttribute('aria-label', `Math: ${shortTex}`);
+    expect(mathEl).toHaveAttribute('aria-label', shortTex);
     expect(mathEl).toHaveAttribute('tabIndex', '0');
   });
 
-  it('uses generic aria-label for long TeX (>40 chars)', () => {
+  it('uses full aria-label for TeX under 80 chars', () => {
     const longTex = '\\frac{d}{dx}\\left(\\int_{a}^{x} f(t)\\,dt\\right) = f(x) + g(x)';
     expect(longTex.length).toBeGreaterThan(40);
     mockedGetCachedSvg.mockReturnValue('<svg>ok</svg>');
@@ -71,7 +71,8 @@ describe('LatexSvg accessibility', () => {
     render(React.createElement(LatexSvg, { tex: longTex, displayMode: false }));
 
     const mathEl = screen.getByRole('math');
-    expect(mathEl).toHaveAttribute('aria-label', 'Mathematical expression');
+    // Under 80 chars, the full TeX is used as aria-label
+    expect(mathEl).toHaveAttribute('aria-label', longTex);
     expect(mathEl).toHaveAttribute('title', longTex);
     expect(mathEl).toHaveAttribute('tabIndex', '0');
   });

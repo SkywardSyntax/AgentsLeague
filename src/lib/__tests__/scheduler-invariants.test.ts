@@ -26,23 +26,20 @@ describe('scheduler invariants', () => {
     expect(active!.length).toBe(0);
   });
 
-  it('single-point stroke gets min clamp and no crash', () => {
-    const [active] = createActiveBatch(
+  it('single-point stroke gets filtered out (needs >= 2 points)', () => {
+    const batch = createActiveBatch(
       [{ id: 's', elementId: 'e', points: [{ x: 0, y: 0 }], color: '#000', baseWidth: 1 }],
       0,
     );
-    expect(active!.durationMs).toBe(220);
-    expect(active!.length).toBe(0);
-    expect(active!.cumulativeLengths.length).toBeLessThanOrEqual(1);
+    expect(batch).toEqual([]);
   });
 
-  it('empty points array gets min clamp and no crash', () => {
-    const [active] = createActiveBatch(
+  it('empty points array gets filtered out (needs >= 2 points)', () => {
+    const batch = createActiveBatch(
       [{ id: 's', elementId: 'e', points: [], color: '#000', baseWidth: 1 }],
       0,
     );
-    expect(active!.durationMs).toBe(220);
-    expect(active!.length).toBe(0);
+    expect(batch).toEqual([]);
   });
 
   it('very long stroke (10000px) gets max clamp', () => {

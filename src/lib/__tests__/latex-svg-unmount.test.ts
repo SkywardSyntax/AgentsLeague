@@ -14,6 +14,7 @@ vi.mock('@/lib/latex/mathjax-client', () => ({
         rejectRender = reject;
       }),
   ),
+  getCachedSvg: vi.fn(() => undefined),
 }));
 
 vi.mock('@/lib/latex/tex-normalize', () => ({

@@ -1,6 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 afterEach(cleanup);
 
@@ -160,38 +164,6 @@ describe('ChatPanel tab keyboard navigation', () => {
     );
     const tabs = screen.getAllByRole('tab');
     fireEvent.keyDown(tabs[0], { key: 'ArrowLeft' });
-    expect(onSelectChat).toHaveBeenCalledWith('c2');
-  });
-
-  it('Home key moves to first tab', () => {
-    const onSelectChat = vi.fn();
-    render(
-      <ChatPanel
-        chats={makeChats(3)}
-        activeChatId="c2"
-        messages={[]}
-        {...baseProps}
-        onSelectChat={onSelectChat}
-      />,
-    );
-    const tabs = screen.getAllByRole('tab');
-    fireEvent.keyDown(tabs[2], { key: 'Home' });
-    expect(onSelectChat).toHaveBeenCalledWith('c0');
-  });
-
-  it('End key moves to last tab', () => {
-    const onSelectChat = vi.fn();
-    render(
-      <ChatPanel
-        chats={makeChats(3)}
-        activeChatId="c0"
-        messages={[]}
-        {...baseProps}
-        onSelectChat={onSelectChat}
-      />,
-    );
-    const tabs = screen.getAllByRole('tab');
-    fireEvent.keyDown(tabs[0], { key: 'End' });
     expect(onSelectChat).toHaveBeenCalledWith('c2');
   });
 

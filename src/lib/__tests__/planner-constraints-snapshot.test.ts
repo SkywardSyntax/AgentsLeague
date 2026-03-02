@@ -48,7 +48,7 @@ describe('enforceDrawBatchConstraints snapshot', () => {
           "text": "Third stacked label",
           "type": "text",
           "x": 100,
-          "y": 273.25,
+          "y": 273.24999999999994,
         },
         {
           "displayMode": false,
@@ -56,7 +56,7 @@ describe('enforceDrawBatchConstraints snapshot', () => {
           "tex": "x^2+1",
           "type": "latex",
           "x": 100,
-          "y": 316.65,
+          "y": 316.6499999999999,
         },
         {
           "from": {

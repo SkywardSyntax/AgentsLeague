@@ -5,12 +5,30 @@ describe('Public API surface — schema', () => {
     const mod = await import('@/lib/schema');
     expect(Object.keys(mod).sort()).toMatchInlineSnapshot(`
       [
+        "AgentSSEEventSchema",
         "AgentStreamRequestSchema",
+        "BLOCK_KINDS",
+        "CAPTION_ANCHORS",
+        "CAPTION_REGION_HINTS",
+        "DRAW_ELEMENT_TYPES",
         "DrawBatchSchema",
         "DrawElementSchema",
+        "EQUATION_ALIGN",
+        "EQUATION_ROLES",
+        "INTENTS",
+        "LATEX_ALIGN",
+        "PANEL_REGION_HINTS",
+        "PANEL_SHAPE_TYPES",
+        "REGION_HINTS",
+        "RELATION_TYPES",
+        "STYLE_PRESETS",
         "SemanticBatchSchema",
+        "StructuredWhiteboardContextSchema",
+        "TEMPLATES",
+        "isEnumMember",
         "normalizeDrawBatchPayload",
         "normalizeSemanticBatchPayload",
+        "validateSSEEvent",
       ]
     `);
   });
@@ -33,12 +51,21 @@ describe('Public API surface — geometry + stroke-scheduler', () => {
       [
         "MAX_SCREEN_STROKE_PX",
         "MIN_SCREEN_STROKE_PX",
+        "assertFinitePoints",
+        "bezierChainLength",
+        "bezierLength",
+        "bezierPointAt",
+        "bezierPointAtArcLength",
+        "boundsOfElement",
+        "catmullRomToBezier",
         "clamp",
+        "computeFitCamera",
         "cumulativeLengths",
         "distance",
         "partialPolylineByLength",
         "resamplePolyline",
         "screenStrokePx",
+        "strokesBoundingBox",
         "totalLength",
       ]
     `);
@@ -46,10 +73,21 @@ describe('Public API surface — geometry + stroke-scheduler', () => {
     const sched = await import('@/lib/whiteboard/stroke-scheduler');
     expect(Object.keys(sched).sort()).toMatchInlineSnapshot(`
       [
+        "EASING_MAP",
+        "MAX_TOTAL_STAGGER_MS",
         "STROKE_SPEED_PX_PER_SECOND",
+        "cornerSpeedFactors",
         "createActiveBatch",
+        "createStaggeredBatch",
+        "defaultClock",
+        "easeInOutCubic",
+        "easeInOutQuad",
         "easeOutCubic",
+        "easeOutQuart",
+        "prefersReducedMotion",
+        "staggeredStartTimes",
         "strokeDurationMs",
+        "weightedVisibleLength",
       ]
     `);
   });
@@ -79,12 +117,18 @@ describe('Public API surface — planner + stream-overlay + layout-spacing', () 
     const planner = await import('@/lib/whiteboard/planner/index');
     expect(Object.keys(planner).sort()).toMatchInlineSnapshot(`
       [
+        "BoundsCache",
+        "DEFAULT_MAX_LOWERED_ELEMENTS",
         "DEFAULT_PLANNER_CONFIG",
+        "boundsOf",
         "buildStructuredWhiteboardContext",
+        "createPlannerTrace",
         "enforceDrawBatchConstraints",
         "extendStructuredWhiteboardContext",
+        "formatPlannerTrace",
         "fromLegacyDrawBatchToSemanticStub",
         "lowerPlannedLayoutToDrawBatch",
+        "measureBlock",
         "planSemanticBatch",
       ]
     `);
@@ -154,6 +198,8 @@ describe('Public API surface — persistence + mode + useAgentStream', () => {
     const hook = await import('@/hooks/useAgentStream');
     expect(Object.keys(hook).sort()).toMatchInlineSnapshot(`
       [
+        "parseSSEBuffer",
+        "parseSSEFrames",
         "useAgentStream",
       ]
     `);

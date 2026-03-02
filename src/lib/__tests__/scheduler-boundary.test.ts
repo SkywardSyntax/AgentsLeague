@@ -34,14 +34,12 @@ describe('createActiveBatch edge cases', () => {
     expect(result).toEqual([]);
   });
 
-  it('handles single-point stroke (length 0)', () => {
+  it('handles single-point stroke (filtered out, needs >= 2 points)', () => {
     const result = createActiveBatch(
       [{ id: 's1', elementId: 'e1', color: '#000', baseWidth: 1, points: [{ x: 5, y: 5 }] }],
       1000,
     );
-    expect(result[0]!.length).toBe(0);
-    expect(result[0]!.durationMs).toBe(220);
-    expect(result[0]!.cumulativeLengths).toEqual([0]);
+    expect(result).toEqual([]);
   });
 });
 

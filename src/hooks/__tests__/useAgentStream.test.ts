@@ -31,6 +31,7 @@ function makeArgs(overrides: Partial<StreamHandlers> = {}) {
       onEvent: overrides.onEvent ?? vi.fn(),
       onError: overrides.onError ?? vi.fn(),
     } satisfies StreamHandlers,
+    maxRetries: 0,
   };
 }
 
@@ -59,6 +60,7 @@ function baseArgs(handlers: { onEvent: (e: unknown) => void; onError: (msg: stri
     userMessage: 'hello',
     history: [],
     handlers,
+    maxRetries: 0,
   };
 }
 
@@ -387,6 +389,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -412,6 +415,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -431,6 +435,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -453,6 +458,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -479,6 +485,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -505,6 +512,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -530,6 +538,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -552,6 +561,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'hello',
         history: [],
         handlers: { onEvent, onError },
+        maxRetries: 0,
       }),
     );
 
@@ -571,6 +581,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'fail',
         history: [],
         handlers: { onEvent: onEvent1, onError: onError1 },
+        maxRetries: 0,
       }),
     );
     expect(onError1).toHaveBeenCalledWith('Network down');
@@ -588,6 +599,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'retry',
         history: [],
         handlers: { onEvent: onEvent2, onError: onError2 },
+        maxRetries: 0,
       }),
     );
 
@@ -608,6 +620,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'aborted',
         history: [],
         handlers: { onEvent: onEvent1, onError: onError1 },
+        maxRetries: 0,
       }),
     );
     expect(onError1).not.toHaveBeenCalled();
@@ -625,6 +638,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         userMessage: 'retry',
         history: [],
         handlers: { onEvent: onEvent2, onError: onError2 },
+        maxRetries: 0,
       }),
     );
 

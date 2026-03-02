@@ -158,7 +158,6 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
-  }, []);
 
   const resizeCanvases = useCallback(() => {
     const container = containerRef.current;

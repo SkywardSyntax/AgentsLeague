@@ -121,7 +121,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   if (isMockMode()) {
     const result = await parseRequestJson(request, requestId);
     if (result instanceof Response) return result;
-    const body = result.json as { userMessage?: string; passthroughBatch?: Record<string, unknown>; passthroughError?: string };
+    const body = result.json as { userMessage?: string; scenario?: string; passthroughBatch?: Record<string, unknown>; passthroughError?: string };
     log.info('mock_stream_request');
     if (isPassthroughMode() || body.passthroughBatch || body.passthroughError) {
       return passthroughAgentStream({
@@ -130,7 +130,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
         passthroughError: body.passthroughError,
       });
     }
-    return mockAgentStream({ userMessage: body.userMessage ?? '' });
+    return mockAgentStream({ userMessage: body.userMessage ?? '', scenario: body.scenario as import('./__mocks__/mock-stream').MockScenario | undefined });
   }
 
   const result = await parseRequestJson(request, requestId);

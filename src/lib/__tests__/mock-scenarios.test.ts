@@ -8,7 +8,7 @@ async function importRoute() {
 function makeRequest(body: Record<string, unknown>): Request {
   return new Request('http://localhost/api/agent/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'mock-test-session' },
     body: JSON.stringify(body),
   });
 }

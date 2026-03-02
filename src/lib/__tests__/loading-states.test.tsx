@@ -4,6 +4,7 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 // Mock mathjax-client before importing LatexSvg
 vi.mock('@/lib/latex/mathjax-client', () => ({
   renderTexToSvg: vi.fn(),
+  getCachedSvg: vi.fn().mockReturnValue(undefined),
 }));
 
 import { LatexSvg } from '@/components/chat/LatexSvg';
@@ -117,7 +118,7 @@ describe('LatexSvg loading states', () => {
     // Loading state renders a pulsing span placeholder (no role="img", no error)
     const placeholder = container.querySelector('.animate-pulse');
     expect(placeholder).toBeTruthy();
-    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.queryByRole('math')).toBeNull();
   });
 
   it('transitions from loading placeholder to rendered SVG', async () => {
@@ -132,7 +133,7 @@ describe('LatexSvg loading states', () => {
 
     // Initially in loading state
     expect(container.querySelector('.animate-pulse')).toBeTruthy();
-    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.queryByRole('math')).toBeNull();
 
     // Resolve the render
     await act(async () => {
@@ -140,7 +141,7 @@ describe('LatexSvg loading states', () => {
     });
 
     // Now the SVG should be visible and placeholder gone
-    expect(screen.getByRole('img')).toBeTruthy();
+    expect(screen.getByRole('math')).toBeTruthy();
     expect(container.querySelector('.animate-pulse')).toBeNull();
   });
 });

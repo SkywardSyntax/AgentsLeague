@@ -46,7 +46,7 @@ describe('WhiteboardCanvas accessibility', () => {
     expect(screen.getByRole('button', { name: 'Reset view' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Zoom out' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Debug options' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Fit to content' })).toBeTruthy();
   });
 
   it('zoom display has aria-live="polite" region', () => {

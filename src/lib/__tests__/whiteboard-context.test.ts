@@ -66,9 +66,10 @@ describe('buildWhiteboardContext', () => {
     const latex = makeLatex({ displayMode: true, fontSize: 20 });
     const ctx = buildWhiteboardContext([latex]);
     expect(ctx.bounds).toBeDefined();
-    // height = fontSize * 2.1 = 42
-    const expectedMaxY = latex.y + 20 * 2.1;
-    expect(ctx.bounds!.maxY).toBeCloseTo(expectedMaxY, 5);
+    // boundsOf uses regex-based complexity sizing; for E=mc^2 with ^ (scriptCount=1)
+    // complexity = 1 + 0.04 = 1.04; baseHeight = 20*1.95 = 39; height = max(43, 39*1.04) = 43
+    // maxY = 60 + 43 = 103
+    expect(ctx.bounds!.maxY).toBeCloseTo(103, 5);
   });
 });
 

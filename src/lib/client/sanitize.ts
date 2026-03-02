@@ -35,7 +35,7 @@ const RectSchema = z.object({
   y: z.number(),
   w: z.number(),
   h: z.number(),
-});
+}).passthrough();
 
 const EllipseSchema = z.object({
   ...BaseFields,
@@ -44,21 +44,21 @@ const EllipseSchema = z.object({
   cy: z.number(),
   rx: z.number(),
   ry: z.number(),
-});
+}).passthrough();
 
 const LineSchema = z.object({
   ...BaseFields,
   type: z.literal('line'),
   from: PointSchema,
   to: PointSchema,
-});
+}).passthrough();
 
 const ArrowSchema = z.object({
   ...BaseFields,
   type: z.literal('arrow'),
   from: PointSchema,
   to: PointSchema,
-});
+}).passthrough();
 
 const TextSchema = z.object({
   ...BaseFields,
@@ -67,7 +67,7 @@ const TextSchema = z.object({
   y: z.number(),
   text: z.string(),
   size: z.number().optional(),
-});
+}).passthrough();
 
 const LatexSchema = z.object({
   ...BaseFields,
@@ -78,12 +78,12 @@ const LatexSchema = z.object({
   displayMode: z.boolean().optional(),
   fontSize: z.number().optional(),
   align: z.enum(['left', 'center', 'right']).optional(),
-});
+}).passthrough();
 
 const ClearSchema = z.object({
   ...BaseFields,
   type: z.literal('clear'),
-});
+}).passthrough();
 
 const DrawElementSchema = z.discriminatedUnion('type', [
   RectSchema,

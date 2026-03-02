@@ -74,7 +74,7 @@ describe('LatexSvg error recovery', () => {
     expect(code!.textContent).toContain('x^2');
   });
 
-  it('shows "Rendering…" while async render is in progress', async () => {
+  it('shows animated placeholder while async render is in progress', async () => {
     // Never-resolving promise
     renderTexToSvgMock.mockReturnValue(new Promise<string>(() => {}));
 
@@ -84,7 +84,9 @@ describe('LatexSvg error recovery', () => {
       container = result.container;
     });
 
-    expect(container!.textContent).toContain('Rendering…');
+    // Component shows a pulsing placeholder span while loading
+    const placeholder = container!.querySelector('.animate-pulse');
+    expect(placeholder).not.toBeNull();
   });
 
   it('recovers from error to success on prop change', async () => {

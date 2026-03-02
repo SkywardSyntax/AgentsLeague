@@ -5,7 +5,7 @@ import { parseTextScripts } from '../latex/text-scripts';
 describe('parseTextScripts — property-based', () => {
   it('non-empty input produces non-empty output', () => {
     fc.assert(
-      fc.property(fc.string({ minLength: 1, maxLength: 100 }), (input) => {
+      fc.property(fc.string({ minLength: 1, maxLength: 100 }), (input: string) => {
         const tokens = parseTextScripts(input);
         expect(tokens.length).toBeGreaterThan(0);
       }),
@@ -18,7 +18,7 @@ describe('parseTextScripts — property-based', () => {
 
   it('token kinds are always valid', () => {
     fc.assert(
-      fc.property(fc.string({ minLength: 1, maxLength: 100 }), (input) => {
+      fc.property(fc.string({ minLength: 1, maxLength: 100 }), (input: string) => {
         const tokens = parseTextScripts(input);
         for (const t of tokens) {
           expect(['text', 'sup', 'sub']).toContain(t.kind);
@@ -33,10 +33,10 @@ describe('parseTextScripts — property-based', () => {
         fc.constantFrom('x', 'y', '^', '_', '{2}', '\\^', '\\_', 'abc'),
         { minLength: 1, maxLength: 20 },
       )
-      .map((parts) => parts.join(''));
+      .map((parts: string[]) => parts.join(''));
 
     fc.assert(
-      fc.property(structuredArb, (input) => {
+      fc.property(structuredArb, (input: string) => {
         const tokens = parseTextScripts(input);
         for (const t of tokens) {
           expect(t.value.length).toBeGreaterThan(0);

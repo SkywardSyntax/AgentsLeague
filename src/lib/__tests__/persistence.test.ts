@@ -699,7 +699,7 @@ describe('persistence (lane-07)', () => {
   });
 
   describe('loadSession with corrupted inner data (typed array validation)', () => {
-    it('returns session with empty semanticScene when it contains non-objects', () => {
+    it('returns null when semanticScene contains non-objects', () => {
       const data = {
         version: 3,
         updatedAt: 1000,
@@ -720,11 +720,10 @@ describe('persistence (lane-07)', () => {
       };
       store[STORAGE_KEY] = JSON.stringify(data);
       const loaded = loadSession();
-      expect(loaded).not.toBeNull();
-      expect(loaded!.chats[0].semanticScene).toEqual([]);
+      expect(loaded).toBeNull();
     });
 
-    it('returns session with empty scene when elements lack required id/type', () => {
+    it('returns null when scene elements lack required id/type', () => {
       const data = {
         version: 3,
         updatedAt: 1000,
@@ -745,8 +744,7 @@ describe('persistence (lane-07)', () => {
       };
       store[STORAGE_KEY] = JSON.stringify(data);
       const loaded = loadSession();
-      expect(loaded).not.toBeNull();
-      expect(loaded!.chats[0].scene).toEqual([]);
+      expect(loaded).toBeNull();
     });
 
     it('returns null for completely invalid JSON in localStorage', () => {
@@ -767,8 +765,8 @@ describe('persistence (lane-07)', () => {
             createdAt: 1000,
             updatedAt: 1000,
             messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1000 }],
-            semanticScene: [{ batch_id: 'b1', template: 'freeform', extra_field: true }],
-            scene: [{ id: 'e1', type: 'rect', x: 0, y: 0, custom: 'data' }],
+            semanticScene: [{ batch_id: 'b1', template: 'freeform', blocks: [], extra_field: true }],
+            scene: [{ id: 'e1', type: 'rect', x: 0, y: 0, w: 100, h: 50, custom: 'data' }],
             plannerMeta: [{ batchId: 'b1', rows: 3 }],
           },
         ],
@@ -786,7 +784,7 @@ describe('persistence (lane-07)', () => {
       expect(loaded!.chats[0].plannerMeta[0]).toHaveProperty('rows', 3);
     });
 
-    it('returns session with empty plannerMeta when it contains null entries', () => {
+    it('returns null when plannerMeta contains non-object entries', () => {
       const data = {
         version: 3,
         updatedAt: 1000,
@@ -807,8 +805,7 @@ describe('persistence (lane-07)', () => {
       };
       store[STORAGE_KEY] = JSON.stringify(data);
       const loaded = loadSession();
-      expect(loaded).not.toBeNull();
-      expect(loaded!.chats[0].plannerMeta).toEqual([]);
+      expect(loaded).toBeNull();
     });
 
     it('V2 migration produces valid V3 with typed arrays', () => {
@@ -847,12 +844,12 @@ describe('persistence (lane-07)', () => {
       vi.stubGlobal('localStorage', localStorageMock);
 
       const session = makeV3SessionLane07();
-      expect(() => saveSession(session)).toThrow();
+      expect(() => saveSession(session)).not.toThrow();
 
       localStorageMock.setItem = origSetItem;
     });
 
-    it('loadSession propagates error when localStorage.getItem throws (unguarded path)', () => {
+    it('loadSession returns null when localStorage.getItem throws', () => {
       const origGetItem = localStorageMock.getItem;
       try {
         localStorageMock.getItem = vi.fn(() => {
@@ -860,7 +857,7 @@ describe('persistence (lane-07)', () => {
         });
         vi.stubGlobal('localStorage', localStorageMock);
 
-        expect(() => loadSession()).toThrow('SecurityError');
+        expect(loadSession()).toBeNull();
       } finally {
         localStorageMock.getItem = origGetItem;
         vi.stubGlobal('localStorage', localStorageMock);

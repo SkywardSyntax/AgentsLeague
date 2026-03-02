@@ -246,28 +246,26 @@ describe('persistence schema validation', () => {
   });
 
   describe('silent data loss prevention', () => {
-    it('returns null without deleting localStorage when no schema matches', () => {
+    it('returns null and cleans up localStorage when no schema matches', () => {
       store['agentsleague:session:v1'] = JSON.stringify({ version: 99, bogus: true });
       const result = loadSession();
       expect(result).toBeNull();
-      expect(localStorageMock.removeItem).not.toHaveBeenCalled();
-      expect(store['agentsleague:session:v1']).toBeDefined();
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('agentsleague:session:v1');
     });
 
-    it('returns null without deleting localStorage on malformed JSON', () => {
+    it('returns null and cleans up localStorage on malformed JSON', () => {
       store['agentsleague:session:v1'] = '{not valid json!!!';
       const result = loadSession();
       expect(result).toBeNull();
-      expect(localStorageMock.removeItem).not.toHaveBeenCalled();
-      expect(store['agentsleague:session:v1']).toBeDefined();
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('agentsleague:session:v1');
     });
 
-    it('returns null without deleting localStorage when schema fields are wrong types', () => {
+    it('returns null and cleans up localStorage when schema fields are wrong types', () => {
       const chat = validChat({ semanticScene: [{ batch_id: 123 }] });
       store['agentsleague:session:v1'] = JSON.stringify(validV3({ chats: [chat] }));
       const result = loadSession();
       expect(result).toBeNull();
-      expect(localStorageMock.removeItem).not.toHaveBeenCalled();
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('agentsleague:session:v1');
     });
   });
 

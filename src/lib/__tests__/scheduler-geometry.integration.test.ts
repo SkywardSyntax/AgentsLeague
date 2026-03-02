@@ -125,7 +125,7 @@ describe('scheduler ↔ geometry integration', () => {
     }
   });
 
-  it('empty stroke: no NaN, no Infinity, no division-by-zero', () => {
+  it('empty stroke: filtered out by createActiveBatch (needs >= 2 points)', () => {
     const emptyStroke: StrokeTrajectory = {
       id: 'empty',
       elementId: 'empty-el',
@@ -134,14 +134,10 @@ describe('scheduler ↔ geometry integration', () => {
       baseWidth: 1,
     };
     const batch = createActiveBatch([emptyStroke], 0);
-    const active = batch[0]!;
-
-    expect(active.length).toBe(0);
-    expect(active.cumulativeLengths).toEqual([]);
-    expect(Number.isFinite(active.durationMs)).toBe(true);
+    expect(batch).toEqual([]);
   });
 
-  it('single-point stroke: no NaN, stable pipeline', () => {
+  it('single-point stroke: filtered out by createActiveBatch (needs >= 2 points)', () => {
     const singlePoint: StrokeTrajectory = {
       id: 'single',
       elementId: 'single-el',
@@ -150,18 +146,7 @@ describe('scheduler ↔ geometry integration', () => {
       baseWidth: 1,
     };
     const batch = createActiveBatch([singlePoint], 0);
-    const active = batch[0]!;
-
-    expect(active.length).toBe(0);
-    expect(active.cumulativeLengths).toEqual([0]);
-
-    // partialPolylineByLength should return the single point
-    const partial = partialPolylineByLength(
-      active.points,
-      active.cumulativeLengths,
-      0,
-    );
-    expect(partial).toEqual([{ x: 5, y: 10 }]);
+    expect(batch).toEqual([]);
   });
 
   it('post-shift stability: shifted strokes maintain length consistency', () => {

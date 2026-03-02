@@ -8,7 +8,7 @@ import type {
   WhiteboardContext,
 } from '@/types/agent';
 import { validateSSEEvent, type ValidatedAgentSSEEvent } from '@/lib/schema';
-import { parseSSEBuffer } from './sse-parser';
+
 
 export interface StreamHandlers {
   onEvent: (event: ValidatedAgentSSEEvent) => void;
@@ -245,6 +245,9 @@ export function useAgentStream() {
                     }
                     return;
                   }
+                  if (mountedRef.current && gen === generationRef.current) {
+                    handlersRef.current?.onError('Invalid SSE JSON payload received');
+                  }
                 }
               }
             }
@@ -295,7 +298,7 @@ export function useAgentStream() {
             }
             continue;
           }
-          if (mountedRef.current) {
+          if (mountedRef.current && gen === generationRef.current) {
             handlersRef.current?.onError(caughtError instanceof Error ? caughtError.message : 'Stream aborted unexpectedly');
           }
           return;

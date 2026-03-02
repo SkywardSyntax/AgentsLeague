@@ -30,7 +30,7 @@ vi.mock('@/lib/server/openai', () => ({
 function makeRequest(body: Record<string, unknown>): Request {
   return new Request('http://localhost/api/agent/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Session-Id': body.sessionId as string ?? 'test-session' },
     body: JSON.stringify(body),
   });
 }

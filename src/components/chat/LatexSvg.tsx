@@ -106,6 +106,7 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const cached = getCachedSvg(tex, displayMode);
 
   // Promote to most-recently-used on access (Map preserves insertion order)
+  const cacheKey = `${displayMode ? 'D' : 'I'}:${tex}`;
   if (cached) {
     svgCache.delete(cacheKey);
     svgCache.set(cacheKey, cached);

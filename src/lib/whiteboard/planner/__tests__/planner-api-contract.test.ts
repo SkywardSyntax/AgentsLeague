@@ -65,7 +65,7 @@ describe('Lane 02 — Planner API Contract', () => {
         "canvasHeight": 1200,
         "canvasWidth": 1600,
         "margin": 24,
-        "maxRepairIterations": 3,
+        "maxRepairIterations": 6,
         "maxScaleDownPerBlock": 0.15,
         "minLabelGap": 10,
         "minTextGap": 14,

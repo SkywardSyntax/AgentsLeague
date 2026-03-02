@@ -85,14 +85,14 @@ describe('arrowHeadPoints', () => {
     }
   });
 
-  it('head length is proportional to shaft length clamped to [8, 24]', () => {
+  it('head length is fixed at 14', () => {
     const short = { type: 'arrow' as const, id: 'a3', from: { x: 0, y: 0 }, to: { x: 10, y: 0 } };
     const shortWings = arrowHeadPoints(short);
     const shortHeadLen = Math.hypot(
       shortWings[0]![0]!.x - short.to.x,
       shortWings[0]![0]!.y - short.to.y,
     );
-    expect(shortHeadLen).toBeCloseTo(8, 1); // min clamp
+    expect(shortHeadLen).toBeCloseTo(14, 1);
 
     const long = { type: 'arrow' as const, id: 'a4', from: { x: 0, y: 0 }, to: { x: 500, y: 0 } };
     const longWings = arrowHeadPoints(long);
@@ -100,7 +100,7 @@ describe('arrowHeadPoints', () => {
       longWings[0]![0]!.x - long.to.x,
       longWings[0]![0]!.y - long.to.y,
     );
-    expect(longHeadLen).toBeCloseTo(24, 1); // max clamp
+    expect(longHeadLen).toBeCloseTo(14, 1);
   });
 });
 

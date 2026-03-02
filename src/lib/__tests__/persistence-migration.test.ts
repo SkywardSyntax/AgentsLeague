@@ -110,7 +110,7 @@ describe('loadSession — typed schema validation', () => {
     vi.clearAllMocks();
   });
 
-  it('filters out scene elements missing the type field', () => {
+  it('rejects session when scene contains elements missing the type field', () => {
     const session = makeV3Session();
     session.chats[0].scene = [
       { type: 'rect', id: 'r1', x: 0, y: 0, w: 50, h: 50 } as any,
@@ -118,9 +118,7 @@ describe('loadSession — typed schema validation', () => {
     ];
     saveSession(session);
     const loaded = loadSession();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.chats[0].scene).toHaveLength(1);
-    expect(loaded!.chats[0].scene[0].id).toBe('r1');
+    expect(loaded).toBeNull();
   });
 
   it('loads valid session with properly typed scene elements', () => {
@@ -135,7 +133,7 @@ describe('loadSession — typed schema validation', () => {
     expect(loaded!.chats[0].scene).toHaveLength(2);
   });
 
-  it('filters invalid elements from semanticScene while keeping valid ones', () => {
+  it('rejects session when semanticScene contains invalid elements', () => {
     const session = makeV3Session();
     session.chats[0].semanticScene = [
       {
@@ -146,12 +144,10 @@ describe('loadSession — typed schema validation', () => {
     ];
     saveSession(session);
     const loaded = loadSession();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.chats[0].semanticScene).toHaveLength(1);
-    expect(loaded!.chats[0].semanticScene[0].batch_id).toBe('b1');
+    expect(loaded).toBeNull();
   });
 
-  it('V2 migration preserves valid scene elements through typed schema', () => {
+  it('rejects V2 data when scene contains invalid elements', () => {
     const v2Data = {
       version: 2,
       updatedAt: 1000,
@@ -168,9 +164,7 @@ describe('loadSession — typed schema validation', () => {
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(v2Data));
     const loaded = loadSession();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.chats[0].scene).toHaveLength(1);
-    expect(loaded!.chats[0].scene[0].type).toBe('rect');
+    expect(loaded).toBeNull();
   });
 });
 
@@ -302,6 +296,6 @@ describe('persistence migration — createLocalId and importedLegacySemanticBatc
     expect(result).not.toBeNull();
     const batch = result!.chats[0]!.semanticScene[0]!;
     expect(batch.intent).toBe('summarize');
-    expect(batch.blocks[0]!.region_hint).toBe('bottom');
+    expect((batch.blocks[0]! as any).region_hint).toBe('bottom');
   });
 });
