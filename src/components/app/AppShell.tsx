@@ -407,7 +407,7 @@ export function AppShell() {
           messageCount: chat.messages.length,
         };
       }),
-    [chatStore],
+    [chatStore.chatOrder, chatStore.chats],
   );
 
   const warningsUI = useMemo(

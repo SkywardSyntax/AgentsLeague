@@ -559,6 +559,96 @@ describe('chatSessionReducer', () => {
     });
   });
 
+  describe('concurrent dispatch isolation', () => {
+    it('dispatches to chat A do not cross-contaminate chat B', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: chat1.id, delta: 'hello from A' });
+      const newChat = createEmptyChatSession(3);
+      s = chatSessionReducer(s, { type: 'CREATE_CHAT', chat: newChat });
+      expect(s.chats[newChat.id]!.messages).toHaveLength(0);
+      expect(s.chats[chat1.id]!.messages).toHaveLength(1);
+      expect(s.chats[chat1.id]!.messages[0]!.content).toBe('hello from A');
+      expect(s.chats[chat2.id]!.messages).toHaveLength(0);
+    });
+  });
+
+  describe('rapid chat switch during stream', () => {
+    it('delta targets streamChatId, not the selected chat', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      expect(s.turn.streamChatId).toBe(chat1.id);
+      // Simulate selecting chat B while stream targets chat A
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: chat1.id, delta: 'streamed to A' });
+      expect(s.chats[chat1.id]!.messages).toHaveLength(1);
+      expect(s.chats[chat1.id]!.messages[0]!.content).toBe('streamed to A');
+      expect(s.chats[chat2.id]!.messages).toHaveLength(0);
+    });
+  });
+
+  describe('reference identity preservation', () => {
+    it('chatOrder reference is unchanged on turn-only changes', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const chat3 = createEmptyChatSession(3);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id, chat3.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2, [chat3.id]: chat3 },
+        turn: createInitialTurn(),
+      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      const orderRef = s.chatOrder;
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: chat1.id, delta: 'hi' });
+      expect(s.chatOrder).toBe(orderRef);
+      s = chatSessionReducer(s, { type: 'TURN_DONE', chatId: chat1.id });
+      expect(s.chatOrder).toBe(orderRef);
+    });
+
+    it('chats reference is preserved when only turn state changes via TURN_START', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const chatsRef = store.chats;
+      // TURN_START only modifies turn, not chats
+      const s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      expect(s.chats).toBe(chatsRef);
+    });
+
+    it('chats reference changes when a chat is modified', () => {
+      const store = makeStore();
+      const id = chatId(store);
+      const chatsRef = store.chats;
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: id });
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: id, delta: 'hello' });
+      expect(s.chats).not.toBe(chatsRef);
+    });
+
+    it('unrelated chat references are preserved when another chat is modified', () => {
+      const chat1 = createEmptyChatSession(1);
+      const chat2 = createEmptyChatSession(2);
+      const store: ChatStore = {
+        chatOrder: [chat1.id, chat2.id],
+        chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
+        turn: createInitialTurn(),
+      };
+      let s = chatSessionReducer(store, { type: 'TURN_START', chatId: chat1.id });
+      const chat2Ref = s.chats[chat2.id];
+      s = chatSessionReducer(s, { type: 'APPEND_ASSISTANT_DELTA', chatId: chat1.id, delta: 'delta' });
+      expect(s.chats[chat2.id]).toBe(chat2Ref);
+    });
+  });
+
   describe('warnings eviction order', () => {
     it('evicts oldest warnings when exceeding cap of 8', () => {
       const store = makeStore();
