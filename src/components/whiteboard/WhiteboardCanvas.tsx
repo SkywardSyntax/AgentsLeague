@@ -1,690 +1,335 @@
 'use client';
 
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ActiveStroke, DrawBatch, StrokeTrajectory } from '@/types/agent';
+import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
+import { createActiveBatch, easeOutCubic } from '@/lib/whiteboard/stroke-scheduler';
+import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
-} from 'react';
-import { useCanvasRefs } from '@/hooks/canvas/useCanvasRefs';
-import { useRenderer } from '@/hooks/canvas/useRenderer';
-import { useSelection } from '@/hooks/canvas/useSelection';
-import { useUndoRedo } from '@/hooks/canvas/useUndoRedo';
-import { useStreamingDraw } from '@/hooks/canvas/useStreamingDraw';
-import { useWhiteboard } from '@/stores/whiteboard-store';
-import { useDrawingSessionStore } from '@/stores/drawing-session';
-import { useTheme } from '@/hooks/useTheme';
-import { GestureHandler } from '@/lib/gestures/GestureHandler';
-import {
-  SkeletonRenderer,
-  type SkeletonConfig,
-} from '@/lib/performance/SkeletonRenderer';
-import type { Camera, DrawElement, TextElement, BoundingBox } from '@/types';
+  partialPolylineByLength,
+  screenStrokePx,
+} from '@/lib/whiteboard/geometry';
 
-// ─── Props ────────────────────────────────────────────────
-
-export interface WhiteboardCanvasProps {
-  width?: number;
-  height?: number;
-  onElementsChange?: (els: DrawElement[]) => void;
-  /** SSE endpoint for AI draw streaming. */
-  streamEndpoint?: string;
-  /** Enable performance profiling overlay (default: false). */
-  enableProfiling?: boolean;
+interface Camera {
+  x: number;
+  y: number;
+  zoom: number;
 }
 
-// ─── Constants ────────────────────────────────────────────
-
-const ZOOM_SENSITIVITY = 0.001;
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 5.0;
-const PERF_LOG_INTERVAL_MS = 10_000;
-
-// ─── Helpers ──────────────────────────────────────────────
-
-function clampZoom(zoom: number): number {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+interface WhiteboardCanvasProps {
+  batches: DrawBatch[];
+  onWarning: (warning: string) => void;
 }
 
-function getTextElements(elements: Map<string, DrawElement>): TextElement[] {
-  const texts: TextElement[] = [];
-  for (const el of elements.values()) {
-    if (el.type === 'text') texts.push(el);
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
+
+function clamp(v: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, v));
+}
+
+function drawStroke(
+  ctx: CanvasRenderingContext2D,
+  points: StrokeTrajectory['points'],
+  color: string,
+  baseWidth: number,
+  camera: Camera,
+  dpr: number,
+) {
+  if (points.length < 2) return;
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const n = points.length - 1;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const t = i / n;
+
+    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
+    const worldWidth = baseWidth * widthMod;
+    const px = screenStrokePx(worldWidth, camera.zoom, dpr);
+    const worldLineWidth = px / (camera.zoom * dpr);
+
+    ctx.lineWidth = worldLineWidth;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
   }
-  return texts;
 }
 
-// ─── Component ────────────────────────────────────────────
-
-export default function WhiteboardCanvas({
-  width,
-  height,
-  onElementsChange,
-  streamEndpoint,
-  enableProfiling = false,
-}: WhiteboardCanvasProps) {
+export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const bgRef = useRef<HTMLCanvasElement>(null);
+  const committedRef = useRef<HTMLCanvasElement>(null);
+  const activeRef = useRef<HTMLCanvasElement>(null);
+
+  const committedStrokesRef = useRef<StrokeTrajectory[]>([]);
+  const activeStrokesRef = useRef<ActiveStroke[]>([]);
+
+  const processedBatchIdsRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number | null>(null);
-  const isDragging = useRef(false);
-  const lastPointer = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const prevElementsRef = useRef<Map<string, DrawElement>>(new Map());
-  const gestureRef = useRef<GestureHandler | null>(null);
-  const skeletonRef = useRef<SkeletonRenderer | null>(null);
-  const perfIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [dpr, setDpr] = useState(1);
+  const [size, setSize] = useState({ width: 1000, height: 700 });
+  const [camera, setCamera] = useState<Camera>({ x: 40, y: 40, zoom: 1 });
+  const [stats, setStats] = useState({ active: 0, committed: 0 });
 
-  // ── Theme ─────────────────────────────────────────────
-  const { theme } = useTheme();
+  const resizeCanvases = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const nextDpr = window.devicePixelRatio || 1;
 
-  // ── Loading state for first-draw skeleton ─────────────
-  const [isFirstDrawLoading, setIsFirstDrawLoading] = useState(false);
+    setDpr(nextDpr);
+    setSize({ width: rect.width, height: rect.height });
 
-  // ── 4-layer canvas refs with DPR scaling ──────────────
-  const {
-    bgRef,
-    contentRef,
-    activeDrawRef,
-    cursorRef,
-    dpr,
-    width: canvasWidth,
-    height: canvasHeight,
-    getActiveDrawContext,
-  } = useCanvasRefs(containerRef);
-
-  // ── Renderer bound to content layer ───────────────────
-  const { rendererRef, logPerformance } = useRenderer(contentRef);
-
-  // ── Whiteboard context store ──────────────────────────
-  const { elements, camera, setCamera, selectedIds, setSelectedIds } = useWhiteboard();
-
-  // ── Drawing session (zustand) ─────────────────────────
-  const drawingState = useDrawingSessionStore((s) => s.drawingState);
-  const _commitOps = useDrawingSessionStore((s) => s.commitOps);
-
-  // ── Selection ─────────────────────────────────────────
-  const selection = useSelection();
-
-  // Sync whiteboard selected IDs ↔ selection hook
-  useEffect(() => {
-    setSelectedIds(new Set(selection.selectedIds));
-  }, [selection.selectedIds, setSelectedIds]);
-
-  // Keep spatial index in sync with elements
-  useEffect(() => {
-    selection.updateIndex(Array.from(elements.values()));
-  }, [elements, selection]);
-
-  // ── Undo / Redo ───────────────────────────────────────
-  const undoRedo = useUndoRedo();
-
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
-      if (!isMod) return;
-
-      if (e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        undoRedo.undo();
-      } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
-        e.preventDefault();
-        undoRedo.redo();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undoRedo]);
-
-  // ── Streaming draw ────────────────────────────────────
-  const streamOpts = useMemo(() => ({
-    ...(streamEndpoint != null ? { endpoint: streamEndpoint } : {}),
-  }), [streamEndpoint]);
-
-  const [streamState] = useStreamingDraw({
-    ...streamOpts,
-    onFirstElement: () => {
-      // Dismiss skeleton when first element arrives
-      setIsFirstDrawLoading(false);
-      skeletonRef.current?.destroy();
-    },
-    onComplete: () => {
-      setIsFirstDrawLoading(false);
-    },
-    onError: () => {
-      setIsFirstDrawLoading(false);
-      skeletonRef.current?.destroy();
-    },
-  });
-
-  // Show skeleton when drawing state transitions to 'processing'
-  useEffect(() => {
-    if (drawingState.status === 'processing') {
-      setIsFirstDrawLoading(true);
-      const ctx = getActiveDrawContext();
-      if (ctx) {
-        skeletonRef.current ??= new SkeletonRenderer();
-        const bounds: BoundingBox = {
-          x: canvasWidth * 0.15,
-          y: canvasHeight * 0.15,
-          w: canvasWidth * 0.7,
-          h: canvasHeight * 0.7,
-        };
-        const config: SkeletonConfig = {
-          estimatedBounds: bounds,
-          estimatedShapeCount: 4,
-          animation: 'shimmer',
-          timeoutMs: 15_000,
-        };
-        skeletonRef.current.show(ctx, config, () => {
-          setIsFirstDrawLoading(false);
-        });
-      }
-    } else {
-      skeletonRef.current?.destroy();
-    }
-  }, [drawingState.status, getActiveDrawContext, canvasWidth, canvasHeight]);
-
-  // Cleanup skeleton on unmount
-  useEffect(() => {
-    return () => {
-      skeletonRef.current?.destroy();
-    };
+    [bgRef.current, committedRef.current, activeRef.current].forEach((canvas) => {
+      if (!canvas) return;
+      canvas.width = Math.floor(rect.width * nextDpr);
+      canvas.height = Math.floor(rect.height * nextDpr);
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+    });
   }, []);
 
-  // ── Sync elements to renderer & notify parent ─────────
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => resizeCanvases());
+    window.addEventListener('resize', resizeCanvases);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resizeCanvases);
+    };
+  }, [resizeCanvases]);
 
   useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
+    let cancelled = false;
 
-    const allElements = Array.from(elements.values());
-    renderer.upsertElements(allElements);
+    const process = async () => {
+      for (const batch of batches) {
+        if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
+        processedBatchIdsRef.current.add(batch.batch_id);
 
-    // Remove elements no longer present
-    for (const id of prevElementsRef.current.keys()) {
-      if (!elements.has(id)) {
-        renderer.removeElement(id);
+        const compiled = await compileBatchToStrokes(batch);
+        if (cancelled) return;
+
+        if (compiled.clear) {
+          committedStrokesRef.current = [];
+          activeStrokesRef.current = [];
+        }
+
+        compiled.warnings.forEach(onWarning);
+
+        if (compiled.strokes.length > 0) {
+          normalizeBatchTextSpacingAgainstScene(
+            batch,
+            compiled.strokes,
+            committedStrokesRef.current.concat(activeStrokesRef.current),
+          );
+          const active = createActiveBatch(compiled.strokes, performance.now());
+          activeStrokesRef.current.push(...active);
+        }
       }
-    }
-    prevElementsRef.current = new Map(elements);
+    };
 
-    onElementsChange?.(allElements);
-  }, [elements, rendererRef, onElementsChange]);
-
-  // ── Performance profiling ─────────────────────────────
-
-  useEffect(() => {
-    if (!enableProfiling) return;
-
-    perfIntervalRef.current = setInterval(() => {
-      logPerformance();
-    }, PERF_LOG_INTERVAL_MS);
+    void process();
 
     return () => {
-      if (perfIntervalRef.current !== null) {
-        clearInterval(perfIntervalRef.current);
-        perfIntervalRef.current = null;
-      }
+      cancelled = true;
     };
-  }, [enableProfiling, logPerformance]);
-
-  // ── RAF rendering loop ────────────────────────────────
+  }, [batches, onWarning]);
 
   useEffect(() => {
-    let running = true;
-
-    const loop = (timestamp: number) => {
-      if (!running) return;
-
-      const renderer = rendererRef.current;
-      if (renderer) {
-        if (enableProfiling) renderer.perfMonitor.tick(timestamp);
-        renderer.renderFull(camera);
+    const drawFrame = () => {
+      const bgCanvas = bgRef.current;
+      const committedCanvas = committedRef.current;
+      const activeCanvas = activeRef.current;
+      if (!bgCanvas || !committedCanvas || !activeCanvas) {
+        rafRef.current = requestAnimationFrame(drawFrame);
+        return;
       }
 
-      // Draw background grid
-      drawBackground(bgRef.current, camera, dpr, theme);
+      const bgCtx = bgCanvas.getContext('2d');
+      const committedCtx = committedCanvas.getContext('2d');
+      const activeCtx = activeCanvas.getContext('2d');
+      if (!bgCtx || !committedCtx || !activeCtx) {
+        rafRef.current = requestAnimationFrame(drawFrame);
+        return;
+      }
 
-      // Render selection highlights on cursor layer
-      drawSelectionHighlights(cursorRef.current, camera, dpr, selection.getHighlights());
+      const scale = dpr * camera.zoom;
+      const tx = camera.x * dpr;
+      const ty = camera.y * dpr;
 
-      rafRef.current = requestAnimationFrame(loop);
+      const drawGrid = () => {
+        bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+        bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+        bgCtx.fillStyle = '#f7f9fc';
+        bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+        bgCtx.setTransform(scale, 0, 0, scale, tx, ty);
+        bgCtx.strokeStyle = 'rgba(77, 93, 118, 0.16)';
+        bgCtx.lineWidth = 1 / scale;
+
+        const grid = 30;
+        const minX = -camera.x / camera.zoom - grid;
+        const minY = -camera.y / camera.zoom - grid;
+        const maxX = minX + size.width / camera.zoom + grid * 2;
+        const maxY = minY + size.height / camera.zoom + grid * 2;
+
+        for (let x = Math.floor(minX / grid) * grid; x <= maxX; x += grid) {
+          bgCtx.beginPath();
+          bgCtx.moveTo(x, minY);
+          bgCtx.lineTo(x, maxY);
+          bgCtx.stroke();
+        }
+
+        for (let y = Math.floor(minY / grid) * grid; y <= maxY; y += grid) {
+          bgCtx.beginPath();
+          bgCtx.moveTo(minX, y);
+          bgCtx.lineTo(maxX, y);
+          bgCtx.stroke();
+        }
+      };
+
+      drawGrid();
+
+      committedCtx.setTransform(1, 0, 0, 1, 0, 0);
+      committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
+      committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+
+      activeCtx.setTransform(1, 0, 0, 1, 0, 0);
+      activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
+      activeCtx.setTransform(scale, 0, 0, scale, tx, ty);
+
+      for (const stroke of committedStrokesRef.current) {
+        drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+      }
+
+      const now = performance.now();
+      const nextActive: ActiveStroke[] = [];
+      const completed: StrokeTrajectory[] = [];
+
+      for (const stroke of activeStrokesRef.current) {
+        const t = easeOutCubic((now - stroke.startedAt) / stroke.durationMs);
+        const visibleLength = stroke.length * t;
+        const partial = partialPolylineByLength(stroke.points, stroke.cumulativeLengths, visibleLength);
+
+        drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr);
+
+        if (t >= 1) {
+          completed.push(stroke);
+        } else {
+          nextActive.push(stroke);
+        }
+      }
+
+      if (completed.length > 0) {
+        committedStrokesRef.current = committedStrokesRef.current.concat(completed);
+      }
+      activeStrokesRef.current = nextActive;
+
+      const nextStats = {
+        active: activeStrokesRef.current.length,
+        committed: committedStrokesRef.current.length,
+      };
+      setStats((prev) =>
+        prev.active === nextStats.active && prev.committed === nextStats.committed
+          ? prev
+          : nextStats,
+      );
+
+      rafRef.current = requestAnimationFrame(drawFrame);
     };
 
-    rafRef.current = requestAnimationFrame(loop);
-
+    rafRef.current = requestAnimationFrame(drawFrame);
     return () => {
-      running = false;
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [camera, dpr, rendererRef, bgRef, cursorRef, theme, enableProfiling, selection]);
-
-  // ── GestureHandler (touch gestures via imperative API) ─
-
-  // Refs to hold current state without recreating gesture handler
-  const cameraRef = useRef(camera);
-  const selectionRef = useRef(selection);
-  const undoRedoRef = useRef(undoRedo);
-
-  // Update refs whenever values change
-  useEffect(() => {
-    cameraRef.current = camera;
-  }, [camera]);
-
-  useEffect(() => {
-    selectionRef.current = selection;
-  }, [selection]);
-
-  useEffect(() => {
-    undoRedoRef.current = undoRedo;
-  }, [undoRedo]);
+  }, [camera, dpr, size.height, size.width]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const gesture = new GestureHandler();
-    gestureRef.current = gesture;
+    let isPanning = false;
+    let lastX = 0;
+    let lastY = 0;
 
-    gesture.on('tap', (e) => {
-      const rect = container.getBoundingClientRect();
-      const worldX = (e.position.x - rect.left - cameraRef.current.x) / cameraRef.current.zoom;
-      const worldY = (e.position.y - rect.top - cameraRef.current.y) / cameraRef.current.zoom;
-      const hits = selectionRef.current.hitTest(worldX, worldY);
-      if (hits.length > 0 && hits[0]) {
-        selectionRef.current.selectElement(hits[0].id);
-      } else {
-        selectionRef.current.deselectAll();
-      }
-    });
+    const onPointerDown = (e: PointerEvent) => {
+      isPanning = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      container.setPointerCapture(e.pointerId);
+    };
 
-    gesture.on('pinch', (e) => {
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isPanning) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      setCamera((c) => ({ ...c, x: c.x + dx, y: c.y + dy }));
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      isPanning = false;
+      container.releasePointerCapture(e.pointerId);
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
       const rect = container.getBoundingClientRect();
-      const cx = e.position.x - rect.left;
-      const cy = e.position.y - rect.top;
-      const newZoom = clampZoom(cameraRef.current.zoom * e.scale);
-      const actualScale = newZoom / cameraRef.current.zoom;
-      setCamera({
-        x: cx - (cx - cameraRef.current.x) * actualScale,
-        y: cy - (cy - cameraRef.current.y) * actualScale,
-        zoom: newZoom,
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+
+      setCamera((c) => {
+        const worldX = (sx - c.x) / c.zoom;
+        const worldY = (sy - c.y) / c.zoom;
+
+        const zoomFactor = Math.exp(-e.deltaY * 0.0012);
+        const nextZoom = clamp(c.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM);
+
+        return {
+          x: sx - worldX * nextZoom,
+          y: sy - worldY * nextZoom,
+          zoom: nextZoom,
+        };
       });
-    });
+    };
 
-    gesture.on('three-finger-undo', () => {
-      undoRedoRef.current.undo();
-    });
-
-    gesture.attach(container);
+    container.addEventListener('pointerdown', onPointerDown);
+    container.addEventListener('pointermove', onPointerMove);
+    container.addEventListener('pointerup', onPointerUp);
+    container.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {
-      gesture.detach(container);
-      gestureRef.current = null;
+      container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('pointermove', onPointerMove);
+      container.removeEventListener('pointerup', onPointerUp);
+      container.removeEventListener('wheel', onWheel);
     };
-  }, [setCamera]);
-
-  // ── Pointer event handlers (pan) ──────────────────────
-
-  const handlePointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      // Middle-click or space+click for panning
-      if (e.button === 1 || e.button === 0) {
-        isDragging.current = true;
-        lastPointer.current = { x: e.clientX, y: e.clientY };
-        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-      }
-    },
-    [],
-  );
-
-  const handlePointerMove = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (!isDragging.current) return;
-
-      const dx = e.clientX - lastPointer.current.x;
-      const dy = e.clientY - lastPointer.current.y;
-      lastPointer.current = { x: e.clientX, y: e.clientY };
-
-      setCamera({
-        x: cameraRef.current.x + dx,
-        y: cameraRef.current.y + dy,
-        zoom: cameraRef.current.zoom,
-      });
-    },
-    [],
-  );
-
-  const handlePointerUp = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      isDragging.current = false;
-      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
-    },
-    [],
-  );
-
-  // ── Wheel handler (zoom) ──────────────────────────────
-
-  const handleWheel = useCallback(
-    (e: ReactWheelEvent<HTMLDivElement>) => {
-      e.preventDefault();
-
-      const prev = cameraRef.current;
-      const newZoom = clampZoom(prev.zoom - e.deltaY * ZOOM_SENSITIVITY);
-      const scale = newZoom / prev.zoom;
-
-      // Zoom toward cursor position
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const cursorX = e.clientX - rect.left;
-      const cursorY = e.clientY - rect.top;
-
-      setCamera({
-        x: cursorX - (cursorX - prev.x) * scale,
-        y: cursorY - (cursorY - prev.y) * scale,
-        zoom: newZoom,
-      });
-    },
-    [],
-  );
-
-  // ── Touch handlers ────────────────────────────────────
-
-  const touchStartRef = useRef<{ x: number; y: number; dist: number }>({
-    x: 0,
-    y: 0,
-    dist: 0,
-  });
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (e.touches.length === 2) {
-        const t0 = e.touches.item(0);
-        const t1 = e.touches.item(1);
-        if (!t0 || !t1) return;
-        const midX = (t0.clientX + t1.clientX) / 2;
-        const midY = (t0.clientY + t1.clientY) / 2;
-        const dist = Math.hypot(
-          t1.clientX - t0.clientX,
-          t1.clientY - t0.clientY,
-        );
-        touchStartRef.current = { x: midX, y: midY, dist };
-      }
-    },
-    [],
-  );
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        const t0 = e.touches.item(0);
-        const t1 = e.touches.item(1);
-        if (!t0 || !t1) return;
-        const midX = (t0.clientX + t1.clientX) / 2;
-        const midY = (t0.clientY + t1.clientY) / 2;
-        const dist = Math.hypot(
-          t1.clientX - t0.clientX,
-          t1.clientY - t0.clientY,
-        );
-
-        const prevDist = touchStartRef.current.dist;
-        if (prevDist === 0) return;
-
-        const prev = cameraRef.current;
-        const scale = dist / prevDist;
-        const newZoom = clampZoom(prev.zoom * scale);
-        const actualScale = newZoom / prev.zoom;
-
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-
-        const cx = midX - rect.left;
-        const cy = midY - rect.top;
-
-        setCamera({
-          x: cx - (cx - prev.x) * actualScale,
-          y: cy - (cy - prev.y) * actualScale,
-          zoom: newZoom,
-        });
-
-        touchStartRef.current = { x: midX, y: midY, dist };
-      }
-    },
-    [],
-  );
-
-  // ── Text overlay elements ─────────────────────────────
-
-  const textElements = useMemo(() => getTextElements(elements), [elements]);
-
-  // ── Container style ───────────────────────────────────
-
-  const containerStyle = useMemo(
-    () => ({
-      width: width ? `${width}px` : '100%',
-      height: height ? `${height}px` : '100%',
-    }),
-    [width, height],
-  );
-
-  // ── Streaming progress bar ────────────────────────────
-  const showProgress = streamState.isStreaming && streamState.progress > 0;
+  }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="relative h-full w-full overflow-hidden bg-canvas"
-      style={containerStyle}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onWheel={handleWheel}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      tabIndex={0}
-      role="application"
-      aria-label="Interactive whiteboard canvas. Use toolbar to select drawing tools."
-      aria-roledescription="whiteboard"
-    >
-      {/* 4-layer canvas stack */}
-      <div className="absolute inset-0">
-        {/* BackgroundLayer — z-0 */}
-        <canvas
-          ref={bgRef}
-          className="absolute inset-0 z-0 h-full w-full"
-          aria-hidden="true"
-        />
-        {/* ContentLayer — z-10 */}
-        <canvas
-          ref={contentRef}
-          className="absolute inset-0 z-10 h-full w-full"
-          aria-hidden="true"
-        />
-        {/* ActiveDrawLayer — z-20 */}
-        <canvas
-          ref={activeDrawRef}
-          className="absolute inset-0 z-20 h-full w-full"
-          aria-hidden="true"
-        />
-        {/* CursorLayer — z-30 */}
-        <canvas
-          ref={cursorRef}
-          className="absolute inset-0 z-cursor h-full w-full pointer-events-none"
-          aria-hidden="true"
-        />
+    <section className="relative h-full overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-paper)] shadow-[var(--shadow-card)]">
+      <div
+        ref={containerRef}
+        className="relative h-full w-full cursor-grab active:cursor-grabbing"
+        aria-label="Whiteboard"
+        role="application"
+      >
+        <canvas ref={bgRef} className="absolute inset-0" />
+        <canvas ref={committedRef} className="absolute inset-0" />
+        <canvas ref={activeRef} className="absolute inset-0" />
       </div>
 
-      {/* Loading skeleton overlay */}
-      {isFirstDrawLoading && (
-        <div
-          className="absolute inset-0 z-canvas-loading flex items-center justify-center pointer-events-none"
-          aria-live="polite"
-          aria-label="Loading drawing"
-        >
-          <div className="animate-pulse text-sm text-[var(--color-text-secondary)] select-none">
-            Generating drawing…
-          </div>
-        </div>
-      )}
-
-      {/* Streaming progress bar */}
-      {showProgress && (
-        <div
-          className="absolute top-0 left-0 right-0 z-ui h-1"
-          role="progressbar"
-          aria-valuenow={Math.round(streamState.progress)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label="Drawing progress"
-        >
-          <div
-            className="h-full bg-blue-500 transition-[width] duration-200 ease-out"
-            style={{ width: `${streamState.progress}%` }}
-          />
-        </div>
-      )}
-
-      {/* TextOverlay — DOM-based text nodes positioned over canvas */}
-      <div className="absolute inset-0 z-text-overlay pointer-events-none">
-        {textElements.map((el) => (
-          <div
-            key={el.id}
-            className={`absolute pointer-events-auto${
-              selectedIds.has(el.id) ? ' ring-2 ring-blue-500 ring-offset-1' : ''
-            }`}
-            style={{
-              left: el.x * camera.zoom + camera.x,
-              top: el.y * camera.zoom + camera.y,
-              width: el.w * camera.zoom,
-              height: el.h * camera.zoom,
-              transform: el.rotation
-                ? `rotate(${el.rotation}deg)`
-                : undefined,
-              opacity: el.opacity,
-              fontFamily: el.style.fontFamily,
-              fontSize: el.style.fontSize * camera.zoom,
-              fontWeight: el.style.fontWeight,
-              lineHeight: el.style.lineHeight,
-              letterSpacing: el.style.letterSpacing,
-              color: el.style.color,
-              textAlign: el.style.align,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              userSelect: 'none',
-            }}
-          >
-            {el.content}
-          </div>
-        ))}
+      <div className="glass-panel pointer-events-none absolute left-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
+        <div>Zoom: {(camera.zoom * 100).toFixed(0)}%</div>
+        <div>Committed: {stats.committed}</div>
+        <div>Active: {stats.active}</div>
       </div>
-
-      {/* Screen reader accessible description of canvas content */}
-      <div className="sr-only" role="list" aria-label="Canvas objects">
-        {textElements.length === 0 ? (
-          <p>Empty canvas. Use the toolbar to select a drawing tool and begin drawing.</p>
-        ) : (
-          textElements.map((el) => (
-            <div key={el.id} role="listitem">
-              Text element: {el.content}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
+    </section>
   );
-}
-
-// ─── Background grid renderer ───────────────────────────
-
-function drawBackground(
-  canvas: HTMLCanvasElement | null,
-  camera: Camera,
-  dpr: number,
-  theme: 'light' | 'dark',
-): void {
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const w = canvas.width / dpr;
-  const h = canvas.height / dpr;
-
-  ctx.save();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-
-  // Dot grid (visible in light mode; subtle in dark mode)
-  const gridSize = 20;
-  const scaledGrid = gridSize * camera.zoom;
-  if (scaledGrid < 4) {
-    ctx.restore();
-    return;
-  }
-
-  const offsetX = camera.x % scaledGrid;
-  const offsetY = camera.y % scaledGrid;
-
-  ctx.fillStyle =
-    theme === 'light'
-      ? 'rgba(0, 0, 0, 0.10)'
-      : 'rgba(128, 128, 128, 0.15)';
-  const dotRadius = Math.max(0.5, camera.zoom * 0.8);
-
-  for (let x = offsetX; x < w; x += scaledGrid) {
-    for (let y = offsetY; y < h; y += scaledGrid) {
-      ctx.beginPath();
-      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  ctx.restore();
-}
-
-// ─── Selection highlight renderer ───────────────────────
-
-function drawSelectionHighlights(
-  canvas: HTMLCanvasElement | null,
-  camera: Camera,
-  dpr: number,
-  highlights: { bounds: BoundingBox; handleSize?: number }[],
-): void {
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const w = canvas.width / dpr;
-  const h = canvas.height / dpr;
-
-  ctx.save();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-
-  if (highlights.length === 0) {
-    ctx.restore();
-    return;
-  }
-
-  ctx.translate(camera.x, camera.y);
-  ctx.scale(camera.zoom, camera.zoom);
-
-  ctx.strokeStyle = '#3b82f6';
-  ctx.lineWidth = 1.5 / camera.zoom;
-  ctx.setLineDash([4 / camera.zoom, 3 / camera.zoom]);
-
-  for (const hl of highlights) {
-    const { bounds } = hl;
-    ctx.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
-  }
-
-  ctx.setLineDash([]);
-  ctx.restore();
 }
