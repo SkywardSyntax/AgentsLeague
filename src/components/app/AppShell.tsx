@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
+import { formatUserError } from '@/lib/errors/format-user-error';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
 import { loadSession, saveSession } from '@/lib/client/persistence';
 import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
@@ -391,7 +392,7 @@ export function AppShell() {
               ? {
                   ...chat,
                   updatedAt: Date.now(),
-                  messages: [...chat.messages, createMessage('assistant', `Error: ${event.message}`)],
+                  messages: [...chat.messages, createMessage('assistant', formatUserError(event.message))],
                 }
               : chat,
           ),
@@ -477,7 +478,7 @@ export function AppShell() {
                   ? {
                       ...chat,
                       updatedAt: Date.now(),
-                      messages: [...chat.messages, createMessage('assistant', `Stream error: ${msg}`)],
+                      messages: [...chat.messages, createMessage('assistant', msg)],
                     }
                   : chat,
               ),

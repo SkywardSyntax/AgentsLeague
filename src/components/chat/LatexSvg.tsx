@@ -3,6 +3,7 @@
 import { memo, useEffect, useState } from 'react';
 import { renderTexToSvg } from '@/lib/latex/mathjax-client';
 import { prepareTexForMathJax } from '@/lib/latex/tex-normalize';
+import { sanitizeSvg } from '@/lib/sanitize-svg';
 
 interface LatexSvgProps {
   tex: string;
@@ -11,18 +12,6 @@ interface LatexSvgProps {
 
 const svgCache = new Map<string, string>();
 const MAX_SVG_CACHE = 300;
-
-/** Strip dangerous elements/attributes from SVG markup to prevent XSS. */
-function sanitizeSvg(raw: string): string {
-  return raw
-    .replace(/<script[\s>][\s\S]*?<\/script>/gi, '')
-    .replace(/<foreignObject[\s>][\s\S]*?<\/foreignObject>/gi, '')
-    .replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '')
-    .replace(/javascript\s*:/gi, 'about:blank')
-    .replace(/<iframe[\s>][\s\S]*?<\/iframe>/gi, '')
-    .replace(/<embed[\s>][\s\S]*?<\/embed>/gi, '')
-    .replace(/<object[\s>][\s\S]*?<\/object>/gi, '');
-}
 
 export const LatexSvg = memo(function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
@@ -43,8 +32,9 @@ export const LatexSvg = memo(function LatexSvg({ tex, displayMode }: LatexSvgPro
             const oldest = svgCache.keys().next().value as string | undefined;
             if (oldest) svgCache.delete(oldest);
           }
-          svgCache.set(cacheKey, sanitizeSvg(rendered));
-          setSvg(rendered);
+          const sanitized = sanitizeSvg(rendered);
+          svgCache.set(cacheKey, sanitized);
+          setSvg(sanitized);
           setError(null);
         }
       } catch {

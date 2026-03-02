@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
+import { formatUserError } from '@/lib/errors/format-user-error';
 import type {
   AgentSSEEvent,
   ChatMessage,
@@ -69,7 +70,7 @@ export function useAgentStream() {
         });
 
         if (!res.ok || !res.body) {
-          args.handlers.onError(`Stream request failed with status ${res.status}`);
+          args.handlers.onError(formatUserError(`Stream request failed with status ${res.status}`));
           return;
         }
 
@@ -99,7 +100,7 @@ export function useAgentStream() {
                 const event = JSON.parse(json) as AgentSSEEvent;
                 args.handlers.onEvent(event);
               } catch {
-                args.handlers.onError('Invalid SSE JSON payload received');
+                args.handlers.onError(formatUserError('Invalid SSE JSON payload received'));
               }
             }
           }
@@ -112,13 +113,13 @@ export function useAgentStream() {
             try {
               args.handlers.onEvent(JSON.parse(json) as AgentSSEEvent);
             } catch {
-              args.handlers.onError('Invalid trailing SSE JSON payload received');
+              args.handlers.onError(formatUserError('Invalid trailing SSE JSON payload received'));
             }
           }
         }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') return;
-        args.handlers.onError(error instanceof Error ? error.message : 'Stream aborted unexpectedly');
+        args.handlers.onError(formatUserError(error instanceof Error ? error.message : 'Stream aborted unexpectedly'));
       } finally {
         abortRef.current = null;
       }
