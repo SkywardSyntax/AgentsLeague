@@ -14,6 +14,24 @@ let mathJaxContextPromise: Promise<MathJaxContext> | undefined;
 const renderCache = new Map<string, string>();
 const MAX_RENDER_CACHE = 400;
 
+function isValidAdaptor(obj: unknown): obj is MathJaxContext['adaptor'] {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'outerHTML' in obj &&
+    typeof (obj as Record<string, unknown>).outerHTML === 'function'
+  );
+}
+
+function isValidHtml(obj: unknown): obj is MathJaxContext['html'] {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'convert' in obj &&
+    typeof (obj as Record<string, unknown>).convert === 'function'
+  );
+}
+
 function identityMatrix(): Matrix2D {
   return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 }
@@ -161,10 +179,14 @@ async function getMathJaxContext(): Promise<MathJaxContext> {
       const svg = new svgMod.SVG({ fontCache: 'none' });
       const html = mathjaxMod.mathjax.document('', { InputJax: tex, OutputJax: svg });
 
-      return {
-        html: html as MathJaxContext['html'],
-        adaptor: adaptor as unknown as MathJaxContext['adaptor'],
-      };
+      if (!isValidAdaptor(adaptor)) {
+        throw new Error('MathJax liteAdaptor() did not return a valid adaptor (missing outerHTML method)');
+      }
+      if (!isValidHtml(html)) {
+        throw new Error('MathJax document() did not return a valid html object (missing convert method)');
+      }
+
+      return { html, adaptor };
     })();
   }
 

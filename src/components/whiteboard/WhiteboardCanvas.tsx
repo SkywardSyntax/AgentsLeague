@@ -290,6 +290,14 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         committedDirtyRef.current = false;
       }
 
+      // Skip active layer when no strokes are animating
+      if (activeStrokesRef.current.length === 0) {
+        if (statsRef.current.active > 0) {
+          // Clear once when transitioning from active→empty
+          activeCtx.setTransform(1, 0, 0, 1, 0, 0);
+          activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
+        }
+      } else {
       activeCtx.setTransform(1, 0, 0, 1, 0, 0);
       activeCtx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
       activeCtx.setTransform(scale, 0, 0, scale, tx, ty);
@@ -329,9 +337,10 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       }
       lastClearGeneration = currentGen;
       activeStrokesRef.current = nextActive;
+      } // end active strokes else-branch
 
       // Fix C2: update stats via direct DOM mutation instead of setState
-      const nextActive_count = nextActive.length;
+      const nextActive_count = activeStrokesRef.current.length;
       const nextCommitted_count = committedStrokesRef.current.length;
       if (statsRef.current.active !== nextActive_count || statsRef.current.committed !== nextCommitted_count) {
         statsRef.current = { active: nextActive_count, committed: nextCommitted_count };

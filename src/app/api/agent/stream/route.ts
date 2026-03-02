@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
+import type { ResponseStreamEvent, ResponseFunctionCallArgumentsDoneEvent, ResponseOutputItemDoneEvent } from 'openai/resources/responses/responses';
 import {
   AgentStreamRequestSchema,
   DrawBatchSchema,
@@ -45,35 +45,24 @@ function parseFunctionCallFromEvent(
   event: ResponseStreamEvent,
 ): FunctionCall | null {
   if (event.type === 'response.function_call_arguments.done') {
-    const anyEvent = event as unknown as {
-      call_id?: string;
-      name?: string;
-      arguments?: string;
-      item?: { call_id?: string; name?: string; arguments?: string };
-    };
-
-    const callId = anyEvent.call_id ?? anyEvent.item?.call_id;
-    const name = anyEvent.name ?? anyEvent.item?.name;
-    const args = anyEvent.arguments ?? anyEvent.item?.arguments;
-    if (callId && name && typeof args === 'string') {
-      return { callId, name, arguments: args };
+    const doneEvent: ResponseFunctionCallArgumentsDoneEvent = event;
+    // SDK types don't include call_id on this event; check at runtime for forward-compat
+    const runtimeCallId = 'call_id' in doneEvent && typeof (doneEvent as Record<string, unknown>).call_id === 'string'
+      ? (doneEvent as Record<string, unknown>).call_id as string
+      : undefined;
+    const callId = runtimeCallId ?? doneEvent.item_id;
+    if (callId && doneEvent.name && typeof doneEvent.arguments === 'string') {
+      return { callId, name: doneEvent.name, arguments: doneEvent.arguments };
     }
   }
 
   if (event.type === 'response.output_item.done') {
-    const anyEvent = event as unknown as {
-      item?: {
-        type?: string;
-        call_id?: string;
-        name?: string;
-        arguments?: string;
-      };
-    };
-
-    if (anyEvent.item?.type === 'function_call') {
-      const callId = anyEvent.item.call_id;
-      const name = anyEvent.item.name;
-      const args = anyEvent.item.arguments;
+    const doneEvent: ResponseOutputItemDoneEvent = event;
+    const item = doneEvent.item;
+    if (item.type === 'function_call') {
+      const callId = item.call_id;
+      const name = item.name;
+      const args = item.arguments;
       if (callId && name && typeof args === 'string') {
         return { callId, name, arguments: args };
       }
