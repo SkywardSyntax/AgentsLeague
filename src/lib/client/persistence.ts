@@ -159,11 +159,17 @@ export function loadSession(): PersistedSessionV3 | null {
       return migrateV1toV3(v1.data);
     }
 
-    throw new Error('Invalid persisted session schema');
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
+    console.error('[loadSession] No schema matched persisted data');
+    return null;
+  } catch (err) {
+    console.error('[loadSession] Failed to parse session:', err);
     return null;
   }
+}
+
+export function clearCorruptSession(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 export function saveSession(session: PersistedSessionV3): void {

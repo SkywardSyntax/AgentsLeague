@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { loadSession, saveSession, type PersistedSessionV3 } from '@/lib/client/persistence';
+import { loadSession, saveSession, clearCorruptSession, type PersistedSessionV3 } from '@/lib/client/persistence';
 
 // Mock localStorage
 const store: Record<string, string> = {};
@@ -242,6 +242,45 @@ describe('persistence schema validation', () => {
       store['agentsleague:session:v1'] = JSON.stringify(validV3({ chats: [chat] }));
       const result = loadSession();
       expect(result).not.toBeNull();
+    });
+  });
+
+  describe('silent data loss prevention', () => {
+    it('returns null without deleting localStorage when no schema matches', () => {
+      store['agentsleague:session:v1'] = JSON.stringify({ version: 99, bogus: true });
+      const result = loadSession();
+      expect(result).toBeNull();
+      expect(localStorageMock.removeItem).not.toHaveBeenCalled();
+      expect(store['agentsleague:session:v1']).toBeDefined();
+    });
+
+    it('returns null without deleting localStorage on malformed JSON', () => {
+      store['agentsleague:session:v1'] = '{not valid json!!!';
+      const result = loadSession();
+      expect(result).toBeNull();
+      expect(localStorageMock.removeItem).not.toHaveBeenCalled();
+      expect(store['agentsleague:session:v1']).toBeDefined();
+    });
+
+    it('returns null without deleting localStorage when schema fields are wrong types', () => {
+      const chat = validChat({ semanticScene: [{ batch_id: 123 }] });
+      store['agentsleague:session:v1'] = JSON.stringify(validV3({ chats: [chat] }));
+      const result = loadSession();
+      expect(result).toBeNull();
+      expect(localStorageMock.removeItem).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clearCorruptSession', () => {
+    it('removes the storage key', () => {
+      store['agentsleague:session:v1'] = JSON.stringify({ version: 99 });
+      clearCorruptSession();
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('agentsleague:session:v1');
+    });
+
+    it('is safe to call when no data exists', () => {
+      clearCorruptSession();
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('agentsleague:session:v1');
     });
   });
 });
