@@ -33,4 +33,27 @@ describe('sanitizeUserMessage', () => {
   it('strips zero-width characters from normal message', () => {
     expect(sanitizeUserMessage('he\u200Bllo\u200D world\uFEFF')).toBe('hello world');
   });
+
+  it('does not crash on HTML tags in message', () => {
+    const result = sanitizeUserMessage('<script>alert(1)</script>');
+    expect(result).toBe('<script>alert(1)</script>');
+  });
+
+  it('handles unicode null bytes', () => {
+    const result = sanitizeUserMessage('hello\x00world');
+    expect(result).toBe('hello\x00world');
+  });
+
+  it('accepts very long single line at exactly max length', () => {
+    const long = 'x'.repeat(20_000);
+    expect(sanitizeUserMessage(long)).toBe(long);
+  });
+
+  it('returns null for message of only newlines', () => {
+    expect(sanitizeUserMessage('\n\n\n')).toBeNull();
+  });
+
+  it('preserves tab characters', () => {
+    expect(sanitizeUserMessage('hello\tworld')).toBe('hello\tworld');
+  });
 });

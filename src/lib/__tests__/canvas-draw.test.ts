@@ -96,3 +96,63 @@ describe('drawSmoothStroke', () => {
     expect(ctx.beginPath).toHaveBeenCalled();
   });
 });
+
+describe('drawStroke — NaN/Infinity defense', () => {
+  it('does not throw with NaN in a point', () => {
+    const ctx = mockCtx();
+    const points = [{ x: 0, y: 0 }, { x: NaN, y: 10 }];
+    expect(() => drawStroke(ctx, points, '#000', 1, camera, 1)).not.toThrow();
+    expect(ctx.beginPath).toHaveBeenCalled();
+  });
+
+  it('does not throw with Infinity coordinates', () => {
+    const ctx = mockCtx();
+    const points = [{ x: 0, y: 0 }, { x: Infinity, y: -Infinity }];
+    expect(() => drawStroke(ctx, points, '#000', 1, camera, 1)).not.toThrow();
+  });
+
+  it('does not throw with zoom: 0', () => {
+    const ctx = mockCtx();
+    const cam = { x: 0, y: 0, zoom: 0 };
+    const points = [{ x: 0, y: 0 }, { x: 10, y: 10 }];
+    expect(() => drawStroke(ctx, points, '#000', 2, cam, 1)).not.toThrow();
+  });
+
+  it('does not throw with zoom: NaN', () => {
+    const ctx = mockCtx();
+    const cam = { x: 0, y: 0, zoom: NaN };
+    const points = [{ x: 0, y: 0 }, { x: 10, y: 10 }];
+    expect(() => drawStroke(ctx, points, '#000', 2, cam, 1)).not.toThrow();
+  });
+});
+
+describe('drawSmoothStroke — NaN/Infinity defense', () => {
+  it('does not throw with NaN points (< 4 points, fallback path)', () => {
+    const ctx = mockCtx();
+    const points = [{ x: NaN, y: 0 }, { x: 10, y: NaN }];
+    expect(() => drawSmoothStroke(ctx, points, '#000', 1, camera, 1)).not.toThrow();
+  });
+
+  it('does not throw with NaN points (4+ points, bezier path)', () => {
+    const ctx = mockCtx();
+    const points = [
+      { x: 0, y: 0 },
+      { x: NaN, y: 5 },
+      { x: 20, y: NaN },
+      { x: 30, y: 5 },
+    ];
+    expect(() => drawSmoothStroke(ctx, points, '#000', 1, camera, 1)).not.toThrow();
+  });
+
+  it('does not throw with zoom: 0 on smooth path', () => {
+    const ctx = mockCtx();
+    const cam = { x: 0, y: 0, zoom: 0 };
+    const points = [
+      { x: 0, y: 0 },
+      { x: 10, y: 5 },
+      { x: 20, y: 0 },
+      { x: 30, y: 5 },
+    ];
+    expect(() => drawSmoothStroke(ctx, points, '#000', 1, cam, 1)).not.toThrow();
+  });
+});
