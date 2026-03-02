@@ -23,7 +23,7 @@ describe('accessibility annotations', () => {
     expect(screen.getByRole('status').textContent).toContain('Thinking');
   });
 
-  it('ChatPanel active tab has aria-current="true"', () => {
+  it('ChatPanel tabs have role="tab" and aria-selected on active', () => {
     const chats = [
       { id: 'a', title: 'Chat A', messageCount: 0 },
       { id: 'b', title: 'Chat B', messageCount: 2 },
@@ -48,15 +48,20 @@ describe('accessibility annotations', () => {
       />,
     );
 
-    // Find buttons that contain the chat titles
-    const buttons = screen.getAllByRole('button');
-    const chatABtn = buttons.find((b) => b.textContent?.includes('Chat A'));
-    const chatBBtn = buttons.find((b) => b.textContent?.includes('Chat B'));
+    const tablist = screen.getByRole('tablist');
+    expect(tablist).toBeTruthy();
+    expect(tablist.getAttribute('aria-label')).toBe('Chat threads');
 
-    expect(chatABtn).toBeTruthy();
-    expect(chatBBtn).toBeTruthy();
-    expect(chatABtn!.getAttribute('aria-current')).toBe('true');
-    expect(chatBBtn!.hasAttribute('aria-current')).toBe(false);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(2);
+
+    const chatATab = tabs.find((t) => t.getAttribute('aria-label')?.includes('Chat A'));
+    const chatBTab = tabs.find((t) => t.getAttribute('aria-label')?.includes('Chat B'));
+
+    expect(chatATab).toBeTruthy();
+    expect(chatBTab).toBeTruthy();
+    expect(chatATab!.getAttribute('aria-selected')).toBe('true');
+    expect(chatBTab!.getAttribute('aria-selected')).toBe('false');
   });
 
   it('WarningOverlay has role="status" and aria-live="polite"', () => {

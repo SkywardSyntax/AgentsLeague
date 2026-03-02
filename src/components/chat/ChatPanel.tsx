@@ -5,6 +5,30 @@ import type { ChatMessage } from '@/types/agent';
 import { MessageContent } from './MessageContent';
 import { PillButton } from '@/components/ui/PillButton';
 
+function useTabKeyboard(chats: ChatThreadMeta[], onSelectChat: (id: string) => void) {
+  return useCallback(
+    (e: React.KeyboardEvent) => {
+      const idx = chats.findIndex(
+        (c) => (e.target as HTMLElement).textContent?.includes(c.title),
+      );
+      if (idx === -1) return;
+      let next = -1;
+      if (e.key === 'ArrowRight') next = (idx + 1) % chats.length;
+      else if (e.key === 'ArrowLeft') next = (idx - 1 + chats.length) % chats.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = chats.length - 1;
+      if (next >= 0) {
+        e.preventDefault();
+        onSelectChat(chats[next].id);
+        const container = (e.currentTarget as HTMLElement);
+        const tabs = container.querySelectorAll<HTMLElement>('[role="tab"]');
+        tabs[next]?.focus();
+      }
+    },
+    [chats, onSelectChat],
+  );
+}
+
 export interface ChatThreadMeta {
   id: string;
   title: string;
@@ -50,6 +74,7 @@ export function ChatPanel({
   const canManageChats = status === 'idle';
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
   const handleSelectChat = useCallback((id: string) => onSelectChat(id), [onSelectChat]);
+  const handleTabKeyDown = useTabKeyboard(chats, handleSelectChat);
 
   // Mark all current message IDs as seen after render, animate only new ones
   const currentIds = new Set(messages.map((m) => m.id));
@@ -65,16 +90,19 @@ export function ChatPanel({
   return (
     <section className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-card)]">
       <div className="border-b border-[var(--color-border)] px-3 py-2">
-        <div className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-0.5">
+        <div role="tablist" aria-label="Chat threads" onKeyDown={handleTabKeyDown} className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-0.5">
           {chats.map((chat) => {
             const isActive = chat.id === activeChatId;
             return (
               <PillButton
                 key={chat.id}
+                role="tab"
+                aria-selected={isActive}
+                aria-label={`Switch to chat: ${chat.title}`}
                 variant={isActive ? 'accent' : 'default'}
                 onClick={() => handleSelectChat(chat.id)}
                 disabled={!canManageChats || isActive}
-                aria-current={isActive ? 'true' : undefined}
+                tabIndex={isActive ? 0 : -1}
                 className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-white/65 hover:bg-white'} disabled:opacity-65`}
               >
                 <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
@@ -132,7 +160,7 @@ export function ChatPanel({
         </PillButton>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <div role="log" aria-live="polite" className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--color-border)]/90 bg-[var(--color-surface-soft)]/80 p-4 text-sm text-[var(--color-text-muted)]">
             Ask a question, request a diagram, or include LaTeX like <code>\(\int_0^1 x^2 dx\)</code>.
@@ -190,6 +218,7 @@ export function ChatPanel({
               onSend();
             }
           }}
+          aria-label="Message input"
           placeholder="Explain this concept and draw it out..."
           rows={3}
           disabled={disabled}

@@ -59,7 +59,10 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
 
   if (visibleError) {
     return (
-      <code className="rounded-md bg-[var(--color-surface-soft)] px-1 py-0.5 text-[var(--color-danger)]">
+      <code
+        aria-label="LaTeX rendering failed"
+        className="rounded-md bg-[var(--color-surface-soft)] px-1 py-0.5 text-[var(--color-danger)]"
+      >
         {tex}
       </code>
     );
@@ -75,8 +78,12 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     );
   }
 
+  const truncatedLabel = tex.length > 80 ? tex.slice(0, 80) + '…' : tex;
+
   return (
     <span
+      role="img"
+      aria-label={truncatedLabel}
       className={displayMode ? 'block overflow-x-auto py-1' : 'inline-block align-middle'}
       dangerouslySetInnerHTML={{ __html: visibleSvg }}
     />

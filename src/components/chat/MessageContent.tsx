@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, type ReactNode, useMemo } from 'react';
+import { Fragment, memo, type ReactNode, useMemo } from 'react';
 import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
 import { parseTextScripts } from '@/lib/latex/text-scripts';
 import { LatexSvg } from './LatexSvg';
@@ -27,7 +27,7 @@ function renderTextWithScripts(content: string, keyPrefix: string): ReactNode[] 
   });
 }
 
-export function MessageContent({ content }: { content: string }) {
+export const MessageContent = memo(function MessageContent({ content }: { content: string }) {
   const segments = useMemo(() => parseStreamingLatex(content), [content]);
 
   return (
@@ -43,4 +43,4 @@ export function MessageContent({ content }: { content: string }) {
       ))}
     </div>
   );
-}
+});
