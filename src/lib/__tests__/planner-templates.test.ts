@@ -402,4 +402,40 @@ describe('planner templates', () => {
     expect(height).toBeGreaterThan(10);
     expect(height).toBeLessThan(200);
   });
+
+  it('handles multi-panel-column layout without non-null assertion errors', () => {
+    const batch: SemanticBatch = {
+      batch_id: 'sem-multi-col',
+      template: 'freeform_semantic',
+      blocks: [
+        { id: 'p1', kind: 'diagram_panel', axes: { x_label: 'a', y_label: 'b' } },
+        { id: 'p2', kind: 'diagram_panel', axes: { x_label: 'c', y_label: 'd' } },
+        { id: 'p3', kind: 'diagram_panel', axes: { x_label: 'e', y_label: 'f' } },
+        {
+          id: 'eq1',
+          kind: 'equation_stack',
+          region_hint: 'left',
+          lines: [{ id: 'l1', tex: 'x=1' }],
+        },
+        {
+          id: 'eq2',
+          kind: 'equation_stack',
+          region_hint: 'right',
+          lines: [{ id: 'l2', tex: 'y=2' }],
+        },
+      ],
+    };
+
+    const planned = planSemanticBatch(batch);
+    expect(planned.elements.length).toBeGreaterThan(0);
+
+    const leftEq = planned.elements.find(
+      (el) => el.type === 'latex' && el.id.startsWith('eq1'),
+    );
+    const rightEq = planned.elements.find(
+      (el) => el.type === 'latex' && el.id.startsWith('eq2'),
+    );
+    expect(leftEq).toBeDefined();
+    expect(rightEq).toBeDefined();
+  });
 });

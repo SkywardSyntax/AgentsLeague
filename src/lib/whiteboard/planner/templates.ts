@@ -687,8 +687,7 @@ function buildTextLanes(
   const topTextY = textStartY;
 
   if (panelColumns.length >= 2) {
-    const leftCol = panelColumns[0]!;
-    const rightCol = panelColumns[1]!;
+    const [leftCol, rightCol] = panelColumns as [{ x: number; w: number }, { x: number; w: number }, ...Array<{ x: number; w: number }>];
     return {
       left: {
         name: 'left',
@@ -799,7 +798,7 @@ function chooseLaneForBlock(
 
   if (tied.length > 1 && contentHeights) {
     // Break tie by choosing the lane that best balances left vs right height
-    let bestLane = tied[0]!;
+    let bestLane = tied[0] ?? candidates[0];
     let bestImbalance = Infinity;
     for (const lane of tied) {
       const leftH = contentHeights['left'] ?? 0;
@@ -815,7 +814,7 @@ function chooseLaneForBlock(
     return bestLane;
   }
 
-  return tied[0] ?? candidates[0]!;
+  return tied[0] ?? candidates.reduce((best, lane) => (lane.cursorY < best.cursorY ? lane : best));
 }
 
 function findAnchorPoint(anchors: PlannerAnchor[], id: string | undefined): Point | null {
