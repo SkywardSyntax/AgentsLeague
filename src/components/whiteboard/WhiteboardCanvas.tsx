@@ -29,6 +29,7 @@ import { computeAlignmentGuides } from '@/lib/whiteboard/alignment';
 import type { AlignGuide } from '@/lib/whiteboard/alignment';
 import { ExportButton } from '@/components/whiteboard/ExportButton';
 import { KeyboardShortcutsHelp } from '@/components/whiteboard/KeyboardShortcutsHelp';
+import { WhiteboardStatusBar } from '@/components/whiteboard/WhiteboardStatusBar';
 
 interface Camera {
   x: number;
@@ -41,6 +42,12 @@ interface WhiteboardCanvasProps {
   onWarning: (warning: string) => void;
   /** Fired when all strokes in a batch finish animating. */
   onBatchAnimationComplete?: BatchCompleteCallback;
+  /** Ref for toggling the export dialog externally (keyboard shortcut). */
+  exportToggleRef?: React.MutableRefObject<(() => void) | null>;
+  /** Whether the scene has been auto-saved (for status bar). */
+  autoSaved?: boolean;
+  /** Total element count for status bar (from parent scene). */
+  elementCount?: number;
 }
 
 const MIN_ZOOM = 0.25;
@@ -126,7 +133,7 @@ function extractLatexExportInfo(batches: DrawBatch[]): LatexExportInfo[] {
 }
 
 const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanvasProps>(
-  function WhiteboardCanvasInner({ batches, onWarning, onBatchAnimationComplete }, ref) {
+  function WhiteboardCanvasInner({ batches, onWarning, onBatchAnimationComplete, exportToggleRef, autoSaved, elementCount }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLCanvasElement>(null);
   const committedRef = useRef<HTMLCanvasElement>(null);
@@ -1557,7 +1564,7 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         )}
 
         {/* Export group */}
-        <ExportButton whiteboardRef={selfExportRef} disabled={sceneEmpty} batches={batches} />
+        <ExportButton whiteboardRef={selfExportRef} disabled={sceneEmpty} batches={batches} toggleRef={exportToggleRef} />
         <KeyboardShortcutsHelp />
       </div>
 
@@ -1606,6 +1613,12 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
           </div>
         </div>
       )}
+
+      <WhiteboardStatusBar
+        elementCount={elementCount ?? 0}
+        zoom={cameraRef.current.zoom}
+        autoSaved={autoSaved ?? false}
+      />
     </section>
   );
 });

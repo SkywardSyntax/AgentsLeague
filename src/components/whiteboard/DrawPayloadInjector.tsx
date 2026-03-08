@@ -5,10 +5,12 @@ import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipbo
 import { DrawBatchSchema } from '@/lib/schema';
 import { useDrawInjector } from '@/hooks/useDrawInjector';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { validateDrawBatchPayload, type ValidationResult as ClientValidationResult } from '@/lib/client/payload-validator';
 import type { DrawBatch, DrawElement } from '@/types/agent';
 import { PillButton } from '@/components/ui/PillButton';
 import { MiniPreviewCanvas } from './MiniPreviewCanvas';
 import { DrawingPayloadDocs } from './DrawingPayloadDocs';
+import { MathInputField, containsLatex } from './MathInputField';
 
 // ---------------------------------------------------------------------------
 // Template categories & types
@@ -1500,7 +1502,7 @@ function saveToHistory(json: string, elementCount: number, firstType: string) {
 // ---------------------------------------------------------------------------
 
 const QUICK_ELEMENT_TYPES = [
-  'rect', 'ellipse', 'line', 'arrow', 'text',
+  'rect', 'ellipse', 'line', 'arrow', 'text', 'latex',
   'cartesian_axes', 'number_line', 'function_curve',
 ] as const;
 type QuickElementType = (typeof QUICK_ELEMENT_TYPES)[number];
@@ -1511,6 +1513,7 @@ const QUICK_ELEMENT_LABELS: Record<QuickElementType, string> = {
   line: 'Line',
   arrow: 'Arrow',
   text: 'Text',
+  latex: 'LaTeX Formula',
   cartesian_axes: 'Cartesian Axes',
   number_line: 'Number Line',
   function_curve: 'Function Curve',
@@ -1536,6 +1539,9 @@ function buildQuickBatch(type: QuickElementType, fields: Record<string, string>)
       break;
     case 'text':
       element = { id, type: 'text', x: num(fields.x, 200), y: num(fields.y, 200), text: fields.content || 'Hello', size: num(fields.size, 18), color };
+      break;
+    case 'latex':
+      element = { id, type: 'latex', x: num(fields.x, 200), y: num(fields.y, 200), tex: fields.tex || 'x^2', fontSize: num(fields.fontSize, 20), displayMode: true };
       break;
     case 'cartesian_axes':
       element = {
@@ -1620,6 +1626,12 @@ const QUICK_FIELDS: Record<QuickElementType, FieldDef[]> = {
     { key: 'content', label: 'Text', defaultValue: 'Hello', type: 'text' },
     { key: 'size', label: 'Font Size', defaultValue: '18', type: 'number' },
     { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
+  ],
+  latex: [
+    { key: 'x', label: 'X', defaultValue: '200', type: 'number' },
+    { key: 'y', label: 'Y', defaultValue: '200', type: 'number' },
+    { key: 'tex', label: 'TeX', defaultValue: 'x^2 + y^2 = r^2', type: 'text' },
+    { key: 'fontSize', label: 'Font Size', defaultValue: '20', type: 'number' },
   ],
   cartesian_axes: [
     { key: 'xMin', label: 'X Min', defaultValue: '-5', type: 'number' },
@@ -1766,7 +1778,7 @@ function generateBatchFromDescription(description: string): DrawBatch {
 // ---------------------------------------------------------------------------
 
 const BUILD_ELEMENT_TYPES = [
-  'rect', 'ellipse', 'line', 'arrow', 'text', 'function_curve', 'cartesian_axes',
+  'rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'function_curve', 'cartesian_axes',
 ] as const;
 type BuildElementType = (typeof BUILD_ELEMENT_TYPES)[number];
 
@@ -1776,6 +1788,7 @@ const BUILD_ELEMENT_LABELS: Record<BuildElementType, string> = {
   line: 'Line',
   arrow: 'Arrow',
   text: 'Text',
+  latex: 'LaTeX Formula',
   function_curve: 'Function Curve',
   cartesian_axes: 'Cartesian Axes',
 };
@@ -1818,6 +1831,12 @@ const BUILD_FIELDS: Record<BuildElementType, BuildFieldDef[]> = {
     { key: 'size', label: 'Font Size', defaultValue: '18', type: 'number' },
     { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
   ],
+  latex: [
+    { key: 'x', label: 'X', defaultValue: '200', type: 'number' },
+    { key: 'y', label: 'Y', defaultValue: '200', type: 'number' },
+    { key: 'tex', label: 'TeX', defaultValue: 'x^2 + y^2 = r^2', type: 'text' },
+    { key: 'fontSize', label: 'Font Size', defaultValue: '20', type: 'number' },
+  ],
   function_curve: [
     { key: 'expression', label: 'f(x)', defaultValue: 'sin(x)', type: 'text' },
     { key: 'xMin', label: 'X From', defaultValue: '-6.28', type: 'number' },
@@ -1852,6 +1871,8 @@ function buildElementFromFields(type: BuildElementType, fields: Record<string, s
       return { id, type: 'arrow', from: { x: num(fields.x1, 100), y: num(fields.y1, 300) }, to: { x: num(fields.x2, 400), y: num(fields.y2, 100) }, color, stroke_width: 2 };
     case 'text':
       return { id, type: 'text', x: num(fields.x, 200), y: num(fields.y, 200), text: fields.content || 'Hello', size: num(fields.size, 18), color };
+    case 'latex':
+      return { id, type: 'latex', x: num(fields.x, 200), y: num(fields.y, 200), tex: fields.tex || 'x^2', fontSize: num(fields.fontSize, 20), displayMode: true };
     case 'function_curve':
       return {
         id, type: 'function_curve', x: 100, y: 60, width: 800, height: 600,
@@ -1922,6 +1943,23 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>('All');
+
+  // Client-side payload validation (debounced)
+  const [clientValidation, setClientValidation] = useState<ClientValidationResult | null>(null);
+  const clientValidationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (clientValidationTimerRef.current) clearTimeout(clientValidationTimerRef.current);
+    clientValidationTimerRef.current = setTimeout(() => {
+      try {
+        const parsed = JSON.parse(jsonText);
+        setClientValidation(validateDrawBatchPayload(parsed));
+      } catch {
+        setClientValidation(null); // JSON syntax error — let Zod handle it
+      }
+    }, 500);
+    return () => { if (clientValidationTimerRef.current) clearTimeout(clientValidationTimerRef.current); };
+  }, [jsonText]);
 
   const { inject, isInjecting, error: hookError, clearError } = useDrawInjector(sessionId);
   const [copiedError, setCopiedError] = useState(false);
@@ -2521,6 +2559,34 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
               </div>
             )}
 
+            {/* Client-side validation errors (pre-validation) */}
+            {clientValidation && clientValidation.errors.length > 0 && (
+              <div className="flex flex-col gap-1 rounded-lg border border-red-300/40 bg-red-50/60 px-2.5 py-2 dark:border-red-500/30 dark:bg-red-950/20">
+                <p className="text-[11px] font-semibold text-red-600 dark:text-red-400">
+                  {clientValidation.errors.length === 1 ? 'Payload error' : `${clientValidation.errors.length} payload errors`}
+                </p>
+                {clientValidation.errors.map((err, i) => (
+                  <p key={i} className="font-mono text-[10px] leading-snug text-red-600/80 dark:text-red-400/80">
+                    • <span className="font-semibold">{err.path ? `${err.path}: ` : ''}</span>{err.message}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* Client-side validation warnings */}
+            {clientValidation && clientValidation.warnings.length > 0 && (
+              <div className="flex flex-col gap-1 rounded-lg border border-yellow-300/40 bg-yellow-50/60 px-2.5 py-2 dark:border-yellow-500/30 dark:bg-yellow-950/20">
+                <p className="text-[11px] font-semibold text-yellow-700 dark:text-yellow-400">
+                  {clientValidation.warnings.length === 1 ? 'Warning' : `${clientValidation.warnings.length} warnings`}
+                </p>
+                {clientValidation.warnings.map((w, i) => (
+                  <p key={i} className="font-mono text-[10px] leading-snug text-yellow-700/80 dark:text-yellow-400/80">
+                    ⚠ <span className="font-semibold">{w.path ? `${w.path}: ` : ''}</span>{w.message}
+                  </p>
+                ))}
+              </div>
+            )}
+
             {/* Hook error (server / rate limit / network) */}
             {hookError && (
               <div className="flex flex-col gap-1.5 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-2.5 py-2">
@@ -2607,19 +2673,44 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
               </div>
             ) : null}
 
-            <PillButton
-              variant="accent"
-              onClick={handleInject}
-              disabled={!parseResult.ok || isInjecting}
-              aria-busy={isInjecting}
-              aria-label={isInjecting ? 'Injection in progress' : 'Inject drawing payload'}
-              className="self-end"
-            >
-              {isInjecting && (
-                <span className="mr-1 inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/40 border-t-white" aria-hidden="true" />
-              )}
-              {isInjecting ? 'Injecting…' : 'Inject'}
-            </PillButton>
+            {(() => {
+              const hasClientErrors = clientValidation !== null && clientValidation.errors.length > 0;
+              const hasClientWarnings = clientValidation !== null && clientValidation.warnings.length > 0 && !hasClientErrors;
+              const isDisabled = !parseResult.ok || isInjecting || hasClientErrors;
+              return (
+                <div className="flex items-center gap-2 self-end">
+                  {hasClientWarnings && (
+                    <PillButton
+                      variant="accent"
+                      onClick={handleInject}
+                      disabled={!parseResult.ok || isInjecting}
+                      aria-busy={isInjecting}
+                      aria-label="Inject with warnings"
+                      className="!bg-yellow-500 !text-white hover:!bg-yellow-600 dark:!bg-yellow-600 dark:hover:!bg-yellow-700"
+                    >
+                      {isInjecting && (
+                        <span className="mr-1 inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/40 border-t-white" aria-hidden="true" />
+                      )}
+                      {isInjecting ? 'Injecting…' : '⚠️ Inject anyway'}
+                    </PillButton>
+                  )}
+                  {!hasClientWarnings && (
+                    <PillButton
+                      variant="accent"
+                      onClick={handleInject}
+                      disabled={isDisabled}
+                      aria-busy={isInjecting}
+                      aria-label={isInjecting ? 'Injection in progress' : 'Inject drawing payload'}
+                    >
+                      {isInjecting && (
+                        <span className="mr-1 inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/40 border-t-white" aria-hidden="true" />
+                      )}
+                      {isInjecting ? 'Injecting…' : 'Inject'}
+                    </PillButton>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ── AI-assisted JSON generation ── */}
             <div className="mt-2 flex flex-col gap-2 border-t border-[var(--color-border)] pt-2">
@@ -2668,17 +2759,32 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
               {quickType && (
                 <>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {QUICK_FIELDS[quickType].map((f) => (
-                      <label key={f.key} className="flex flex-col gap-0.5">
-                        <span className="text-[9px] font-medium text-[var(--color-text-muted)]">{f.label}</span>
-                        <input
-                          type={f.type === 'color' ? 'color' : f.type === 'number' ? 'number' : 'text'}
-                          value={quickFields[f.key] ?? f.defaultValue}
-                          onChange={(e) => setQuickFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                          className={`rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] ${f.type === 'color' ? 'h-7 w-full cursor-pointer p-0' : ''}`}
-                        />
-                      </label>
-                    ))}
+                    {QUICK_FIELDS[quickType].map((f) => {
+                      const isMathField = (f.key === 'tex') || (f.key === 'content' && containsLatex(quickFields[f.key] ?? f.defaultValue));
+                      if (isMathField) {
+                        return (
+                          <div key={f.key} className="col-span-2">
+                            <MathInputField
+                              label={f.label}
+                              value={quickFields[f.key] ?? f.defaultValue}
+                              onChange={(v) => setQuickFields((prev) => ({ ...prev, [f.key]: v }))}
+                              placeholder={f.defaultValue}
+                            />
+                          </div>
+                        );
+                      }
+                      return (
+                        <label key={f.key} className="flex flex-col gap-0.5">
+                          <span className="text-[9px] font-medium text-[var(--color-text-muted)]">{f.label}</span>
+                          <input
+                            type={f.type === 'color' ? 'color' : f.type === 'number' ? 'number' : 'text'}
+                            value={quickFields[f.key] ?? f.defaultValue}
+                            onChange={(e) => setQuickFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                            className={`rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] ${f.type === 'color' ? 'h-7 w-full cursor-pointer p-0' : ''}`}
+                          />
+                        </label>
+                      );
+                    })}
                   </div>
                   {quickType === 'function_curve' && (
                     <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1.5">
@@ -2841,17 +2947,32 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
             {buildType && (
               <>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {BUILD_FIELDS[buildType].map((f) => (
-                    <label key={f.key} className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-medium text-[var(--color-text-muted)]">{f.label}</span>
-                      <input
-                        type={f.type === 'color' ? 'color' : f.type === 'number' ? 'number' : 'text'}
-                        value={buildFields[f.key] ?? f.defaultValue}
-                        onChange={(e) => setBuildFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                        className={`rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] ${f.type === 'color' ? 'h-7 w-full cursor-pointer p-0' : ''}`}
-                      />
-                    </label>
-                  ))}
+                  {BUILD_FIELDS[buildType].map((f) => {
+                    const isMathField = (f.key === 'tex') || (f.key === 'content' && containsLatex(buildFields[f.key] ?? f.defaultValue));
+                    if (isMathField) {
+                      return (
+                        <div key={f.key} className="col-span-2">
+                          <MathInputField
+                            label={f.label}
+                            value={buildFields[f.key] ?? f.defaultValue}
+                            onChange={(v) => setBuildFields((prev) => ({ ...prev, [f.key]: v }))}
+                            placeholder={f.defaultValue}
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <label key={f.key} className="flex flex-col gap-0.5">
+                        <span className="text-[9px] font-medium text-[var(--color-text-muted)]">{f.label}</span>
+                        <input
+                          type={f.type === 'color' ? 'color' : f.type === 'number' ? 'number' : 'text'}
+                          value={buildFields[f.key] ?? f.defaultValue}
+                          onChange={(e) => setBuildFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          className={`rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] ${f.type === 'color' ? 'h-7 w-full cursor-pointer p-0' : ''}`}
+                        />
+                      </label>
+                    );
+                  })}
                 </div>
                 <PillButton
                   variant="accent"

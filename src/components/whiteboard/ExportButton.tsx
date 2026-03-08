@@ -16,9 +16,10 @@ export interface ExportButtonProps {
   className?: string;
   disabled?: boolean;
   batches?: DrawBatch[];
+  toggleRef?: React.MutableRefObject<(() => void) | null>;
 }
 
-export function ExportButton({ whiteboardRef, className, disabled, batches }: ExportButtonProps) {
+export function ExportButton({ whiteboardRef, className, disabled, batches, toggleRef }: ExportButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [format, setFormat] = useState<ExportFormat>('png');
@@ -59,6 +60,14 @@ export function ExportButton({ whiteboardRef, className, disabled, batches }: Ex
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen]);
+
+  // Expose toggle function via ref for keyboard shortcut wiring
+  useEffect(() => {
+    if (toggleRef) {
+      toggleRef.current = () => setIsOpen((v) => !v);
+      return () => { toggleRef.current = null; };
+    }
+  }, [toggleRef]);
 
   const handleExport = useCallback(async () => {
     const handle = whiteboardRef.current;

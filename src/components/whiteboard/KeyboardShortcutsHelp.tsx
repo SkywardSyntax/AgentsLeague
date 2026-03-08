@@ -10,15 +10,20 @@ interface Shortcut {
 const SHORTCUTS: Shortcut[] = [
   { keys: '⌘/Ctrl + Z', description: 'Undo' },
   { keys: '⌘/Ctrl + Shift + Z', description: 'Redo' },
+  { keys: '⌘/Ctrl + A', description: 'Select all' },
   { keys: '⌘/Ctrl + 0', description: 'Fit to canvas' },
   { keys: '⌘/Ctrl + +/−', description: 'Zoom in / out' },
   { keys: '⌘/Ctrl + ⌫', description: 'Clear canvas' },
+  { keys: '⌘/Ctrl + E', description: 'Open export' },
+  { keys: '⌘/Ctrl + I', description: 'Toggle injector' },
+  { keys: '⌘/Ctrl + S', description: 'Save snapshot' },
+  { keys: '⌘/Ctrl + Shift + C', description: 'Copy share URL' },
   { keys: 'Ctrl + Shift + K', description: 'Focus chat input' },
   { keys: 'Ctrl + Shift + N', description: 'New chat' },
-  { keys: 'Ctrl + Shift + I', description: 'Toggle injector' },
   { keys: 'Ctrl + Enter', description: 'Validate + inject (in editor)' },
   { keys: 'Ctrl + Shift + F', description: 'Format JSON (in editor)' },
-  { keys: 'Esc', description: 'Cancel active stream' },
+  { keys: 'Esc', description: 'Close panel / cancel stream' },
+  { keys: '?', description: 'Shortcut cheat sheet' },
 ];
 
 export const KeyboardShortcutsHelp = memo(function KeyboardShortcutsHelp() {
