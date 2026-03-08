@@ -4244,6 +4244,392 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
 
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Probability tree expansion
+// ---------------------------------------------------------------------------
+
+function expandProbabilityTree(el: ProbabilityTreeElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const startX = el.x ?? 100;
+  const startY = el.y ?? 100;
+  const levelSpacing = el.levelSpacing ?? 160;
+  const branchSpacing = el.branchSpacing ?? 60;
+  const showFinalProb = el.showFinalProb ?? true;
+
+  function gcd(a: number, b: number): number {
+    return b === 0 ? a : gcd(b, a % b);
+  }
+
+  function toFraction(p: number): string {
+    const denoms = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 100];
+    for (const d of denoms) {
+      const n = p * d;
+      if (Math.abs(n - Math.round(n)) < 1e-9) {
+        const num = Math.round(n);
+        const g = gcd(Math.abs(num), d);
+        return `${num / g}/${d / g}`;
+      }
+    }
+    return p.toFixed(2);
+  }
+
+  function countLeaves(branches: ProbabilityTreeBranch[]): number {
+    if (!branches || branches.length === 0) return 1;
+    return branches.reduce((sum, b) => sum + countLeaves(b.children ?? []), 0);
+  }
+
+  let nodeIdx = 0;
+  let edgeIdx = 0;
+  let probLabelIdx = 0;
+  let leafIdx = 0;
+
+  const totalLeaves = countLeaves(el.branches);
+  const rootY = startY + ((totalLeaves - 1) * branchSpacing) / 2;
+  const rootX = startX;
+
+  // Root node
+  out.push({
+    type: 'ellipse' as const,
+    id: `${id}-node-${nodeIdx++}`,
+    cx: rootX,
+    cy: rootY,
+    rx: 35,
+    ry: 18,
+    color: '#1f2a44',
+    stroke_width: 1.5,
+  });
+  out.push({
+    type: 'text' as const,
+    id: `${id}-label-${nodeIdx - 1}`,
+    x: rootX,
+    y: rootY,
+    text: el.rootLabel,
+    size: 12,
+    align: 'center' as const,
+    color: '#1f2a44',
+  });
+
+  function drawBranches(
+    branches: ProbabilityTreeBranch[],
+    parentX: number,
+    parentY: number,
+    level: number,
+    topY: number,
+    cumulativeProb: number,
+  ): void {
+    let currentTopY = topY;
+    for (const branch of branches) {
+      const leaves = countLeaves(branch.children ?? []);
+      const childY = currentTopY + ((leaves - 1) * branchSpacing) / 2;
+      const childX = startX + (level + 1) * levelSpacing;
+
+      // Line from parent node edge to child node edge
+      out.push({
+        type: 'line' as const,
+        id: `${id}-edge-${edgeIdx++}`,
+        from: { x: parentX + 35, y: parentY },
+        to: { x: childX - 35, y: childY },
+        color: '#1f2a44',
+        stroke_width: 1.5,
+      });
+
+      // Probability label on the edge
+      const midX = (parentX + 35 + childX - 35) / 2;
+      const midY = (parentY + childY) / 2 - 10;
+      out.push({
+        type: 'text' as const,
+        id: `${id}-prob-${probLabelIdx++}`,
+        x: midX,
+        y: midY,
+        text: toFraction(branch.probability),
+        size: 11,
+        align: 'center' as const,
+        color: '#555555',
+      });
+
+      // Child node ellipse
+      out.push({
+        type: 'ellipse' as const,
+        id: `${id}-node-${nodeIdx++}`,
+        cx: childX,
+        cy: childY,
+        rx: 35,
+        ry: 18,
+        color: '#1f2a44',
+        stroke_width: 1.5,
+      });
+
+      // Child node label
+      out.push({
+        type: 'text' as const,
+        id: `${id}-label-${nodeIdx - 1}`,
+        x: childX,
+        y: childY,
+        text: branch.label,
+        size: 12,
+        align: 'center' as const,
+        color: '#1f2a44',
+      });
+
+      const newCumProb = cumulativeProb * branch.probability;
+
+      if (!branch.children || branch.children.length === 0) {
+        // Leaf: show cumulative probability
+        if (showFinalProb) {
+          out.push({
+            type: 'text' as const,
+            id: `${id}-final-${leafIdx++}`,
+            x: childX + 45,
+            y: childY,
+            text: `P = ${toFraction(newCumProb)}`,
+            size: 11,
+            align: 'left' as const,
+            color: '#888888',
+          });
+        }
+      } else {
+        drawBranches(branch.children, childX, childY, level + 1, currentTopY, newCumProb);
+      }
+
+      currentTopY += leaves * branchSpacing;
+    }
+  }
+
+  drawBranches(el.branches, rootX, rootY, 0, startY, 1);
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Scatter plot expansion
+// ---------------------------------------------------------------------------
+
+function expandScatterPlot(el: ScatterPlotElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const canvasX = el.x ?? 100;
+  const canvasY = el.y ?? 100;
+  const W = el.width ?? 400;
+  const H = el.height ?? 300;
+
+  const marginLeft = 60;
+  const marginRight = 30;
+  const marginTop = 40;
+  const marginBottom = 50;
+
+  const plotX = canvasX + marginLeft;
+  const plotY = canvasY + marginTop;
+  const plotW = W - marginLeft - marginRight;
+  const plotH = H - marginTop - marginBottom;
+
+  const points = el.points ?? [];
+  const axisColor = '#1f2a44';
+  const pointColor = el.pointColor ?? '#3b82f6';
+  const pointRadius = el.pointRadius ?? 4;
+
+  // Data bounds with 5% padding
+  let xMin = points.length ? Math.min(...points.map(p => p.x)) : 0;
+  let xMax = points.length ? Math.max(...points.map(p => p.x)) : 1;
+  let yMin = points.length ? Math.min(...points.map(p => p.y)) : 0;
+  let yMax = points.length ? Math.max(...points.map(p => p.y)) : 1;
+
+  if (xMin === xMax) { xMin -= 1; xMax += 1; }
+  if (yMin === yMax) { yMin -= 1; yMax += 1; }
+
+  const xPad = (xMax - xMin) * 0.05;
+  const yPad = (yMax - yMin) * 0.05;
+  xMin -= xPad; xMax += xPad;
+  yMin -= yPad; yMax += yPad;
+
+  const toScreenX = (x: number) => plotX + ((x - xMin) / (xMax - xMin)) * plotW;
+  const toScreenY = (y: number) => plotY + plotH - ((y - yMin) / (yMax - yMin)) * plotH;
+
+  // Title
+  if (el.title) {
+    out.push({
+      type: 'text' as const,
+      id: `${id}-title`,
+      x: plotX + plotW / 2,
+      y: canvasY + 18,
+      text: el.title,
+      size: 14,
+      align: 'center' as const,
+      color: axisColor,
+    });
+  }
+
+  // X axis with arrow
+  out.push({
+    type: 'arrow' as const,
+    id: `${id}-x-axis`,
+    from: { x: plotX, y: plotY + plotH },
+    to: { x: plotX + plotW + 15, y: plotY + plotH },
+    color: axisColor,
+    stroke_width: 1.5,
+  });
+
+  // Y axis with arrow
+  out.push({
+    type: 'arrow' as const,
+    id: `${id}-y-axis`,
+    from: { x: plotX, y: plotY + plotH },
+    to: { x: plotX, y: plotY - 15 },
+    color: axisColor,
+    stroke_width: 1.5,
+  });
+
+  // 5 X tick marks
+  const xTickCount = 5;
+  for (let i = 0; i <= xTickCount; i++) {
+    const val = xMin + (i / xTickCount) * (xMax - xMin);
+    const sx = toScreenX(val);
+    out.push({
+      type: 'line' as const,
+      id: `${id}-x-tick-${i}`,
+      from: { x: sx, y: plotY + plotH - 4 },
+      to: { x: sx, y: plotY + plotH + 4 },
+      color: axisColor,
+      stroke_width: 1,
+    });
+    out.push({
+      type: 'text' as const,
+      id: `${id}-x-tick-label-${i}`,
+      x: sx,
+      y: plotY + plotH + 16,
+      text: Math.abs(val) >= 100 ? val.toFixed(0) : Math.abs(val) >= 10 ? val.toFixed(1) : val.toFixed(2),
+      size: 10,
+      align: 'center' as const,
+      color: axisColor,
+    });
+  }
+
+  // 5 Y tick marks
+  const yTickCount = 5;
+  for (let i = 0; i <= yTickCount; i++) {
+    const val = yMin + (i / yTickCount) * (yMax - yMin);
+    const sy = toScreenY(val);
+    out.push({
+      type: 'line' as const,
+      id: `${id}-y-tick-${i}`,
+      from: { x: plotX - 4, y: sy },
+      to: { x: plotX + 4, y: sy },
+      color: axisColor,
+      stroke_width: 1,
+    });
+    out.push({
+      type: 'text' as const,
+      id: `${id}-y-tick-label-${i}`,
+      x: plotX - 8,
+      y: sy + 4,
+      text: Math.abs(val) >= 100 ? val.toFixed(0) : Math.abs(val) >= 10 ? val.toFixed(1) : val.toFixed(2),
+      size: 10,
+      align: 'right' as const,
+      color: axisColor,
+    });
+  }
+
+  // X axis label
+  if (el.xLabel) {
+    out.push({
+      type: 'text' as const,
+      id: `${id}-x-label`,
+      x: plotX + plotW / 2,
+      y: canvasY + H - 8,
+      text: el.xLabel,
+      size: 12,
+      align: 'center' as const,
+      color: axisColor,
+    });
+  }
+
+  // Y axis label
+  if (el.yLabel) {
+    out.push({
+      type: 'text' as const,
+      id: `${id}-y-label`,
+      x: canvasX + 12,
+      y: plotY + plotH / 2,
+      text: el.yLabel,
+      size: 12,
+      align: 'center' as const,
+      color: axisColor,
+    });
+  }
+
+  // Regression line and R²
+  if (el.showRegressionLine && points.length >= 2) {
+    const n = points.length;
+    const sumX = points.reduce((s, p) => s + p.x, 0);
+    const sumY = points.reduce((s, p) => s + p.y, 0);
+    const sumXY = points.reduce((s, p) => s + p.x * p.y, 0);
+    const sumXX = points.reduce((s, p) => s + p.x * p.x, 0);
+    const denom = n * sumXX - sumX * sumX;
+    if (Math.abs(denom) > 1e-10) {
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / n;
+      const meanY = sumY / n;
+      const ssTot = points.reduce((s, p) => s + (p.y - meanY) ** 2, 0);
+      const ssRes = points.reduce((s, p) => s + (p.y - (slope * p.x + intercept)) ** 2, 0);
+      const rSquared = ssTot > 1e-10 ? 1 - ssRes / ssTot : 1;
+      const regColor = el.regressionColor ?? '#ef4444';
+
+      out.push({
+        type: 'line' as const,
+        id: `${id}-regression-line`,
+        from: { x: toScreenX(xMin), y: toScreenY(slope * xMin + intercept) },
+        to: { x: toScreenX(xMax), y: toScreenY(slope * xMax + intercept) },
+        color: regColor,
+        stroke_width: 1.5,
+        lineStyle: 'dashed' as const,
+      });
+
+      out.push({
+        type: 'text' as const,
+        id: `${id}-r2-label`,
+        x: plotX + plotW - 5,
+        y: plotY + 14,
+        text: `R² = ${rSquared.toFixed(3)}`,
+        size: 11,
+        align: 'right' as const,
+        color: regColor,
+      });
+    }
+  }
+
+  // Data points
+  points.forEach((pt, i) => {
+    const sx = toScreenX(pt.x);
+    const sy = toScreenY(pt.y);
+    out.push({
+      type: 'ellipse' as const,
+      id: `${id}-point-${i}`,
+      cx: sx,
+      cy: sy,
+      rx: pointRadius,
+      ry: pointRadius,
+      color: pointColor,
+      stroke_width: 0,
+      fill: pointColor,
+    });
+    if (pt.label) {
+      out.push({
+        type: 'text' as const,
+        id: `${id}-point-label-${i}`,
+        x: sx,
+        y: sy - pointRadius - 4,
+        text: pt.label,
+        size: 10,
+        align: 'center' as const,
+        color: axisColor,
+      });
+    }
+  });
+
+  return out;
+}
+
 function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   let curveIndex = 0;
@@ -4324,6 +4710,10 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandPolygon(el));
     } else if (el.type === 'geometric_construction') {
       result.push(...expandGeometricConstruction(el));
+    } else if (el.type === 'probability_tree') {
+      result.push(...expandProbabilityTree(el));
+    } else if (el.type === 'scatter_plot') {
+      result.push(...expandScatterPlot(el));
     } else if (el.type === 'interval_diagram') {
       result.push(...expandIntervalDiagram(el, theme));
     } else {
@@ -5142,6 +5532,10 @@ export function lowerMathPrimitive(
       return expandPolygon(el);
     case 'geometric_construction':
       return expandGeometricConstruction(el);
+    case 'probability_tree':
+      return expandProbabilityTree(el);
+    case 'scatter_plot':
+      return expandScatterPlot(el);
     case 'interval_diagram':
       return expandIntervalDiagram(el, theme);
     case 'probability_tree':
