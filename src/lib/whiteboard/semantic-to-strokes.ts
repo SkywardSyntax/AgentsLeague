@@ -470,7 +470,15 @@ async function compileOneElement(
     || element.type === 'slope_field' || element.type === 'vector_field_2d'
     || element.type === 'wireframe_3d'
     || element.type === 'sequence_plot' || element.type === 'bezier_curve'
-    || element.type === 'complex_plane' || element.type === 'number_theory_grid') {
+    || element.type === 'complex_plane' || element.type === 'number_theory_grid'
+    || element.type === 'polygon' || element.type === 'geometric_construction'
+    || element.type === 'annotation_arrow' || element.type === 'formula_box'
+    || element.type === 'venn_diagram' || element.type === 'truth_table'
+    || element.type === 'conic_section' || element.type === 'coordinate_grid'
+    || element.type === 'probability_tree' || element.type === 'scatter_plot'
+    || element.type === 'symbol_grid' || element.type === 'equation_system'
+    || element.type === 'comparison_chart' || element.type === 'box_plot'
+    || element.type === 'interval_diagram') {
     const lowered = lowerMathPrimitive(element);
     for (const lowEl of lowered) {
       const sub = await compileOneElement(lowEl, preset);
@@ -565,7 +573,22 @@ function expandAndSortForInjection(
       el.type === 'sequence_plot' ||
       el.type === 'bezier_curve' ||
       el.type === 'complex_plane' ||
-      el.type === 'number_theory_grid'
+      el.type === 'number_theory_grid' ||
+      el.type === 'polygon' ||
+      el.type === 'geometric_construction' ||
+      el.type === 'annotation_arrow' ||
+      el.type === 'formula_box' ||
+      el.type === 'venn_diagram' ||
+      el.type === 'truth_table' ||
+      el.type === 'conic_section' ||
+      el.type === 'coordinate_grid' ||
+      el.type === 'probability_tree' ||
+      el.type === 'scatter_plot' ||
+      el.type === 'symbol_grid' ||
+      el.type === 'equation_system' ||
+      el.type === 'comparison_chart' ||
+      el.type === 'box_plot' ||
+      el.type === 'interval_diagram'
     ) {
       const lowered = lowerMathPrimitive(el, colorTheme);
       for (const child of lowered) {

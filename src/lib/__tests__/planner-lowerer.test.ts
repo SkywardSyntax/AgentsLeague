@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { lowerPlannedLayoutToDrawBatch, DEFAULT_MAX_LOWERED_ELEMENTS, planSemanticBatch } from '@/lib/whiteboard/planner';
 import type { PlannedSemanticLayout } from '@/lib/whiteboard/planner';
-import type { DrawElement, SemanticBatch, PolygonElement, GeometricConstructionElement } from '@/types/agent';
+import type { DrawElement, SemanticBatch, PolygonElement, GeometricConstructionElement, AnnotationArrowElement, FormulaBoxElement, NumberLineElement, IntervalDiagramElement } from '@/types/agent';
 import { DrawElementSchema } from '@/lib/schema';
 
 function makeLayout(elements: DrawElement[], warnings: string[] = []): PlannedSemanticLayout {
@@ -206,7 +206,7 @@ describe('planner lowerer', () => {
     };
     const planned = makeLayout([hex]);
     const draw = lowerPlannedLayoutToDrawBatch(planned);
-    const edges = draw.elements.filter(e => e.type === 'line' && e.id.startsWith('hex1-edge-'));
+    const edges = draw.elements.filter(e => e.type === 'line' && e.id.startsWith('hex1-edge'));
     expect(edges).toHaveLength(6);
   });
 
@@ -223,7 +223,7 @@ describe('planner lowerer', () => {
     };
     const planned = makeLayout([quad]);
     const draw = lowerPlannedLayoutToDrawBatch(planned);
-    const edges = draw.elements.filter(e => e.type === 'line' && e.id.startsWith('quad1-edge-'));
+    const edges = draw.elements.filter(e => e.type === 'line' && e.id.startsWith('quad1-edge'));
     expect(edges).toHaveLength(4);
   });
 
@@ -240,7 +240,7 @@ describe('planner lowerer', () => {
     };
     const planned = makeLayout([tri]);
     const draw = lowerPlannedLayoutToDrawBatch(planned);
-    const arcs = draw.elements.filter(e => e.id.startsWith('tri1-arc-'));
+    const arcs = draw.elements.filter(e => e.id.startsWith('tri1-angle'));
     expect(arcs.length).toBeGreaterThan(0);
   });
 
@@ -278,8 +278,8 @@ describe('planner lowerer', () => {
     };
     const planned = makeLayout([gc]);
     const draw = lowerPlannedLayoutToDrawBatch(planned);
-    const hasCircle = draw.elements.some(e => e.type === 'ellipse' && e.id.includes('circle'));
-    const hasLine = draw.elements.some(e => e.type === 'line' && e.id.includes('line'));
+    const hasCircle = draw.elements.some(e => e.type === 'ellipse' && e.id.includes('step0'));
+    const hasLine = draw.elements.some(e => e.type === 'line' && e.id.includes('step1'));
     expect(hasCircle).toBe(true);
     expect(hasLine).toBe(true);
   });
@@ -315,6 +315,145 @@ describe('planner lowerer', () => {
       // missing steps
     });
     expect(missing.success).toBe(false);
+  });
+
+  // --- interval_diagram tests ---
+
+  it('interval_diagram with open/closed endpoints produces correct circles', () => {
+    const el: IntervalDiagramElement = {
+      id: 'iv1',
+      type: 'interval_diagram',
+      x: 50,
+      y: 100,
+      intervals: [
+        { start: -2, end: 3, startOpen: false, endOpen: true },
+      ],
+    };
+    const planned = makeLayout([el]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+
+    // Should have at least one filled circle (closed start) and one open circle (open end)
+    const circles = draw.elements.filter(e => e.type === 'ellipse');
+    expect(circles.length).toBeGreaterThanOrEqual(2);
+
+    const closedCircle = circles.find(e => e.type === 'ellipse' && 'fillColor' in e && e.fillColor);
+    const openCircle = circles.find(e => e.type === 'ellipse' && !('fillColor' in e && e.fillColor));
+    expect(closedCircle).toBeDefined();
+    expect(openCircle).toBeDefined();
+  });
+
+  it('interval_diagram with infinity endpoint produces arrow', () => {
+    const el: IntervalDiagramElement = {
+      id: 'iv2',
+      type: 'interval_diagram',
+      x: 50,
+      y: 100,
+      intervals: [
+        { start: 5, end: Infinity, startOpen: true },
+      ],
+    };
+    const planned = makeLayout([el]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+
+    // Should have an arrow element for the infinity direction
+    const arrows = draw.elements.filter(e => e.type === 'arrow');
+    expect(arrows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('interval_diagram schema validates correctly', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'iv-v',
+      type: 'interval_diagram',
+      x: 100,
+      y: 200,
+      intervals: [
+        { start: -2, end: 3, endOpen: true },
+        { start: 5, end: 1e308, startOpen: true },
+      ],
+      showNotation: true,
+      title: 'Solution Set',
+    });
+    expect(valid.success).toBe(true);
+
+    const missing = DrawElementSchema.safeParse({
+      id: 'iv-m',
+      type: 'interval_diagram',
+      // missing intervals
+    });
+    expect(missing.success).toBe(false);
+  });
+
+  // --- number_line highlight color and region tests ---
+
+  it('number_line highlights with color produce colored dots', () => {
+    const el: NumberLineElement = {
+      id: 'nl1',
+      type: 'number_line',
+      x: 50,
+      y: 100,
+      length: 300,
+      min: 0,
+      max: 10,
+      highlights: [
+        { value: 3, label: 'A', color: '#ff0000' },
+        { value: 7, label: 'B' },
+      ],
+    };
+    const planned = makeLayout([el]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+
+    // Should have colored dot (ellipse with fillColor matching highlight color)
+    const redDot = draw.elements.find(
+      e => e.type === 'ellipse' && 'fillColor' in e && e.fillColor === '#ff0000',
+    );
+    expect(redDot).toBeDefined();
+
+    // The label 'A' should be colored red
+    const redLabel = draw.elements.find(
+      e => e.type === 'text' && 'text' in e && (e as { text: string }).text === 'A' && e.color === '#ff0000',
+    );
+    expect(redLabel).toBeDefined();
+  });
+
+  it('number_line with region produces shaded rect', () => {
+    const el: NumberLineElement = {
+      id: 'nl2',
+      type: 'number_line',
+      x: 50,
+      y: 100,
+      length: 300,
+      min: 0,
+      max: 10,
+      region: { start: 2, end: 8, color: 'rgba(255,0,0,0.2)' },
+    };
+    const planned = makeLayout([el]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+
+    // Should have a rect element for the region shading
+    const regionRect = draw.elements.find(
+      e => e.type === 'rect' && e.id.includes('region'),
+    );
+    expect(regionRect).toBeDefined();
+    if (regionRect && regionRect.type === 'rect') {
+      expect(regionRect.fillColor).toBe('rgba(255,0,0,0.2)');
+    }
+  });
+
+  it('number_line with region and highlights schema validates', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'nl-v',
+      type: 'number_line',
+      x: 50,
+      y: 100,
+      length: 300,
+      min: 0,
+      max: 10,
+      highlights: [
+        { value: 3, label: 'A', color: '#ff0000' },
+      ],
+      region: { start: 2, end: 8 },
+    });
+    expect(valid.success).toBe(true);
   });
 });
 
@@ -512,5 +651,126 @@ describe('symbol_grid and equation_system schema validation', () => {
       // missing equations
     });
     expect(result.success).toBe(false);
+  });
+
+  // --- annotation_arrow tests ---
+
+  it('expands annotation_arrow into line segments and text elements', () => {
+    const elements: DrawElement[] = [
+      {
+        id: 'ann1',
+        type: 'annotation_arrow',
+        text: 'maximum',
+        targetX: 400,
+        targetY: 200,
+        labelX: 500,
+        labelY: 100,
+        fontSize: 14,
+      } as AnnotationArrowElement,
+    ];
+    const layout = makeLayout(elements);
+    const batch = lowerPlannedLayoutToDrawBatch(layout);
+    const types = batch.elements.map((e) => e.type);
+    // Should produce line segments for the bezier curve + arrowhead lines + text label
+    expect(types.filter((t) => t === 'line').length).toBeGreaterThanOrEqual(2);
+    expect(types).toContain('text');
+  });
+
+  it('renders annotation_arrow text as latex when it contains LaTeX syntax', () => {
+    const elements: DrawElement[] = [
+      {
+        id: 'ann2',
+        type: 'annotation_arrow',
+        text: 'f(x) = x^2',
+        targetX: 300,
+        targetY: 300,
+        labelX: 450,
+        labelY: 150,
+      } as AnnotationArrowElement,
+    ];
+    const layout = makeLayout(elements);
+    const batch = lowerPlannedLayoutToDrawBatch(layout);
+    const types = batch.elements.map((e) => e.type);
+    // Should use latex element since text contains ^
+    expect(types).toContain('latex');
+  });
+
+  // --- formula_box tests ---
+
+  it('expands formula_box into rect + latex elements', () => {
+    const elements: DrawElement[] = [
+      {
+        id: 'fb1',
+        type: 'formula_box',
+        formula: '\\int_a^b f(x)\\,dx = F(b)-F(a)',
+        x: 100,
+        y: 100,
+      } as FormulaBoxElement,
+    ];
+    const layout = makeLayout(elements);
+    const batch = lowerPlannedLayoutToDrawBatch(layout);
+    const types = batch.elements.map((e) => e.type);
+    expect(types).toContain('rect');
+    expect(types).toContain('latex');
+  });
+
+  it('includes title text when formula_box has a title', () => {
+    const elements: DrawElement[] = [
+      {
+        id: 'fb2',
+        type: 'formula_box',
+        formula: 'E = mc^2',
+        x: 200,
+        y: 200,
+        title: 'Mass-Energy Equivalence',
+      } as FormulaBoxElement,
+    ];
+    const layout = makeLayout(elements);
+    const batch = lowerPlannedLayoutToDrawBatch(layout);
+    const types = batch.elements.map((e) => e.type);
+    expect(types).toContain('rect');
+    expect(types).toContain('latex');
+    expect(types).toContain('text');
+  });
+
+  // --- schema validation tests ---
+
+  it('validates annotation_arrow required fields', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'ann-v',
+      type: 'annotation_arrow',
+      text: 'hello',
+      targetX: 100,
+      targetY: 200,
+      labelX: 300,
+      labelY: 100,
+    });
+    expect(valid.success).toBe(true);
+
+    const invalid = DrawElementSchema.safeParse({
+      id: 'ann-i',
+      type: 'annotation_arrow',
+      text: 'hello',
+      // missing targetX, targetY, labelX, labelY
+    });
+    expect(invalid.success).toBe(false);
+  });
+
+  it('validates formula_box required fields', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'fb-v',
+      type: 'formula_box',
+      formula: 'x^2 + y^2 = r^2',
+      x: 100,
+      y: 100,
+    });
+    expect(valid.success).toBe(true);
+
+    const invalid = DrawElementSchema.safeParse({
+      id: 'fb-i',
+      type: 'formula_box',
+      // missing formula, x, y
+    });
+    expect(invalid.success).toBe(false);
   });
 });

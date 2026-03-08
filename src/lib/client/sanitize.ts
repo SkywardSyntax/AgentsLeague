@@ -139,6 +139,11 @@ function clampElement(el: DrawElement): DrawElement {
     case 'formula_box':
     case 'venn_diagram':
     case 'truth_table':
+    case 'polygon':
+    case 'geometric_construction':
+    case 'interval_diagram':
+    case 'comparison_chart':
+    case 'box_plot':
       return el;
     default:
       return el;

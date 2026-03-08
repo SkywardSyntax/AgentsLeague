@@ -29,6 +29,7 @@ import type {
   PolygonElement,
   GeometricConstructionElement,
   ProbabilityTreeElement,
+  ProbabilityTreeBranch,
   ScatterPlotElement,
   AnnotationArrowElement,
   FormulaBoxElement,
@@ -4012,11 +4013,14 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
 
   // Title
   if (el.title) {
+    const firstStep = el.steps[0];
+    const titleX = firstStep?.x ?? firstStep?.cx ?? firstStep?.x1 ?? 200;
+    const titleY = (firstStep?.y ?? firstStep?.cy ?? firstStep?.y1 ?? 200) - 40;
     out.push({
       id: `${id}-title`,
       type: 'text' as const,
-      x: el.steps[0]?.x1 ?? 200,
-      y: (el.steps[0]?.y1 ?? 200) - 40,
+      x: titleX,
+      y: titleY,
       text: el.title,
       size: 18,
       color,
@@ -4031,16 +4035,16 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
 
     switch (step.type) {
       case 'point': {
-        const r = 3;
-        const px = step.x ?? step.x1 ?? 0;
-        const py = step.y ?? step.y1 ?? 0;
+        const dotR = 3;
+        const px = step.x ?? step.cx ?? step.x1 ?? 0;
+        const py = step.y ?? step.cy ?? step.y1 ?? 0;
         out.push({
           id: `${sid}-dot`,
           type: 'ellipse' as const,
           cx: px,
           cy: py,
-          rx: r,
-          ry: r,
+          rx: dotR,
+          ry: dotR,
           color: stepColor,
           fillColor: stepColor,
           stroke_width: 1,
@@ -4059,19 +4063,23 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
         break;
       }
       case 'line': {
+        const lx1 = step.x1 ?? 0;
+        const ly1 = step.y1 ?? 0;
+        const lx2 = step.x2 ?? 0;
+        const ly2 = step.y2 ?? 0;
         out.push({
           id: sid,
           type: 'line' as const,
-          from: { x: step.x1 ?? 0, y: step.y1 ?? 0 },
-          to: { x: step.x2 ?? 0, y: step.y2 ?? 0 },
+          from: { x: lx1, y: ly1 },
+          to: { x: lx2, y: ly2 },
           color: stepColor,
           stroke_width: stepSw,
         });
         if (step.ticks && step.ticks > 0) {
-          const mx = ((step.x1 ?? 0) + (step.x2 ?? 0)) / 2;
-          const my = ((step.y1 ?? 0) + (step.y2 ?? 0)) / 2;
-          const dx = (step.x2 ?? 0) - (step.x1 ?? 0);
-          const dy = (step.y2 ?? 0) - (step.y1 ?? 0);
+          const mx = (lx1 + lx2) / 2;
+          const my = (ly1 + ly2) / 2;
+          const dx = lx2 - lx1;
+          const dy = ly2 - ly1;
           const len = Math.sqrt(dx * dx + dy * dy) || 1;
           const nx = -dy / len;
           const ny = dx / len;
@@ -4093,13 +4101,11 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
           }
         }
         if (step.label) {
-          const mx = ((step.x1 ?? 0) + (step.x2 ?? 0)) / 2;
-          const my = ((step.y1 ?? 0) + (step.y2 ?? 0)) / 2;
           out.push({
             id: `${sid}-label`,
             type: 'text' as const,
-            x: mx + 8,
-            y: my - 8,
+            x: (lx1 + lx2) / 2 + 8,
+            y: (ly1 + ly2) / 2 - 8,
             text: step.label,
             size: 12,
             color: stepColor,
@@ -4108,16 +4114,16 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
         break;
       }
       case 'circle': {
-        const r = step.r ?? 50;
-        const ccx = step.cx ?? step.x1 ?? 0;
-        const ccy = step.cy ?? step.y1 ?? 0;
+        const cr = step.r ?? 50;
+        const ccx = step.cx ?? step.x ?? 0;
+        const ccy = step.cy ?? step.y ?? 0;
         out.push({
           id: sid,
           type: 'ellipse' as const,
           cx: ccx,
           cy: ccy,
-          rx: r,
-          ry: r,
+          rx: cr,
+          ry: cr,
           color: stepColor,
           stroke_width: stepSw,
         });
@@ -4125,7 +4131,7 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
           out.push({
             id: `${sid}-label`,
             type: 'text' as const,
-            x: ccx + r + 8,
+            x: ccx + cr + 8,
             y: ccy,
             text: step.label,
             size: 12,
@@ -4135,9 +4141,9 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
         break;
       }
       case 'arc': {
-        const r = step.r ?? 50;
-        const acx = step.cx ?? step.x1 ?? 0;
-        const acy = step.cy ?? step.y1 ?? 0;
+        const ar = step.r ?? 50;
+        const acx = step.cx ?? step.x ?? 0;
+        const acy = step.cy ?? step.y ?? 0;
         const start = (step.startAngle ?? 0) * DEG_TO_RAD_POLY;
         const end = (step.endAngle ?? 180) * DEG_TO_RAD_POLY;
         const segments = 24;
@@ -4147,8 +4153,8 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
           out.push({
             id: `${sid}-seg${s}`,
             type: 'line' as const,
-            from: { x: acx + r * Math.cos(t0), y: acy + r * Math.sin(t0) },
-            to: { x: acx + r * Math.cos(t1), y: acy + r * Math.sin(t1) },
+            from: { x: acx + ar * Math.cos(t0), y: acy + ar * Math.sin(t0) },
+            to: { x: acx + ar * Math.cos(t1), y: acy + ar * Math.sin(t1) },
             color: stepColor,
             stroke_width: stepSw,
           });
@@ -4156,13 +4162,13 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
         break;
       }
       case 'angle_bisector': {
-        const ax1 = step.x1 ?? 0;
-        const ay1 = step.y1 ?? 0;
+        const abx1 = step.x1 ?? 0;
+        const aby1 = step.y1 ?? 0;
         if (step.x2 != null && step.y2 != null) {
           out.push({
             id: sid,
             type: 'line' as const,
-            from: { x: ax1, y: ay1 },
+            from: { x: abx1, y: aby1 },
             to: { x: step.x2, y: step.y2 },
             color: stepColor,
             stroke_width: stepSw,
@@ -4170,8 +4176,8 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
           });
         }
         if (step.label) {
-          const lx = step.x2 != null ? (ax1 + step.x2) / 2 : ax1;
-          const ly = step.y2 != null ? (ay1 + step.y2) / 2 : ay1;
+          const lx = step.x2 != null ? (abx1 + step.x2) / 2 : abx1;
+          const ly = step.y2 != null ? (aby1 + step.y2) / 2 : aby1;
           out.push({
             id: `${sid}-label`,
             type: 'text' as const,
@@ -4185,20 +4191,20 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
         break;
       }
       case 'perpendicular': {
-        const px1 = step.x1 ?? 0;
-        const py1 = step.y1 ?? 0;
+        const ppx1 = step.x1 ?? 0;
+        const ppy1 = step.y1 ?? 0;
         if (step.x2 != null && step.y2 != null) {
           out.push({
             id: sid,
             type: 'line' as const,
-            from: { x: px1, y: py1 },
+            from: { x: ppx1, y: ppy1 },
             to: { x: step.x2, y: step.y2 },
             color: stepColor,
             stroke_width: stepSw,
             lineStyle: 'dashed' as const,
           });
-          const dx = step.x2 - px1;
-          const dy = step.y2 - py1;
+          const dx = step.x2 - ppx1;
+          const dy = step.y2 - ppy1;
           const len = Math.sqrt(dx * dx + dy * dy) || 1;
           const ux = dx / len;
           const uy = dy / len;
@@ -4206,16 +4212,16 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
           out.push({
             id: `${sid}-rmark0`,
             type: 'line' as const,
-            from: { x: px1 + ux * markSize, y: py1 + uy * markSize },
-            to: { x: px1 + ux * markSize - uy * markSize, y: py1 + uy * markSize + ux * markSize },
+            from: { x: ppx1 + ux * markSize, y: ppy1 + uy * markSize },
+            to: { x: ppx1 + ux * markSize - uy * markSize, y: ppy1 + uy * markSize + ux * markSize },
             color: stepColor,
             stroke_width: 1,
           });
           out.push({
             id: `${sid}-rmark1`,
             type: 'line' as const,
-            from: { x: px1 - uy * markSize, y: py1 + ux * markSize },
-            to: { x: px1 + ux * markSize - uy * markSize, y: py1 + uy * markSize + ux * markSize },
+            from: { x: ppx1 - uy * markSize, y: ppy1 + ux * markSize },
+            to: { x: ppx1 + ux * markSize - uy * markSize, y: ppy1 + uy * markSize + ux * markSize },
             color: stepColor,
             stroke_width: 1,
           });
@@ -4224,8 +4230,8 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
           out.push({
             id: `${sid}-label`,
             type: 'text' as const,
-            x: px1 + 8,
-            y: py1 - 8,
+            x: ppx1 + 8,
+            y: ppy1 - 8,
             text: step.label,
             size: 12,
             color: stepColor,
@@ -4238,7 +4244,6 @@ function expandGeometricConstruction(el: GeometricConstructionElement): DrawElem
 
   return out;
 }
-
 function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   let curveIndex = 0;
@@ -5139,6 +5144,13 @@ export function lowerMathPrimitive(
       return expandGeometricConstruction(el);
     case 'interval_diagram':
       return expandIntervalDiagram(el, theme);
+    case 'probability_tree':
+    case 'scatter_plot':
+      return [];
+    default: {
+      const _exhaustive: never = el;
+      return [];
+    }
   }
 }
 
