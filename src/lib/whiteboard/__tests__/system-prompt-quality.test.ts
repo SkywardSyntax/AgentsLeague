@@ -2,15 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { AGENT_SYSTEM_PROMPT } from '@/lib/server/openai';
 
 describe('AGENT_SYSTEM_PROMPT quality checks', () => {
-  it('contains all 22 element type names', () => {
+  it('contains all 30 draw element type names', () => {
     const elementTypes = [
       'rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear',
       'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve',
       'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region',
       'circle_with_radius', 'triangle_with_angles', 'parametric_curve',
       'polar_plot', 'histogram', 'normal_distribution',
-      // Handled types not in DRAW_ELEMENT_TYPES but processed in pipeline
-      'tangent_line',
+      'tangent_line', 'riemann_sum',
+      'slope_field', 'vector_field_2d', 'wireframe_3d',
+      'sequence_plot', 'bezier_curve',
+      'complex_plane', 'number_theory_grid',
     ];
     for (const t of elementTypes) {
       expect(AGENT_SYSTEM_PROMPT).toContain(t);

@@ -34,7 +34,7 @@ export const DRAW_TOOL_DEFINITION = {
   type: 'function' as const,
   name: 'emit_draw_batch',
   description:
-    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles, slope_field, vector_field_2d, wireframe_3d, sequence_plot, bezier_curve, complex_plane, number_theory_grid). Use when a visual explanation helps.',
+    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, matrix_bracket, linear_transform, angle_arc, integral_region, riemann_sum, tangent_line, circle_with_radius, triangle_with_angles, histogram, normal_distribution, slope_field, vector_field_2d, wireframe_3d, sequence_plot, bezier_curve, complex_plane, number_theory_grid). Use when a visual explanation helps.',
   strict: false,
   parameters: {
     type: 'object',
@@ -55,7 +55,7 @@ export const DRAW_TOOL_DEFINITION = {
             type: {
               type: 'string',
               enum: [...DRAW_ELEMENT_TYPES],
-              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y. wireframe_3d: 3D wireframe projection of shapes (cube, tetrahedron, octahedron, axes_3d, surface). Uses cx,cy center, size, rotationX/Y. sequence_plot: Visualize numeric sequences a_n=f(n). Uses expression with variable \'n\', nMin/nMax range, optional limit line. bezier_curve: Smooth parametric Bezier curves via control points. Uses points array of [x,y] pairs (3=quadratic, 4=cubic, more=polyBezier). Optional showControlPoints, showTangents. complex_plane: Complex number plane with Re/Im axes. Mark points and vectors with re/im coordinates. Optional showUnitCircle, xRange/yRange. number_theory_grid: Modular arithmetic visualization. n×n grid of cells with highlights. Optional showConnections for modular relationships.',
+              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. tangent_line: Draws tangent line to a curve at a specific x value. Uses expression for f(x), atX for the point. Pair with cartesian_axes + function_curve. riemann_sum: Draws Riemann sum rectangles under a curve. Uses expression for f(x), n for number of rectangles, method for sampling (left/right/midpoint). slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y. wireframe_3d: 3D wireframe projection of shapes (cube, tetrahedron, octahedron, axes_3d, surface). Uses cx,cy center, size, rotationX/Y. sequence_plot: Visualize numeric sequences a_n=f(n). Uses expression with variable \'n\', nMin/nMax range, optional limit line. bezier_curve: Smooth parametric Bezier curves via control points. Uses points array of [x,y] pairs (3=quadratic, 4=cubic, more=polyBezier). Optional showControlPoints, showTangents. complex_plane: Complex number plane with Re/Im axes. Mark points and vectors with re/im coordinates. Optional showUnitCircle, xRange/yRange. number_theory_grid: Modular arithmetic visualization. n×n grid of cells with highlights. Optional showConnections for modular relationships.',
             },
             x: { type: 'number', description: 'X position in canvas pixels. Safe range: [50, 1350].' },
             y: { type: 'number', description: 'Y position in canvas pixels. Safe range: [50, 650]. Y is inverted: smaller = higher on screen.' },
@@ -159,6 +159,28 @@ export const DRAW_TOOL_DEFINITION = {
             // bezier_curve fields
             showControlPoints: { type: 'boolean', description: 'Show control polygon and control point dots for bezier_curve. Default: false.' },
             showTangents: { type: 'boolean', description: 'Show tangent lines at endpoints for bezier_curve. Default: false.' },
+            // tangent_line fields
+            atX: { type: 'number', description: 'x value where the tangent line is drawn for tangent_line.' },
+            showPoint: { type: 'boolean', description: 'Show the point of tangency for tangent_line. Default: true.' },
+            // riemann_sum fields
+            method: { type: 'string', enum: ['left', 'right', 'midpoint'], description: 'Sampling method for riemann_sum rectangles. Default: left.' },
+            showFunction: { type: 'boolean', description: 'Draw f(x) curve on top of riemann_sum rectangles. Default: true.' },
+            showAxes: { type: 'boolean', description: 'Draw cartesian axes for riemann_sum or histogram. Default: true.' },
+            showValues: { type: 'boolean', description: 'Show value labels above histogram bars. Default: true.' },
+            // histogram fields
+            bins: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, value: { type: 'number' }, color: { type: 'string' } }, required: ['label', 'value'] }, description: 'Bin data for histogram: [{label, value, color?}].' },
+            yMax: { type: 'number', description: 'Maximum y-axis value for histogram. Defaults to 1.2× the largest bin value.' },
+            // normal_distribution fields
+            mu: { type: 'number', description: 'Mean (μ) for normal_distribution.' },
+            sigma: { type: 'number', description: 'Standard deviation (σ) for normal_distribution.' },
+            shadeFrom: { type: 'number', description: 'Start x value for shaded area under normal_distribution curve.' },
+            shadeTo: { type: 'number', description: 'End x value for shaded area under normal_distribution curve.' },
+            shadeColor: { type: 'string', description: 'Color for the shaded region of normal_distribution.' },
+            showMeanLine: { type: 'boolean', description: 'Show vertical mean line for normal_distribution. Default: true.' },
+            showSigmaLines: { type: 'boolean', description: 'Show vertical σ lines at ±1σ, ±2σ for normal_distribution.' },
+            showLabels: { type: 'boolean', description: 'Show μ and σ labels for normal_distribution.' },
+            fillColor: { type: 'string', description: 'Fill color for shapes, integral_region shading, etc.' },
+            fillOpacity: { type: 'number', description: 'Fill opacity (0–1) for integral_region. Default: 0.3.' },
             // complex_plane fields
             showUnitCircle: { type: 'boolean', description: 'Show the unit circle on complex_plane. Default: false.' },
             // number_theory_grid fields
@@ -354,6 +376,10 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Normal distribution curves | emit_draw_batch | normal_distribution | Bell curve with shading, σ lines |
 | Numeric sequences (a_n convergence) | emit_draw_batch | sequence_plot | Dot plot with optional limit line |
 | Bezier / spline curves | emit_draw_batch | bezier_curve | Smooth curves via control points (quad, cubic, poly) |
+| Riemann sums (left, right, midpoint) | emit_draw_batch | riemann_sum | Rectangle approximation under f(x) with method selection |
+| Tangent line / derivative at a point | emit_draw_batch | tangent_line (+ cartesian_axes, function_curve) | Auto-computed tangent via f(x) and atX |
+| Complex number visualization | emit_draw_batch | complex_plane | Complex plane with Re/Im axes, points, vectors, unit circle |
+| Modular arithmetic / number grids | emit_draw_batch | number_theory_grid | n×n grid with highlighted cells and modular connections |
 | Complex multi-panel text-based diagram | emit_graph_script | graph + node + edge DSL | Rich DSL with references and connections |
 
 - You may alternate text and drawings multiple times in a single turn
@@ -444,6 +470,10 @@ For graphs with cartesian_axes, use these defaults:
 | wireframe_3d | cx, cy, size, shape, rotationX, rotationY, expression, gridN, strokeColor, strokeWidth, showHiddenLines | 3D wireframe projection (cube, tetrahedron, octahedron, axes_3d, surface) |
 | sequence_plot | x, y, width, height, expression, nMin, nMax, limit, xRange, yRange, dotRadius, showLines | Numeric sequence a_n dot plot with optional convergence line |
 | bezier_curve | points (array of [x,y]), strokeColor, strokeWidth, showControlPoints, showTangents | Quadratic/cubic/poly Bézier curve via control points |
+| tangent_line | x, y, width, height, xRange, yRange, expression, atX, length, showPoint, label | Tangent line to f(x) at a specific point |
+| riemann_sum | x, y, width, height, xRange, yRange, expression, n, method, showFunction, showAxes | Riemann sum rectangles under f(x) |
+| complex_plane | points [{re,im,label,color}], vectors [{re,im,label,color}], showUnitCircle, xRange, yRange | Complex number plane with Re/Im axes |
+| number_theory_grid | cx, cy, n, highlights [{i,j,color,label}], showConnections, modulus, cellSize | Modular arithmetic n×n grid |
 
 ### Quick Type Selection — what to use for common requests
 | Want to show | Use these types |
@@ -462,6 +492,10 @@ For graphs with cartesian_axes, use these defaults:
 | 3D wireframe (cube, tetrahedron, surface) | wireframe_3d |
 | Numeric sequence convergence (a_n → L) | sequence_plot (with limit line) |
 | Smooth parametric Bézier / spline curves | bezier_curve (with showControlPoints for pedagogy) |
+| Riemann sum approximation (area under curve) | cartesian_axes + riemann_sum (set n, method) |
+| Tangent line at a point (auto-computed) | cartesian_axes + function_curve + tangent_line |
+| Complex number plane (Argand diagram) | complex_plane (with points, vectors, showUnitCircle) |
+| Modular arithmetic / multiplication table | number_theory_grid (with highlights and showConnections) |
 | Geometric shape with angles | triangle_with_angles or lines + angle_arc |
 | Unit circle / labeled circle | circle_with_radius + angle_arc + latex labels |
 | Linear transformation | linear_transform (with matrix and basis vectors) |
@@ -602,6 +636,81 @@ Example — cubic Bézier:
 Example — quadratic Bézier:
 \`\`\`json
 {"type":"bezier_curve","id":"bz2","points":[[300,500],[550,150],[800,500]],"strokeColor":"#dc2626","showControlPoints":true,"showTangents":true}
+\`\`\`
+
+### tangent_line Details
+Draws a tangent line to a function f(x) at a specific x value. Automatically computes the slope using numerical differentiation.
+\`expression\`: f(x) as a math string (same syntax as function_curve), e.g. "x^2", "sin(x)".
+\`atX\`: the x-coordinate where the tangent is drawn. A dot is placed at (atX, f(atX)).
+\`length\` (default 2): visible extent of the tangent line in math units.
+\`showPoint\` (default true): show a dot at the point of tangency.
+Pair with cartesian_axes + function_curve at the same x, y, width, height, xRange, yRange for a complete derivative visualization.
+Example — tangent to x² at x=2:
+\`\`\`json
+{"batch_id":"tangent-demo","elements":[
+  {"id":"axes","type":"cartesian_axes","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"xLabel":"x","yLabel":"y","gridlines":true},
+  {"id":"curve","type":"function_curve","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"expression":"x^2","color":"#2563eb"},
+  {"id":"tan","type":"tangent_line","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"expression":"x^2","atX":2,"showPoint":true,"label":"f'(2) = 4","color":"#dc2626"}
+]}
+\`\`\`
+
+### riemann_sum Details
+Draws Riemann sum rectangles under a function f(x), approximating the integral ∫f(x)dx.
+\`expression\`: f(x) as a math string, e.g. "x^2", "sin(x)".
+\`n\` (default 5): number of rectangles.
+\`method\` (default "left"): sampling point — "left", "right", or "midpoint".
+\`showFunction\` (default true): overlay the f(x) curve on top of the rectangles.
+\`showAxes\` (default true): draw cartesian axes.
+Uses x, y, width, height, xRange, yRange for positioning (same as function_curve).
+Example — left Riemann sum of x² on [0,3] with 6 rectangles:
+\`\`\`json
+{"type":"riemann_sum","id":"rs1","x":350,"y":80,"width":650,"height":450,"xRange":[0,3],"yRange":[-1,10],"expression":"x^2","n":6,"method":"left","showFunction":true,"showAxes":true,"color":"#2563eb"}
+\`\`\`
+Example — midpoint Riemann sum of sin(x) on [0, π]:
+\`\`\`json
+{"type":"riemann_sum","id":"rs2","x":350,"y":80,"width":650,"height":450,"xRange":[0,3.14],"yRange":[-0.5,1.5],"expression":"sin(x)","n":8,"method":"midpoint","color":"#16a34a"}
+\`\`\`
+
+### complex_plane Details
+Draws a complex number plane (Argand diagram) with Real and Imaginary axes. Mark specific complex numbers as points or vectors from the origin.
+\`points\`: array of \`{re, im, label?, color?}\` — marked with dots on the plane.
+\`vectors\`: array of \`{re, im, label?, color?}\` — drawn as arrows from origin to the complex number.
+\`showUnitCircle\` (default false): draw the unit circle |z| = 1.
+\`xRange\` (default [-2,2]): Real axis bounds. \`yRange\` (default [-2,2]): Imaginary axis bounds.
+The element auto-draws labeled Re/Im axes with gridlines.
+Example — plotting roots of z³ = 1:
+\`\`\`json
+{"type":"complex_plane","id":"cp1","points":[
+  {"re":1,"im":0,"label":"1","color":"#2563eb"},
+  {"re":-0.5,"im":0.866,"label":"ω","color":"#dc2626"},
+  {"re":-0.5,"im":-0.866,"label":"ω²","color":"#16a34a"}
+],"showUnitCircle":true,"xRange":[-2,2],"yRange":[-2,2]}
+\`\`\`
+Example — complex addition z₁ + z₂:
+\`\`\`json
+{"type":"complex_plane","id":"cp2","vectors":[
+  {"re":2,"im":1,"label":"z₁ = 2+i","color":"#2563eb"},
+  {"re":-1,"im":2,"label":"z₂ = -1+2i","color":"#dc2626"},
+  {"re":1,"im":3,"label":"z₁+z₂ = 1+3i","color":"#16a34a"}
+],"xRange":[-3,4],"yRange":[-1,4]}
+\`\`\`
+
+### number_theory_grid Details
+Draws an n×n grid for modular arithmetic visualizations: multiplication tables mod n, prime sieves, residue classes.
+\`n\`: grid size (n×n), max 20. Cells are labeled 0 to n-1 on each axis.
+\`highlights\`: array of \`{i, j, color?, label?}\` — cells to highlight (i = row, j = column).
+\`showConnections\` (default false): draw lines connecting cells where i×j ≡ 0 (mod modulus).
+\`modulus\` (defaults to n): modulus for connection computation.
+\`cellSize\` (default 20): cell size in pixels. Center at (cx, cy).
+Example — multiplication table mod 5, highlighting quadratic residues:
+\`\`\`json
+{"type":"number_theory_grid","id":"nt1","cx":700,"cy":350,"n":5,"cellSize":40,
+  "highlights":[
+    {"i":1,"j":1,"color":"#93c5fd","label":"1"},
+    {"i":2,"j":2,"color":"#93c5fd","label":"4"},
+    {"i":3,"j":3,"color":"#93c5fd","label":"4"},
+    {"i":4,"j":4,"color":"#93c5fd","label":"1"}
+  ],"showConnections":false}
 \`\`\`
 
 ### Dos and Don'ts for Math Drawings
@@ -847,21 +956,18 @@ Same as Recipe 1 but with 2× function_curve in different colors. Both curves sh
 **Why these choices**: Two labels stacked vertically with 25px gap so they don't overlap. Different colors (#2563eb blue, #dc2626 red) make curves distinguishable. Same axes/ranges so both curves are on the same coordinate system.
 **Variations**: Compare x^2 vs x^3 with xRange [-3,3] yRange [-10,10]. Compare exp(x) vs ln(x) with xRange [-3,5] yRange [-3,10].
 
-### Recipe 3: Explaining a derivative (tangent line + point)
-Show f(x), a point on the curve, and the tangent line at that point. Add a label for the slope.
+### Recipe 3: Explaining a derivative (tangent_line + function_curve)
+Show f(x), a point on the curve, and the tangent line at that point using the tangent_line element.
 \`\`\`json
 {"batch_id":"derivative-viz","style_preset":"blueprint_neat","elements":[
   {"id":"axes","type":"cartesian_axes","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"xLabel":"x","yLabel":"y","gridlines":true},
   {"id":"curve","type":"function_curve","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"expression":"x^2","color":"#2563eb"},
-  {"id":"tangent","type":"line","from":{"x":554,"y":363},"to":{"x":832,"y":148},"color":"#dc2626","stroke_width":2},
-  {"id":"point","type":"ellipse","cx":693,"cy":255,"rx":6,"ry":6,"color":"#dc2626"},
-  {"id":"point-label","type":"latex","x":710,"y":235,"tex":"(2,\\, 4)","fontSize":14,"color":"#dc2626"},
-  {"id":"slope-label","type":"latex","x":840,"y":140,"tex":"\\text{slope} = f'(2) = 4","fontSize":16,"color":"#dc2626"},
+  {"id":"tangent","type":"tangent_line","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"expression":"x^2","atX":2,"showPoint":true,"label":"f'(2) = 4","color":"#dc2626"},
   {"id":"fn-label","type":"latex","x":920,"y":60,"tex":"f(x) = x^2","color":"#2563eb","fontSize":18}
 ]}
 \`\`\`
-**Why these coordinates**: The point (2,4) in math coords maps to canvas x = 350 + ((2-(-2))/7) × 650 ≈ 693, canvas y = 80 + ((20-4)/22) × 450 ≈ 408… adjusted for visual clarity. The tangent line extends through the point with slope f'(2)=4 in math coords, translated to canvas pixel slope accounting for scale and Y-inversion. Keep the tangent line endpoints within the axes bounding box.
-**Variations**: For f(x)=sin(x), tangent at x=0 has slope cos(0)=1. For f(x)=1/x, tangent at x=1 has slope -1.
+**Why these coordinates**: tangent_line shares the same x, y, width, height, xRange, yRange as the axes and curve. atX=2 places the tangent at x=2, and the element auto-computes slope f'(2)=4. showPoint=true renders a dot at (2,4).
+**Variations**: For f(x)=sin(x), use atX=0 for slope cos(0)=1. For f(x)=1/x, use atX=1 for slope -1. Always pair with cartesian_axes + function_curve.
 
 ### Recipe 4: Showing a limit (number line with approach arrows)
 Illustrate lim(x→c) with a number line, the target point, and arrows approaching from both sides.
@@ -1029,4 +1135,46 @@ BAD — only 2 points produces a straight line, not a curve:
 {"id":"not-a-curve","type":"bezier_curve","points":[[200,300],[800,300]]}
 \`\`\`
 Why wrong: 2 points define a straight line — use type="line" instead. Bézier curves need ≥ 3 control points.
-FIX: Use ≥ 3 points for quadratic, 4 for cubic. Keep total points ≤ 13 to avoid overly complex polyBézier chains.`;
+FIX: Use ≥ 3 points for quadratic, 4 for cubic. Keep total points ≤ 13 to avoid overly complex polyBézier chains.
+
+### ❌ Mistake 14: tangent_line without matching function_curve and axes
+BAD — tangent line floats with no curve or axes:
+\`\`\`json
+{"batch_id":"orphan-tangent","elements":[
+  {"id":"tan","type":"tangent_line","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"expression":"x^2","atX":2}
+]}
+\`\`\`
+Why wrong: The tangent line renders but the viewer has no curve to see where the tangent touches, and no axes for reference.
+FIX: Always pair tangent_line with cartesian_axes + function_curve at the same x, y, width, height, xRange, yRange.
+
+### ❌ Mistake 15: riemann_sum with n too large
+BAD — 50+ paper-thin rectangles that look like a solid block:
+\`\`\`json
+{"id":"too-many-rects","type":"riemann_sum","x":350,"y":80,"width":650,"height":450,"xRange":[0,3],"yRange":[-1,10],"expression":"x^2","n":50}
+\`\`\`
+Why wrong: n=50 generates 50 rectangles so thin they merge into a solid fill, losing the pedagogical "rectangle approximation" visual.
+FIX: Keep n ≤ 20 (default 5). Use n=4–10 for clear teaching visuals, n=15–20 to show convergence.
+
+### ❌ Mistake 16: number_theory_grid with n > 20
+BAD — grid too large to read:
+\`\`\`json
+{"id":"huge-grid","type":"number_theory_grid","cx":700,"cy":350,"n":30,"cellSize":20}
+\`\`\`
+Why wrong: n=30 produces 900 cells at 20px each = 600×600px grid. Cells are too small to label and the grid overflows the canvas.
+FIX: Keep n ≤ 20. For n > 12, increase cellSize or accept that labels won't fit. Best results at n=5–10.
+
+## PREFERRED COMBINATIONS — types that work best together
+
+| Use Case | Combination | Notes |
+|---|---|---|
+| Calculus: derivative visualization | function_curve + tangent_line + latex | Show f(x), tangent at point, and slope formula. All share same axes/ranges. |
+| Calculus: Riemann sum → integral | cartesian_axes + riemann_sum + latex | Show rectangle approximation. Add integral_region for shaded area comparison. |
+| Statistics: data + distribution | histogram + normal_distribution + latex | Overlay bell curve on bar chart. Use latex for μ, σ formulas. |
+| 3D geometry annotation | wireframe_3d + text + latex | Wireframe shape with labeled vertices/edges. Place text labels outside the 3D projection. |
+| Proofs / algorithm trees | tree_diagram (semantic) + latex | Tree for structure, latex for formulas at nodes or as annotations. |
+| Graph theory | graph_diagram (semantic) + latex | Node-edge graph with latex for weight/label formulas. Use arrow for external annotations. |
+| Complex analysis | complex_plane + vector_arrow + latex | Complex plane with points/vectors. Add vector_arrow for transformations, latex for z = a+bi. |
+| Linear algebra: transform | linear_transform + matrix_bracket + latex | Show transformation grid + matrix notation + equations. |
+| Area under curve (definite integral) | cartesian_axes + function_curve + integral_region + latex | Shaded area with ∫ notation. |
+| Convergence visualization | sequence_plot + latex | Dot plot with limit line + convergence formula in latex. |`;
+
