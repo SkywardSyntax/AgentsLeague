@@ -460,7 +460,8 @@ async function compileOneElement(
 
   // Math primitives with lowering support: expand to basic elements and compile
   if (element.type === 'cartesian_axes' || element.type === 'number_line' || element.type === 'vector_arrow'
-    || element.type === 'function_curve' || element.type === 'angle_arc' || element.type === 'integral_region') {
+    || element.type === 'function_curve' || element.type === 'angle_arc' || element.type === 'integral_region'
+    || element.type === 'circle_with_radius' || element.type === 'triangle_with_angles') {
     const lowered = lowerMathPrimitive(element);
     for (const lowEl of lowered) {
       const sub = await compileOneElement(lowEl, preset);
@@ -658,7 +659,9 @@ function expandAndSortForInjection(
       el.type === 'integral_region' ||
       el.type === 'cartesian_axes' ||
       el.type === 'number_line' ||
-      el.type === 'vector_arrow'
+      el.type === 'vector_arrow' ||
+      el.type === 'circle_with_radius' ||
+      el.type === 'triangle_with_angles'
     ) {
       expanded.push(...lowerMathPrimitive(el));
     } else {
