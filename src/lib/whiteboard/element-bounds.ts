@@ -6,10 +6,24 @@ interface BoundsOptions {
   mode?: BoundsMode;
 }
 
+function allFinite(...ns: number[]): boolean {
+  return ns.every((n) => Number.isFinite(n));
+}
+
+function isFinitePositive(n: number): boolean {
+  return Number.isFinite(n) && n > 0;
+}
+
 /**
- * Unified element bounds computation.
- * - `fast`: simpler formulas suitable for animation-frame rendering (client-side).
- * - `detailed`: more accurate formulas for placement planning (server-side).
+ * Canonical element-bounds computation — single source of truth.
+ *
+ * - `fast`     : simpler formulas for animation-frame rendering (client-side).
+ * - `detailed` : accurate formulas with 0.52 char-width multiplier, baseline
+ *                offset, multiline support, and LaTeX regex heuristics for
+ *                placement planning (server-side).
+ *
+ * Returns null for `clear` elements or when geometry contains NaN / Infinity /
+ * non-positive dimensions.
  */
 export function computeElementBounds(
   el: DrawElement,
@@ -20,10 +34,12 @@ export function computeElementBounds(
   if (el.type === 'clear') return null;
 
   if (el.type === 'rect') {
+    if (!allFinite(el.x, el.y, el.w, el.h) || !isFinitePositive(el.w) || !isFinitePositive(el.h)) return null;
     return { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h };
   }
 
   if (el.type === 'ellipse') {
+    if (!allFinite(el.cx, el.cy, el.rx, el.ry) || !isFinitePositive(el.rx) || !isFinitePositive(el.ry)) return null;
     return {
       minX: el.cx - el.rx,
       minY: el.cy - el.ry,
@@ -33,6 +49,7 @@ export function computeElementBounds(
   }
 
   if (el.type === 'line' || el.type === 'arrow') {
+    if (!allFinite(el.from.x, el.from.y, el.to.x, el.to.y)) return null;
     return {
       minX: Math.min(el.from.x, el.to.x),
       minY: Math.min(el.from.y, el.to.y),
@@ -42,7 +59,9 @@ export function computeElementBounds(
   }
 
   if (el.type === 'text') {
+    if (!allFinite(el.x, el.y)) return null;
     const size = el.size ?? 18;
+    if (!isFinitePositive(size)) return null;
     const lines = el.text.split('\n');
     const maxLineLen = Math.max(...lines.map((l: string) => l.length));
 
@@ -60,7 +79,10 @@ export function computeElementBounds(
   }
 
   if (el.type === 'latex') {
+    if (!allFinite(el.x, el.y)) return null;
+    if (!el.tex) return null;
     const size = el.fontSize ?? 20;
+    if (!isFinitePositive(size)) return null;
 
     if (mode === 'detailed') {
       const fracCount = (el.tex.match(/\\(?:d?frac|tfrac)\b/g) ?? []).length;
@@ -96,6 +118,34 @@ export function computeElementBounds(
     const width = Math.max(size * 1.5, el.tex.length * size * 0.5);
     const height = size * 1.5;
     return { minX: el.x, minY: el.y, maxX: el.x + width, maxY: el.y + height };
+  }
+
+  // matrix_bracket: compute bounds from grid dimensions and bracket insets
+  if (el.type === 'matrix_bracket') {
+    if (!allFinite(el.x, el.y)) return null;
+    const numRows = el.rows.length;
+    const numCols = Math.max(...el.rows.map((r) => r.length));
+    const cw = el.cellWidth ?? 60;
+    const ch = el.cellHeight ?? 32;
+    const bracketInset = 12;
+    const padX = 8;
+    const totalW = bracketInset + padX + numCols * cw + padX + bracketInset;
+    const totalH = numRows * ch + 8; // +8 for top/bottom bracket padding
+    return { minX: el.x, minY: el.y - 4, maxX: el.x + totalW, maxY: el.y + numRows * ch + 4 };
+  }
+
+  // angle_arc: bounding box around the vertex ± arc radius (+ label margin)
+  if (el.type === 'angle_arc') {
+    if (!allFinite(el.x, el.y, el.radius, el.startAngle, el.endAngle) || !isFinitePositive(el.radius)) return null;
+    const labelExtra = el.label ? el.radius * 0.3 : 0;
+    const r = el.radius + labelExtra;
+    return { minX: el.x - r, minY: el.y - r, maxX: el.x + r, maxY: el.y + r };
+  }
+
+  // integral_region: bounding box is the plot area
+  if (el.type === 'integral_region') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
   }
 
   return null;

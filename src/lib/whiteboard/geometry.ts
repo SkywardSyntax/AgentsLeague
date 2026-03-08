@@ -1,4 +1,5 @@
 import type { DrawElement, Point } from '@/types/agent';
+import { computeElementBounds } from './element-bounds';
 
 /** Minimum screen-space stroke width in pixels, used to keep strokes visible at low zoom. */
 export const MIN_SCREEN_STROKE_PX = 1.25;
@@ -283,75 +284,22 @@ export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegmen
   return segs;
 }
 
-function allFinite(...values: number[]): boolean {
-  for (const v of values) {
-    if (!Number.isFinite(v)) return false;
-  }
-  return true;
-}
-
-/** Compute axis-aligned bounding box for a single DrawElement. */
+/**
+ * Compute axis-aligned bounding box for a single DrawElement.
+ * Delegates to the canonical `computeElementBounds` (fast mode) and
+ * enriches the result with `width` / `height` for the `StrokeBounds` shape.
+ */
 export function boundsOfElement(el: DrawElement): StrokeBounds | null {
-  switch (el.type) {
-    case 'rect': {
-      if (!allFinite(el.x, el.y, el.w, el.h)) return null;
-      const x0 = Math.min(el.x, el.x + el.w);
-      const x1 = Math.max(el.x, el.x + el.w);
-      const y0 = Math.min(el.y, el.y + el.h);
-      const y1 = Math.max(el.y, el.y + el.h);
-      return { minX: x0, maxX: x1, minY: y0, maxY: y1, width: x1 - x0, height: y1 - y0 };
-    }
-    case 'ellipse': {
-      if (!allFinite(el.cx, el.cy, el.rx, el.ry)) return null;
-      const absRx = Math.abs(el.rx);
-      const absRy = Math.abs(el.ry);
-      return {
-        minX: el.cx - absRx,
-        maxX: el.cx + absRx,
-        minY: el.cy - absRy,
-        maxY: el.cy + absRy,
-        width: absRx * 2,
-        height: absRy * 2,
-      };
-    }
-    case 'line':
-    case 'arrow': {
-      if (!allFinite(el.from.x, el.from.y, el.to.x, el.to.y)) return null;
-      const minX = Math.min(el.from.x, el.to.x);
-      const maxX = Math.max(el.from.x, el.to.x);
-      const minY = Math.min(el.from.y, el.to.y);
-      const maxY = Math.max(el.from.y, el.to.y);
-      return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
-    }
-    case 'text': {
-      const fontSize = el.size ?? 18;
-      if (!allFinite(el.x, el.y, fontSize)) return null;
-      const estWidth = Math.max(fontSize, el.text.length * fontSize * 0.5);
-      return {
-        minX: el.x,
-        maxX: el.x + estWidth,
-        minY: el.y,
-        maxY: el.y + fontSize,
-        width: estWidth,
-        height: fontSize,
-      };
-    }
-    case 'latex': {
-      const fontSize = el.fontSize ?? 20;
-      if (!allFinite(el.x, el.y, fontSize)) return null;
-      const estWidth = Math.max(fontSize, Math.max(1, el.tex.length) * fontSize * 0.45);
-      return {
-        minX: el.x,
-        maxX: el.x + estWidth,
-        minY: el.y,
-        maxY: el.y + fontSize,
-        width: estWidth,
-        height: fontSize,
-      };
-    }
-    default:
-      return null;
-  }
+  const b = computeElementBounds(el, { mode: 'fast' });
+  if (!b) return null;
+  return {
+    minX: b.minX,
+    maxX: b.maxX,
+    minY: b.minY,
+    maxY: b.maxY,
+    width: b.maxX - b.minX,
+    height: b.maxY - b.minY,
+  };
 }
 
 /** Bounding box in world coordinates. */
