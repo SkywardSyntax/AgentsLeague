@@ -1356,6 +1356,141 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // wireframe_3d: pass through with validation (lowered later)
+    if (type === 'wireframe_3d') {
+      const cx = asNumber(raw.cx);
+      const cy = asNumber(raw.cy);
+      const size = asNumber(raw.size);
+      const shape = asString(raw.shape);
+      const validShapes = ['cube', 'tetrahedron', 'octahedron', 'axes_3d', 'surface'];
+      if (cx == null || cy == null || size == null || !shape || !validShapes.includes(shape)) {
+        warnings.push(`Wireframe3d ${id} has invalid cx/cy/size or shape`);
+        continue;
+      }
+      const rotationX = asNumber(raw.rotationX) ?? undefined;
+      const rotationY = asNumber(raw.rotationY) ?? undefined;
+      const expression = asString(raw.expression) ?? undefined;
+      const gridN = asNumber(raw.gridN) ?? undefined;
+      const strokeColor = asString(raw.strokeColor) ?? undefined;
+      const strokeWidth = asNumber(raw.strokeWidth) ?? undefined;
+      const showHiddenLines = typeof raw.showHiddenLines === 'boolean' ? raw.showHiddenLines : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        shape,
+        cx,
+        cy,
+        size: Math.max(1, Math.abs(size)),
+        ...(rotationX != null ? { rotationX } : {}),
+        ...(rotationY != null ? { rotationY } : {}),
+        ...(expression ? { expression } : {}),
+        ...(gridN != null ? { gridN } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(strokeWidth != null ? { strokeWidth } : {}),
+        ...(showHiddenLines != null ? { showHiddenLines } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // sequence_plot: pass through with validation (lowered later)
+    if (type === 'sequence_plot') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const expression = asString(raw.expression);
+      if (x == null || y == null || width == null || height == null || !expression) {
+        warnings.push(`SequencePlot ${id} has invalid coordinates or expression`);
+        continue;
+      }
+      const exprV = validateExpression(expression);
+      if (!exprV.valid) {
+        warnings.push(`SequencePlot ${id} expression: ${exprV.error}`);
+      }
+      const nMin = asNumber(raw.nMin) ?? undefined;
+      const nMax = asNumber(raw.nMax) ?? undefined;
+      const limit = asNumber(raw.limit) ?? undefined;
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      let xRange: [number, number] | undefined;
+      if (rawXRange) {
+        const xr0 = asNumber(rawXRange[0]);
+        const xr1 = asNumber(rawXRange[1]);
+        if (xr0 != null && xr1 != null) xRange = [xr0, xr1];
+      }
+      let yRange: [number, number] | undefined;
+      if (rawYRange) {
+        const yr0 = asNumber(rawYRange[0]);
+        const yr1 = asNumber(rawYRange[1]);
+        if (yr0 != null && yr1 != null) yRange = [yr0, yr1];
+      }
+      const strokeColor = asString(raw.strokeColor) ?? undefined;
+      const dotRadius = asNumber(raw.dotRadius) ?? undefined;
+      const showLines = typeof raw.showLines === 'boolean' ? raw.showLines : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        expression,
+        ...(nMin != null ? { nMin } : {}),
+        ...(nMax != null ? { nMax } : {}),
+        ...(limit != null ? { limit } : {}),
+        ...(xRange ? { xRange } : {}),
+        ...(yRange ? { yRange } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(dotRadius != null ? { dotRadius } : {}),
+        ...(showLines != null ? { showLines } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // bezier_curve: pass through with validation (lowered later)
+    if (type === 'bezier_curve') {
+      const rawPoints = Array.isArray(raw.points) ? raw.points : null;
+      if (!rawPoints || rawPoints.length < 3) {
+        warnings.push(`BezierCurve ${id} needs at least 3 control points`);
+        continue;
+      }
+      const points: [number, number][] = [];
+      for (const rp of rawPoints) {
+        if (Array.isArray(rp) && rp.length >= 2) {
+          const px = asNumber(rp[0]);
+          const py = asNumber(rp[1]);
+          if (px != null && py != null) points.push([px, py]);
+        }
+      }
+      if (points.length < 3) {
+        warnings.push(`BezierCurve ${id} has fewer than 3 valid control points`);
+        continue;
+      }
+      const strokeColor = asString(raw.strokeColor) ?? undefined;
+      const strokeWidth = asNumber(raw.strokeWidth) ?? undefined;
+      const showControlPoints = typeof raw.showControlPoints === 'boolean' ? raw.showControlPoints : undefined;
+      const showTangents = typeof raw.showTangents === 'boolean' ? raw.showTangents : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        points,
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(strokeWidth != null ? { strokeWidth } : {}),
+        ...(showControlPoints != null ? { showControlPoints } : {}),
+        ...(showTangents != null ? { showTangents } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     warnings.push(`Unsupported element type at ${idx}`);
   }
 
@@ -1379,7 +1514,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch'] as const;
 

@@ -70,6 +70,16 @@ async function handler(
         violationsFixed: result.warnings.filter((w) => w.startsWith('layout_repaired')),
         fallbackUsed: result.warnings.includes('layout_fallback_used'),
         elementCount: result.batch.elements.length,
+        ...(result.loweringStats
+          ? {
+              loweringStats: {
+                inputCount: result.loweringStats.inputCount,
+                outputCount: result.loweringStats.outputCount,
+                capped: result.loweringStats.capped,
+                timingMs: result.loweringStats.timingMs,
+              },
+            }
+          : {}),
       },
     },
     {

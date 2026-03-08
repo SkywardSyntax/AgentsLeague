@@ -19,6 +19,9 @@ import type {
   TangentLineElement,
   SlopeFieldElement,
   VectorField2dElement,
+  Wireframe3dElement,
+  SequencePlotElement,
+  BezierCurveElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -109,6 +112,9 @@ function drawOrderPriority(el: DrawElement): number {
     case 'tangent_line':
     case 'slope_field':
     case 'vector_field_2d':
+    case 'wireframe_3d':
+    case 'sequence_plot':
+    case 'bezier_curve':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -2195,6 +2201,562 @@ function expandVectorField2d(el: VectorField2dElement): DrawElement[] {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Wireframe 3D expander
+// ---------------------------------------------------------------------------
+
+interface Vec3 { x: number; y: number; z: number; }
+
+function degToRad(deg: number): number {
+  return (deg * Math.PI) / 180;
+}
+
+function rotateY(v: Vec3, angle: number): Vec3 {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { x: v.x * c + v.z * s, y: v.y, z: -v.x * s + v.z * c };
+}
+
+function rotateX(v: Vec3, angle: number): Vec3 {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c };
+}
+
+function project3d(v: Vec3, cx: number, cy: number, size: number, rotX: number, rotY: number): Point {
+  const r1 = rotateY(v, rotY);
+  const r2 = rotateX(r1, rotX);
+  return { x: cx + r2.x * size, y: cy - r2.y * size };
+}
+
+function avgZ(vertices: Vec3[], indices: number[], rotX: number, rotY: number): number {
+  let sum = 0;
+  for (const i of indices) {
+    const r1 = rotateY(vertices[i]!, rotY);
+    const r2 = rotateX(r1, rotX);
+    sum += r2.z;
+  }
+  return sum / indices.length;
+}
+
+function faceNormalZ(vertices: Vec3[], face: number[], rotX: number, rotY: number): number {
+  const p0 = rotateX(rotateY(vertices[face[0]!]!, rotY), rotX);
+  const p1 = rotateX(rotateY(vertices[face[1]!]!, rotY), rotX);
+  const p2 = rotateX(rotateY(vertices[face[2]!]!, rotY), rotX);
+  const ux = p1.x - p0.x, uy = p1.y - p0.y, uz = p1.z - p0.z;
+  const vx = p2.x - p0.x, vy = p2.y - p0.y, vz = p2.z - p0.z;
+  return ux * vy - uy * vx; // z-component of cross product (simplified since we only need sign/z)
+}
+
+export function expandWireframe3d(el: Wireframe3dElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const rotX = degToRad(el.rotationX ?? 20);
+  const rotY = degToRad(el.rotationY ?? 30);
+  const cx = el.cx;
+  const cy = el.cy;
+  const size = el.size;
+  const color = el.strokeColor ?? el.color ?? '#1f2a44';
+  const sw = el.strokeWidth ?? el.stroke_width ?? 1.5;
+  const showHidden = el.showHiddenLines ?? false;
+
+  function proj(v: Vec3): Point {
+    return project3d(v, cx, cy, size, rotX, rotY);
+  }
+
+  function addEdge(idx: number, a: Vec3, b: Vec3, edgeColor?: string): void {
+    const pa = proj(a);
+    const pb = proj(b);
+    result.push({
+      id: `${el.id}-edge-${idx}`,
+      type: 'line',
+      from: pa,
+      to: pb,
+      color: edgeColor ?? color,
+      stroke_width: sw,
+    });
+  }
+
+  if (el.shape === 'cube') {
+    const h = 0.5;
+    const verts: Vec3[] = [
+      { x: -h, y: -h, z: -h }, { x: h, y: -h, z: -h },
+      { x: h, y: h, z: -h },  { x: -h, y: h, z: -h },
+      { x: -h, y: -h, z: h },  { x: h, y: -h, z: h },
+      { x: h, y: h, z: h },   { x: -h, y: h, z: h },
+    ];
+    const faces: number[][] = [
+      [0, 1, 2, 3], // back
+      [4, 5, 6, 7], // front
+      [0, 1, 5, 4], // bottom
+      [2, 3, 7, 6], // top
+      [0, 3, 7, 4], // left
+      [1, 2, 6, 5], // right
+    ];
+    const edges: [number, number][] = [
+      [0, 1], [1, 2], [2, 3], [3, 0], // back face
+      [4, 5], [5, 6], [6, 7], [7, 4], // front face
+      [0, 4], [1, 5], [2, 6], [3, 7], // connecting edges
+    ];
+
+    if (showHidden) {
+      for (let i = 0; i < edges.length; i++) {
+        addEdge(i, verts[edges[i]![0]]!, verts[edges[i]![1]]!);
+      }
+    } else {
+      // Painter's algorithm: draw back-facing edges first, front-facing on top
+      const faceDepths = faces.map((f, i) => ({
+        face: f,
+        idx: i,
+        z: avgZ(verts, f, rotX, rotY),
+        nz: faceNormalZ(verts, f, rotX, rotY),
+      }));
+      faceDepths.sort((a, b) => a.z - b.z);
+
+      const drawnEdges = new Set<string>();
+      let edgeIdx = 0;
+      for (const fd of faceDepths) {
+        if (fd.nz <= 0) continue; // back-facing, skip
+        const f = fd.face;
+        for (let i = 0; i < f.length; i++) {
+          const a = f[i]!;
+          const b = f[(i + 1) % f.length]!;
+          const key = `${Math.min(a, b)}-${Math.max(a, b)}`;
+          if (drawnEdges.has(key)) continue;
+          drawnEdges.add(key);
+          addEdge(edgeIdx++, verts[a]!, verts[b]!);
+        }
+      }
+    }
+  } else if (el.shape === 'tetrahedron') {
+    const s3 = Math.sqrt(3);
+    const verts: Vec3[] = [
+      { x: 0, y: 0.612, z: 0 },
+      { x: -0.5, y: -0.204, z: s3 / 6 },
+      { x: 0.5, y: -0.204, z: s3 / 6 },
+      { x: 0, y: -0.204, z: -s3 / 3 },
+    ];
+    const edges: [number, number][] = [
+      [0, 1], [0, 2], [0, 3],
+      [1, 2], [1, 3], [2, 3],
+    ];
+    if (showHidden) {
+      for (let i = 0; i < edges.length; i++) {
+        addEdge(i, verts[edges[i]![0]]!, verts[edges[i]![1]]!);
+      }
+    } else {
+      const faces: number[][] = [
+        [0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3],
+      ];
+      const faceDepths = faces.map((f, i) => ({
+        face: f,
+        idx: i,
+        z: avgZ(verts, f, rotX, rotY),
+        nz: faceNormalZ(verts, f, rotX, rotY),
+      }));
+      faceDepths.sort((a, b) => a.z - b.z);
+
+      const drawnEdges = new Set<string>();
+      let edgeIdx = 0;
+      for (const fd of faceDepths) {
+        if (fd.nz <= 0) continue;
+        const f = fd.face;
+        for (let i = 0; i < f.length; i++) {
+          const a = f[i]!;
+          const b = f[(i + 1) % f.length]!;
+          const key = `${Math.min(a, b)}-${Math.max(a, b)}`;
+          if (drawnEdges.has(key)) continue;
+          drawnEdges.add(key);
+          addEdge(edgeIdx++, verts[a]!, verts[b]!);
+        }
+      }
+    }
+  } else if (el.shape === 'octahedron') {
+    const verts: Vec3[] = [
+      { x: 0, y: 1, z: 0 },
+      { x: 1, y: 0, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      { x: -1, y: 0, z: 0 },
+      { x: 0, y: 0, z: -1 },
+      { x: 0, y: -1, z: 0 },
+    ];
+    // Scale to half-unit
+    for (const v of verts) { v.x *= 0.5; v.y *= 0.5; v.z *= 0.5; }
+    const edges: [number, number][] = [
+      [0, 1], [0, 2], [0, 3], [0, 4],
+      [5, 1], [5, 2], [5, 3], [5, 4],
+      [1, 2], [2, 3], [3, 4], [4, 1],
+    ];
+    if (showHidden) {
+      for (let i = 0; i < edges.length; i++) {
+        addEdge(i, verts[edges[i]![0]]!, verts[edges[i]![1]]!);
+      }
+    } else {
+      const faces: number[][] = [
+        [0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1],
+        [5, 2, 1], [5, 3, 2], [5, 4, 3], [5, 1, 4],
+      ];
+      const faceDepths = faces.map((f, i) => ({
+        face: f,
+        idx: i,
+        z: avgZ(verts, f, rotX, rotY),
+        nz: faceNormalZ(verts, f, rotX, rotY),
+      }));
+      faceDepths.sort((a, b) => a.z - b.z);
+
+      const drawnEdges = new Set<string>();
+      let edgeIdx = 0;
+      for (const fd of faceDepths) {
+        if (fd.nz <= 0) continue;
+        const f = fd.face;
+        for (let i = 0; i < f.length; i++) {
+          const a = f[i]!;
+          const b = f[(i + 1) % f.length]!;
+          const key = `${Math.min(a, b)}-${Math.max(a, b)}`;
+          if (drawnEdges.has(key)) continue;
+          drawnEdges.add(key);
+          addEdge(edgeIdx++, verts[a]!, verts[b]!);
+        }
+      }
+    }
+  } else if (el.shape === 'axes_3d') {
+    const origin: Vec3 = { x: 0, y: 0, z: 0 };
+    const xAxis: Vec3 = { x: 1, y: 0, z: 0 };
+    const yAxis: Vec3 = { x: 0, y: 1, z: 0 };
+    const zAxis: Vec3 = { x: 0, y: 0, z: 1 };
+    const axes: Array<{ dir: Vec3; label: string; color: string }> = [
+      { dir: xAxis, label: 'x', color: '#dc2626' },
+      { dir: yAxis, label: 'y', color: '#16a34a' },
+      { dir: zAxis, label: 'z', color: '#2563eb' },
+    ];
+    for (let i = 0; i < axes.length; i++) {
+      const a = axes[i]!;
+      const tipP = proj(a.dir);
+      const origP = proj(origin);
+      result.push({
+        id: `${el.id}-axis-${i}`,
+        type: 'arrow',
+        from: origP,
+        to: tipP,
+        color: a.color,
+        stroke_width: sw,
+      });
+      // Label slightly past tip
+      const labelV: Vec3 = { x: a.dir.x * 1.15, y: a.dir.y * 1.15, z: a.dir.z * 1.15 };
+      const labelP = proj(labelV);
+      result.push({
+        id: `${el.id}-label-${i}`,
+        type: 'text',
+        x: labelP.x,
+        y: labelP.y,
+        text: a.label,
+        size: 14,
+        color: a.color,
+      });
+    }
+  } else if (el.shape === 'surface') {
+    const gridN = el.gridN ?? 8;
+    const expr = el.expression ?? 'sin(x)*cos(y)';
+    const fn = parseMathExpression2Var(expr);
+    if (!fn) return result;
+
+    const gridPts: Vec3[][] = [];
+    for (let i = 0; i <= gridN; i++) {
+      const row: Vec3[] = [];
+      for (let j = 0; j <= gridN; j++) {
+        const mx = -1 + (2 * i) / gridN;
+        const my = -1 + (2 * j) / gridN;
+        let mz = fn(mx, my);
+        if (!Number.isFinite(mz)) mz = 0;
+        row.push({ x: mx, y: mz, z: my });
+      }
+      gridPts.push(row);
+    }
+
+    let edgeIdx = 0;
+    // Draw grid lines along rows
+    for (let i = 0; i <= gridN; i++) {
+      for (let j = 0; j < gridN; j++) {
+        addEdge(edgeIdx++, gridPts[i]![j]!, gridPts[i]![j + 1]!);
+      }
+    }
+    // Draw grid lines along columns
+    for (let j = 0; j <= gridN; j++) {
+      for (let i = 0; i < gridN; i++) {
+        addEdge(edgeIdx++, gridPts[i]![j]!, gridPts[i + 1]![j]!);
+      }
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// sequence_plot: visualize numeric sequences a_n = f(n)
+// ---------------------------------------------------------------------------
+
+function expandSequencePlot(el: SequencePlotElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const nMin = el.nMin ?? 1;
+  const nMax = el.nMax ?? 20;
+  const dotRadius = el.dotRadius ?? 4;
+  const curveColor = el.strokeColor ?? el.color ?? '#2563eb';
+  const showLines = el.showLines ?? false;
+
+  const fn = parseMathExprWithVar(el.expression, 'n');
+  if (!fn) return result;
+
+  // Sample sequence values
+  const samples: Array<{ n: number; val: number }> = [];
+  for (let n = nMin; n <= nMax; n++) {
+    try {
+      const val = fn(n);
+      if (Number.isFinite(val)) samples.push({ n, val });
+    } catch { /* skip invalid */ }
+  }
+  if (samples.length === 0) return result;
+
+  // Determine plot ranges
+  const xMin = el.xRange?.[0] ?? nMin - 0.5;
+  const xMax = el.xRange?.[1] ?? nMax + 0.5;
+  let yMin: number, yMax: number;
+  if (el.yRange) {
+    [yMin, yMax] = el.yRange;
+  } else {
+    const vals = samples.map((s) => s.val);
+    if (el.limit != null) vals.push(el.limit);
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
+    const pad = Math.max((hi - lo) * 0.15, 0.5);
+    yMin = lo - pad;
+    yMax = hi + pad;
+  }
+
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
+
+  // X-axis line
+  const axisY = toCanvasY(0);
+  const clampedAxisY = Math.max(el.y, Math.min(el.y + el.height, axisY));
+  result.push({
+    id: `${el.id}-axis`,
+    type: 'line',
+    from: { x: el.x, y: clampedAxisY },
+    to: { x: el.x + el.width, y: clampedAxisY },
+    color: '#94a3b8',
+    stroke_width: 1,
+  });
+
+  // Tick marks and labels for integer n values
+  const tickStep = Math.max(1, Math.ceil((nMax - nMin) / 15));
+  for (let n = nMin; n <= nMax; n += tickStep) {
+    const cx = toCanvasX(n);
+    result.push({
+      id: `${el.id}-tick-${n}`,
+      type: 'line',
+      from: { x: cx, y: clampedAxisY - 4 },
+      to: { x: cx, y: clampedAxisY + 4 },
+      color: '#94a3b8',
+      stroke_width: 1,
+    });
+    result.push({
+      id: `${el.id}-ticklbl-${n}`,
+      type: 'text',
+      x: cx - 4,
+      y: clampedAxisY + 14,
+      text: String(n),
+      size: 10,
+      color: '#64748b',
+    });
+  }
+
+  // Connecting lines between consecutive dots
+  if (showLines && samples.length > 1) {
+    for (let i = 0; i < samples.length - 1; i++) {
+      const a = samples[i]!;
+      const b = samples[i + 1]!;
+      result.push({
+        id: `${el.id}-line-${i}`,
+        type: 'line',
+        from: { x: toCanvasX(a.n), y: toCanvasY(a.val) },
+        to: { x: toCanvasX(b.n), y: toCanvasY(b.val) },
+        color: curveColor,
+        stroke_width: 1,
+      });
+    }
+  }
+
+  // Dots at each (n, a_n) as small ellipses
+  for (const s of samples) {
+    result.push({
+      id: `${el.id}-dot-${s.n}`,
+      type: 'ellipse',
+      cx: toCanvasX(s.n),
+      cy: toCanvasY(s.val),
+      rx: dotRadius,
+      ry: dotRadius,
+      color: curveColor,
+    });
+  }
+
+  // Limit line (dashed horizontal)
+  if (el.limit != null && Number.isFinite(el.limit)) {
+    const ly = toCanvasY(el.limit);
+    result.push({
+      id: `${el.id}-limit`,
+      type: 'line',
+      from: { x: el.x, y: ly },
+      to: { x: el.x + el.width, y: ly },
+      color: '#dc2626',
+      stroke_width: 1,
+      lineStyle: 'dashed',
+    });
+    result.push({
+      id: `${el.id}-limit-label`,
+      type: 'text',
+      x: el.x + el.width + 4,
+      y: ly - 6,
+      text: `L = ${el.limit}`,
+      size: 12,
+      color: '#dc2626',
+    });
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// bezier_curve: smooth parametric curves via de Casteljau algorithm
+// ---------------------------------------------------------------------------
+
+/** Evaluate a Bezier curve at parameter t ∈ [0,1] using de Casteljau. */
+function deCasteljau(pts: [number, number][], t: number): [number, number] {
+  let work = pts.slice();
+  while (work.length > 1) {
+    const next: [number, number][] = [];
+    for (let i = 0; i < work.length - 1; i++) {
+      next.push([
+        (1 - t) * work[i]![0] + t * work[i + 1]![0],
+        (1 - t) * work[i]![1] + t * work[i + 1]![1],
+      ]);
+    }
+    work = next;
+  }
+  return work[0]!;
+}
+
+function expandBezierCurve(el: BezierCurveElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const pts = el.points;
+  if (pts.length < 3) return result;
+
+  const curveColor = el.strokeColor ?? el.color ?? '#1f2a44';
+  const curveWidth = el.strokeWidth ?? el.stroke_width ?? 1.8;
+  const showCP = el.showControlPoints ?? false;
+  const showTangents = el.showTangents ?? false;
+  const SAMPLES = 80;
+
+  // For polyBezier: split into cubic segments of 4 control points each
+  // If exactly 3 or 4, treat as single quadratic/cubic
+  const segments: [number, number][][] = [];
+  if (pts.length <= 4) {
+    segments.push(pts);
+  } else {
+    // PolyBezier: chunks of 4 (overlap last point)
+    for (let i = 0; i + 3 < pts.length; i += 3) {
+      segments.push(pts.slice(i, i + 4));
+    }
+    // If remaining points don't form a complete chunk, use them as last segment
+    const lastStart = (segments.length) * 3;
+    if (lastStart < pts.length - 1) {
+      segments.push(pts.slice(lastStart));
+    }
+  }
+
+  const samplesPerSeg = Math.max(10, Math.floor(SAMPLES / segments.length));
+
+  // Sample and draw curve segments
+  let segIdx = 0;
+  for (const seg of segments) {
+    for (let i = 0; i < samplesPerSeg; i++) {
+      const t0 = i / samplesPerSeg;
+      const t1 = (i + 1) / samplesPerSeg;
+      const p0 = deCasteljau(seg, t0);
+      const p1 = deCasteljau(seg, t1);
+      result.push({
+        id: `${el.id}-seg${segIdx}-${i}`,
+        type: 'line',
+        from: { x: p0[0], y: p0[1] },
+        to: { x: p1[0], y: p1[1] },
+        color: curveColor,
+        stroke_width: curveWidth,
+      });
+    }
+    segIdx++;
+  }
+
+  // Control polygon and control point dots
+  if (showCP) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      result.push({
+        id: `${el.id}-cp-line-${i}`,
+        type: 'line',
+        from: { x: pts[i]![0], y: pts[i]![1] },
+        to: { x: pts[i + 1]![0], y: pts[i + 1]![1] },
+        color: '#94a3b8',
+        stroke_width: 1,
+        lineStyle: 'dashed',
+      });
+    }
+    for (let i = 0; i < pts.length; i++) {
+      result.push({
+        id: `${el.id}-cp-dot-${i}`,
+        type: 'ellipse',
+        cx: pts[i]![0],
+        cy: pts[i]![1],
+        rx: 3,
+        ry: 3,
+        color: '#94a3b8',
+      });
+    }
+  }
+
+  // Tangent lines at endpoints
+  if (showTangents && pts.length >= 2) {
+    const tangentLen = 60;
+    // Start tangent: direction from pts[0] to pts[1]
+    const dx0 = pts[1]![0] - pts[0]![0];
+    const dy0 = pts[1]![1] - pts[0]![1];
+    const len0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1;
+    result.push({
+      id: `${el.id}-tangent-start`,
+      type: 'line',
+      from: { x: pts[0]![0], y: pts[0]![1] },
+      to: { x: pts[0]![0] + (dx0 / len0) * tangentLen, y: pts[0]![1] + (dy0 / len0) * tangentLen },
+      color: '#16a34a',
+      stroke_width: 1,
+      lineStyle: 'dashed',
+    });
+    // End tangent: direction from second-to-last to last
+    const last = pts.length - 1;
+    const dxN = pts[last]![0] - pts[last - 1]![0];
+    const dyN = pts[last]![1] - pts[last - 1]![1];
+    const lenN = Math.sqrt(dxN * dxN + dyN * dyN) || 1;
+    result.push({
+      id: `${el.id}-tangent-end`,
+      type: 'line',
+      from: { x: pts[last]![0], y: pts[last]![1] },
+      to: { x: pts[last]![0] + (dxN / lenN) * tangentLen, y: pts[last]![1] + (dyN / lenN) * tangentLen },
+      color: '#16a34a',
+      stroke_width: 1,
+      lineStyle: 'dashed',
+    });
+  }
+
+  return result;
+}
+
 function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   let curveIndex = 0;
@@ -2241,6 +2803,12 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandSlopeField(el));
     } else if (el.type === 'vector_field_2d') {
       result.push(...expandVectorField2d(el));
+    } else if (el.type === 'wireframe_3d') {
+      result.push(...expandWireframe3d(el));
+    } else if (el.type === 'sequence_plot') {
+      result.push(...expandSequencePlot(el));
+    } else if (el.type === 'bezier_curve') {
+      result.push(...expandBezierCurve(el));
     } else {
       result.push(el);
     }
@@ -2254,7 +2822,7 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement,
   theme?: ColorTheme,
 ): DrawElement[] {
   switch (el.type) {
@@ -2294,12 +2862,27 @@ export function lowerMathPrimitive(
       return expandSlopeField(el);
     case 'vector_field_2d':
       return expandVectorField2d(el);
+    case 'wireframe_3d':
+      return expandWireframe3d(el);
+    case 'sequence_plot':
+      return expandSequencePlot(el);
+    case 'bezier_curve':
+      return expandBezierCurve(el);
   }
+}
+
+export interface LoweringDiagnostics {
+  inputCount: number;
+  outputCount: number;
+  capped: boolean;
+  timingMs: number;
 }
 
 export interface LowerOptions {
   maxElements?: number;
   colorTheme?: ColorTheme;
+  /** When provided, populated with lowering diagnostics after expansion. */
+  diagnosticsOut?: { current: LoweringDiagnostics | null };
 }
 
 export function lowerPlannedLayoutToDrawBatch(
@@ -2311,7 +2894,9 @@ export function lowerPlannedLayoutToDrawBatch(
     const maxElements = options?.maxElements ?? DEFAULT_MAX_LOWERED_ELEMENTS;
 
     // Expand composite math primitives before dedup/validation
+    const expandStart = performance.now();
     const expanded = expandMathPrimitives(layout.elements, options?.colorTheme);
+    const expandMs = performance.now() - expandStart;
 
     // Deduplicate elements by id (keep last occurrence)
     const seen = new Map<string, DrawElement>();
@@ -2338,9 +2923,19 @@ export function lowerPlannedLayoutToDrawBatch(
       layout.warnings.push('empty_layout');
     }
 
-    if (deduped.length > maxElements) {
+    const wasCapped = deduped.length > maxElements;
+    if (wasCapped) {
       deduped = deduped.slice(0, maxElements);
       layout.warnings.push('element_count_capped');
+    }
+
+    if (options?.diagnosticsOut) {
+      options.diagnosticsOut.current = {
+        inputCount: layout.elements.length,
+        outputCount: expanded.length,
+        capped: wasCapped,
+        timingMs: expandMs,
+      };
     }
 
     // Blueprint-neat: snap all coordinates to a 10px grid for crisp alignment

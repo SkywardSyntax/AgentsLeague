@@ -77,6 +77,9 @@ function elementPosition(el: DrawElement): string {
     case 'integral_region':
     case 'slope_field':
     case 'vector_field_2d':
+    case 'wireframe_3d':
+    case 'sequence_plot':
+    case 'bezier_curve':
     default:
       return el.type;
   }

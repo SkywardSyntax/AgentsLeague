@@ -126,6 +126,7 @@ function clampElement(el: DrawElement): DrawElement {
     case 'integral_region':
     case 'slope_field':
     case 'vector_field_2d':
+    case 'wireframe_3d':
       return el;
     default:
       return el;

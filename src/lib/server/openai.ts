@@ -34,7 +34,7 @@ export const DRAW_TOOL_DEFINITION = {
   type: 'function' as const,
   name: 'emit_draw_batch',
   description:
-    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles, slope_field, vector_field_2d). Use when a visual explanation helps.',
+    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles, slope_field, vector_field_2d, wireframe_3d, sequence_plot, bezier_curve). Use when a visual explanation helps.',
   strict: false,
   parameters: {
     type: 'object',
@@ -55,7 +55,7 @@ export const DRAW_TOOL_DEFINITION = {
             type: {
               type: 'string',
               enum: [...DRAW_ELEMENT_TYPES],
-              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y.',
+              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y. wireframe_3d: 3D wireframe projection of shapes (cube, tetrahedron, octahedron, axes_3d, surface). Uses cx,cy center, size, rotationX/Y. sequence_plot: Visualize numeric sequences a_n=f(n). Uses expression with variable \'n\', nMin/nMax range, optional limit line. bezier_curve: Smooth parametric Bezier curves via control points. Uses points array of [x,y] pairs (3=quadratic, 4=cubic, more=polyBezier). Optional showControlPoints, showTangents.',
             },
             x: { type: 'number', description: 'X position in canvas pixels. Safe range: [50, 1350].' },
             y: { type: 'number', description: 'Y position in canvas pixels. Safe range: [50, 650]. Y is inverted: smaller = higher on screen.' },
@@ -144,6 +144,21 @@ export const DRAW_TOOL_DEFINITION = {
             Px: { type: 'string', description: 'x-component expression F_x(x,y) for vector_field_2d. Variables: x, y. Example: "-y".' },
             Py: { type: 'string', description: 'y-component expression F_y(x,y) for vector_field_2d. Variables: x, y. Example: "x".' },
             normalize: { type: 'boolean', description: 'If true, normalize all vector_field_2d arrows to same length. Default: false.' },
+            // wireframe_3d fields
+            shape: { type: 'string', enum: ['cube', 'tetrahedron', 'octahedron', 'axes_3d', 'surface'], description: '3D shape to render for wireframe_3d.' },
+            rotationX: { type: 'number', description: 'Camera rotation around X axis in degrees for wireframe_3d. Default: 20.' },
+            rotationY: { type: 'number', description: 'Camera rotation around Y axis in degrees for wireframe_3d. Default: 30.' },
+            gridN: { type: 'number', description: 'Surface grid density for wireframe_3d surface shape. Default: 8.' },
+            showHiddenLines: { type: 'boolean', description: 'Show hidden lines for wireframe_3d (painter\'s algorithm). Default: false.' },
+            // sequence_plot fields
+            nMin: { type: 'number', description: 'First index for sequence_plot. Default: 1.' },
+            nMax: { type: 'number', description: 'Last index for sequence_plot. Default: 20.' },
+            limit: { type: 'number', description: 'Convergence limit for sequence_plot. Draws a horizontal dashed line at y=limit.' },
+            dotRadius: { type: 'number', description: 'Dot radius in pixels for sequence_plot. Default: 4.' },
+            showLines: { type: 'boolean', description: 'Connect consecutive dots with thin lines in sequence_plot. Default: false.' },
+            // bezier_curve fields
+            showControlPoints: { type: 'boolean', description: 'Show control polygon and control point dots for bezier_curve. Default: false.' },
+            showTangents: { type: 'boolean', description: 'Show tangent lines at endpoints for bezier_curve. Default: false.' },
           },
           required: ['id', 'type'],
         },
@@ -318,6 +333,7 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Polar curves (roses, cardioids) | emit_draw_batch | polar_plot | r(θ) curves with optional polar grid |
 | Slope / direction fields (ODE) | emit_draw_batch | slope_field | ODE direction field dy/dx = f(x,y) with optional Euler solution |
 | 2D vector fields (flow, E&M) | emit_draw_batch | vector_field_2d | Vector field F(x,y) with arrows at grid points |
+| 3D wireframe shapes | emit_draw_batch | wireframe_3d | 3D projected wireframe (cube, tetrahedron, octahedron, axes, surface) |
 | Vectors, forces, velocity diagrams | emit_draw_batch | vector_arrow (+ line for components) | Precise dx/dy control and labeled arrows |
 | Number lines, intervals, inequalities | emit_draw_batch | number_line (+ ellipse for points) | Horizontal line with domain bounds |
 | Unit circle, geometric constructions | emit_draw_batch | circle_with_radius + line + latex | Circle with labeled radius and center dot |
@@ -415,6 +431,7 @@ For graphs with cartesian_axes, use these defaults:
 | normal_distribution | x, y, width, height, mu, sigma, shadeFrom, shadeTo, shadeColor, showMeanLine, showSigmaLines, showLabels | Normal distribution bell curve |
 | slope_field | x, y, width, height, expression, xRange, yRange, gridRows, gridCols, strokeColor, solutionCurve | Direction field for ODE dy/dx = f(x,y) |
 | vector_field_2d | x, y, width, height, Px, Py, xRange, yRange, gridRows, gridCols, strokeColor, normalize | 2D vector field F(x,y) = (Px, Py) |
+| wireframe_3d | cx, cy, size, shape, rotationX, rotationY, expression, gridN, strokeColor, strokeWidth, showHiddenLines | 3D wireframe projection (cube, tetrahedron, octahedron, axes_3d, surface) |
 
 ### Quick Type Selection — what to use for common requests
 | Want to show | Use these types |
@@ -430,6 +447,7 @@ For graphs with cartesian_axes, use these defaults:
 | Vector field or vector addition | multiple vector_arrow elements |
 | Slope / direction field (ODE) | slope_field (optionally with solutionCurve) |
 | 2D vector field (flow, E&M) | vector_field_2d |
+| 3D wireframe (cube, tetrahedron, surface) | wireframe_3d |
 | Geometric shape with angles | triangle_with_angles or lines + angle_arc |
 | Unit circle / labeled circle | circle_with_radius + angle_arc + latex labels |
 | Linear transformation | linear_transform (with matrix and basis vectors) |

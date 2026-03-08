@@ -260,5 +260,36 @@ export function computeElementBounds(
     return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
   }
 
+  // wireframe_3d: bounding box is center ± size
+  if (el.type === 'wireframe_3d') {
+    if (!allFinite(el.cx, el.cy, el.size) || !isFinitePositive(el.size)) return null;
+    return {
+      minX: el.cx - el.size,
+      minY: el.cy - el.size,
+      maxX: el.cx + el.size,
+      maxY: el.cy + el.size,
+    };
+  }
+
+  // sequence_plot: bounding box is the plot area
+  if (el.type === 'sequence_plot') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
+  }
+
+  // bezier_curve: bounding box of all control points
+  if (el.type === 'bezier_curve') {
+    if (!el.points || el.points.length < 2) return null;
+    const xs = el.points.map((p) => p[0]);
+    const ys = el.points.map((p) => p[1]);
+    if (!allFinite(...xs, ...ys)) return null;
+    return {
+      minX: Math.min(...xs),
+      minY: Math.min(...ys),
+      maxX: Math.max(...xs),
+      maxY: Math.max(...ys),
+    };
+  }
+
   return null;
 }

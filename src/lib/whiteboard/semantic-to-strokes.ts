@@ -467,7 +467,9 @@ async function compileOneElement(
     || element.type === 'matrix_bracket' || element.type === 'linear_transform'
     || element.type === 'riemann_sum' || element.type === 'tangent_line'
     || element.type === 'histogram' || element.type === 'normal_distribution'
-    || element.type === 'slope_field' || element.type === 'vector_field_2d') {
+    || element.type === 'slope_field' || element.type === 'vector_field_2d'
+    || element.type === 'wireframe_3d'
+    || element.type === 'sequence_plot' || element.type === 'bezier_curve') {
     const lowered = lowerMathPrimitive(element);
     for (const lowEl of lowered) {
       const sub = await compileOneElement(lowEl, preset);
@@ -557,7 +559,10 @@ function expandAndSortForInjection(
       el.type === 'matrix_bracket' ||
       el.type === 'linear_transform' ||
       el.type === 'histogram' ||
-      el.type === 'normal_distribution'
+      el.type === 'normal_distribution' ||
+      el.type === 'wireframe_3d' ||
+      el.type === 'sequence_plot' ||
+      el.type === 'bezier_curve'
     ) {
       const lowered = lowerMathPrimitive(el, colorTheme);
       for (const child of lowered) {

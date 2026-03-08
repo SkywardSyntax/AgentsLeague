@@ -11,6 +11,7 @@ import {
   lowerPlannedLayoutToDrawBatch,
   planSemanticBatch,
 } from '@/lib/whiteboard/planner';
+import type { LoweringDiagnostics } from '@/lib/whiteboard/planner';
 import { clampBatchCoordinates } from '@/lib/whiteboard/clamp-coordinates';
 import { migrateBatch } from '@/lib/whiteboard/schema-migration';
 
@@ -30,6 +31,7 @@ export interface ApplyResult {
   batch: DrawBatch;
   sequenceNumber: number;
   warnings: string[];
+  loweringStats?: LoweringDiagnostics;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,9 +48,10 @@ function nextSequence(override?: number): number {
 function applySemanticPath(
   semanticPayload: SemanticBatch,
   warnings: string[],
+  diagRef?: { current: LoweringDiagnostics | null },
 ): DrawBatch {
   const planned = planSemanticBatch(semanticPayload);
-  let drawBatch = lowerPlannedLayoutToDrawBatch(planned);
+  let drawBatch = lowerPlannedLayoutToDrawBatch(planned, { diagnosticsOut: diagRef });
   // SEC-006: clamp coordinates before constraint enforcement
   drawBatch = { ...drawBatch, elements: clampBatchCoordinates(drawBatch.elements) };
   const constrained = enforceDrawBatchConstraints(drawBatch);
@@ -97,6 +100,7 @@ export function applyDrawBatch(
 ): ApplyResult {
   const warnings: string[] = [];
   let batch: DrawBatch | SemanticBatch = rawBatch;
+  const diagRef: { current: LoweringDiagnostics | null } = { current: null };
 
   // Run schema migration on raw DrawBatch payloads to strip unknown element
   // types and back-fill schemaVersion before validation (J9 / TYPE-001).
@@ -122,7 +126,7 @@ export function applyDrawBatch(
         warnings.push(...normalized.warnings);
         const revalidation = SemanticBatchSchema.safeParse(normalized.normalized);
         if (revalidation.success) {
-          resultBatch = applySemanticPath(revalidation.data, warnings);
+          resultBatch = applySemanticPath(revalidation.data, warnings, diagRef);
         } else {
           return {
             success: false,
@@ -146,7 +150,7 @@ export function applyDrawBatch(
         };
       }
     } else {
-      resultBatch = applySemanticPath(validation.data, warnings);
+      resultBatch = applySemanticPath(validation.data, warnings, diagRef);
     }
   } else {
     // Validate as DrawBatch
@@ -177,5 +181,6 @@ export function applyDrawBatch(
     batch: resultBatch,
     sequenceNumber: nextSequence(context.sequenceNumber),
     warnings,
+    ...(diagRef.current ? { loweringStats: diagRef.current } : {}),
   };
 }

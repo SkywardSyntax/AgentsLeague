@@ -475,6 +475,68 @@ export interface VectorField2dElement extends BaseDrawElement {
   normalize?: boolean;
 }
 
+export interface Wireframe3dElement extends BaseDrawElement {
+  type: 'wireframe_3d';
+  /** 3D shape to render */
+  shape: 'cube' | 'tetrahedron' | 'octahedron' | 'axes_3d' | 'surface';
+  /** Camera rotation around X axis in degrees (default 20) */
+  rotationX?: number;
+  /** Camera rotation around Y axis in degrees (default 30) */
+  rotationY?: number;
+  /** Center X on canvas */
+  cx: number;
+  /** Center Y on canvas */
+  cy: number;
+  /** Edge length in pixels */
+  size: number;
+  /** For 'surface': z = expression(x, y) sampled over a grid, e.g. "sin(x)*cos(y)" */
+  expression?: string;
+  /** Surface grid density (default 8) */
+  gridN?: number;
+  strokeColor?: string;
+  strokeWidth?: number;
+  /** Show hidden lines using painter's algorithm (default false) */
+  showHiddenLines?: boolean;
+}
+
+export interface SequencePlotElement extends BaseDrawElement {
+  type: 'sequence_plot';
+  /** The sequence a_n = expression(n), e.g. "1/n", "(-1)^n/n", "n*sin(1/n)" */
+  expression: string;
+  /** First index (default 1) */
+  nMin?: number;
+  /** Last index (default 20) */
+  nMax?: number;
+  /** Horizontal dashed convergence line at y = limit */
+  limit?: number;
+  /** Canvas x range; defaults to [nMin, nMax] */
+  xRange?: [number, number];
+  /** Canvas y range; auto-computed if omitted */
+  yRange?: [number, number];
+  strokeColor?: string;
+  /** Dot radius in pixels (default 4) */
+  dotRadius?: number;
+  /** Connect consecutive dots with thin lines (default false) */
+  showLines?: boolean;
+  /** Top-left corner of the plot area */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BezierCurveElement extends BaseDrawElement {
+  type: 'bezier_curve';
+  /** Control points [x, y] — 3 = quadratic, 4 = cubic, more = polyBezier */
+  points: [number, number][];
+  strokeColor?: string;
+  strokeWidth?: number;
+  /** Show control polygon and control point dots (default false) */
+  showControlPoints?: boolean;
+  /** Show tangent lines at endpoints (default false) */
+  showTangents?: boolean;
+}
+
 export type DrawElement =
   | RectElement
   | EllipseElement
@@ -500,7 +562,10 @@ export type DrawElement =
   | HistogramElement
   | NormalDistributionCurveElement
   | SlopeFieldElement
-  | VectorField2dElement;
+  | VectorField2dElement
+  | Wireframe3dElement
+  | SequencePlotElement
+  | BezierCurveElement;
 
 /**
  * Exhaustive-check helper for the DrawElement discriminated union.
