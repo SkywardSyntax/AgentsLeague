@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
 import { z } from 'zod';
+import { corsPreflightResponse } from '@/lib/cors';
 import {
   AgentStreamRequestSchema,
   DrawBatchSchema,
@@ -49,6 +50,10 @@ import type {
 
 export const runtime = 'nodejs';
 
+export async function OPTIONS() {
+  return corsPreflightResponse();
+}
+
 /**
  * TODO [SEC-001/SEC-002]: Validate session ownership and bind to authenticated principal.
  * Currently a stub that logs a warning. Requires a full auth system to implement properly:
@@ -68,6 +73,9 @@ function validateSession(sessionId: string, _request: Request): boolean {
 
 /** Concurrent stream guard — at most one active stream per sessionId */
 const activeStreams = new Set<string>();
+
+/** UUID v4 format validation — prevents use of arbitrary strings as session keys */
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface ClassifiedError {
   code: string;
@@ -116,6 +124,10 @@ export function classifyStreamError(error: unknown, requestAborted: boolean): Cl
   return { code: 'STREAM_FAILURE', message, retryable: true };
 }
 
+function isResponseLike(r: unknown): r is Response {
+  return typeof r === 'object' && r !== null && 'status' in r && 'ok' in r;
+}
+
 export async function parseRequestJson(
   request: Request,
   requestId: string,
@@ -139,7 +151,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   // Server-only mock gate — fail-closed: in mock mode, never reach OpenAI
   if (isMockMode()) {
     const result = await parseRequestJson(request, requestId);
-    if (result instanceof Response) return result;
+    if (isResponseLike(result)) return result;
     const body = result.json as { userMessage?: string; scenario?: string; passthroughBatch?: Record<string, unknown>; passthroughError?: string };
     log.info('mock_stream_request');
     if (isPassthroughMode() || body.passthroughBatch || body.passthroughError) {
@@ -153,7 +165,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
   }
 
   const result = await parseRequestJson(request, requestId);
-  if (result instanceof Response) return result;
+  if (isResponseLike(result)) return result;
   const json = result.json;
 
   const parsed = AgentStreamRequestSchema.safeParse(json);
@@ -165,7 +177,24 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
     );
   }
 
+  // SEC-003: Validate X-Session-Id header format before rate limiter uses it
+  const headerSessionId = request.headers.get('X-Session-Id');
+  if (headerSessionId && !UUID_V4_REGEX.test(headerSessionId)) {
+    return Response.json(
+      { error: 'INVALID_SESSION_ID', message: 'Invalid session ID format', requestId },
+      { status: 400, headers: { 'X-Request-Id': requestId } },
+    );
+  }
+
   const sessionId = parsed.data.sessionId;
+
+  // Validate body sessionId is a valid UUID to prevent arbitrary keys in activeStreams
+  if (!UUID_V4_REGEX.test(sessionId)) {
+    return Response.json(
+      { error: 'INVALID_SESSION_ID', message: 'Invalid session ID format', requestId },
+      { status: 400, headers: { 'X-Request-Id': requestId } },
+    );
+  }
 
   // SEC-001/SEC-002: Validate session ownership (stub until auth system is integrated)
   validateSession(sessionId, request);
@@ -251,6 +280,17 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
       }, 15_000);
       let lastIteration = 0;
 
+      // Absolute stream timeout: close SSE after 300s with a terminal event
+      const STREAM_ABSOLUTE_TIMEOUT_MS = 300_000;
+      let streamTimedOut = false;
+      const streamAbsoluteTimer = setTimeout(() => {
+        streamTimedOut = true;
+        try {
+          send({ type: 'turn.done', turnId, partial: true, reason: 'STREAM_TIMEOUT' });
+          controller.close();
+        } catch { /* already closed */ }
+      }, STREAM_ABSOLUTE_TIMEOUT_MS);
+
       logStreamEvent('info', 'stream_start', {
         requestId,
         sessionId,
@@ -277,7 +317,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
         const provisionalSeen = new Set<string>();
         let provisionalIndex = 0;
         let turnContextV2 = parsed.data.whiteboardContextV2
-          ? (JSON.parse(JSON.stringify(parsed.data.whiteboardContextV2)) as StructuredWhiteboardContext)
+          ? (structuredClone(parsed.data.whiteboardContextV2) as StructuredWhiteboardContext)
           : undefined;
         const initialOrigin = parsed.data.whiteboardContextV2?.suggested_next_regions[0]
           ? {
@@ -617,8 +657,11 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
         heartbeat.stop();
         clearTimeout(turnTimer);
         clearInterval(heartbeatInterval);
+        clearTimeout(streamAbsoluteTimer);
         activeStreams.delete(sessionId);
-        controller.close();
+        if (!streamTimedOut) {
+          controller.close();
+        }
       }
     },
   });
@@ -630,6 +673,17 @@ export const POST = applyMiddleware(
   compose(
     (h: Handler) => withContentType('application/json', h),
     // SEC-003: Key rate limits to IP + sessionId to prevent bypass via header rotation
+    // IP-based rate limit: 20 req/min per IP regardless of session
+    withRateLimit({
+      maxRequests: 20,
+      windowMs: 60_000,
+      keyExtractor: (request) => {
+        return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+          || request.headers.get('x-real-ip')
+          || 'unknown';
+      },
+    }),
+    // Session-scoped rate limit: 30 req/min per IP+session
     withRateLimit({
       maxRequests: 30,
       windowMs: 60_000,

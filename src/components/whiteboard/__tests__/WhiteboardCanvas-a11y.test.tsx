@@ -21,9 +21,9 @@ beforeEach(() => {
 });
 
 describe('WhiteboardCanvas a11y', () => {
-  it('canvas container has role="img" and aria-label="Whiteboard drawing canvas"', () => {
+  it('canvas container has role="application" and aria-label="Whiteboard drawing canvas"', () => {
     render(<WhiteboardCanvas batches={[]} onWarning={vi.fn()} />);
-    const app = screen.getByRole('img');
+    const app = screen.getByRole('application');
     expect(app).toHaveAttribute('aria-label', 'Whiteboard drawing canvas');
   });
 

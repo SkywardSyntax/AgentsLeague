@@ -61,7 +61,7 @@ describe('WhiteboardCanvas accessibility', () => {
   it('canvas container has accessible role and label', () => {
     render(<WhiteboardCanvas batches={[]} onWarning={vi.fn()} />);
 
-    const whiteboard = screen.getByRole('img');
+    const whiteboard = screen.getByRole('application');
     expect(whiteboard).toBeTruthy();
     expect(whiteboard.getAttribute('aria-label')).toBe('Whiteboard drawing canvas');
   });

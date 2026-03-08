@@ -47,6 +47,9 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
         >
           {copied ? 'Copied!' : 'Copy'}
         </button>
+        <span role="status" aria-live="polite" className="sr-only">
+          {copied ? 'Copied to clipboard' : ''}
+        </span>
       </div>
       <pre className="overflow-x-auto p-4">
         <code className="font-mono text-sm leading-relaxed text-[var(--color-code-text)]">

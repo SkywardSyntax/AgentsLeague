@@ -598,17 +598,20 @@ function buildExprAST(tokens: string[]): ExprNode | null {
   return result && pos === tokens.length ? result : null;
 }
 
-function evalExprNode(node: ExprNode, x: number): number {
+const MAX_EXPR_DEPTH = 100;
+
+function evalExprNode(node: ExprNode, x: number, depth = 0): number {
+  if (depth > MAX_EXPR_DEPTH) throw new Error('Expression depth limit exceeded');
   switch (node.kind) {
     case 'number': return node.value;
     case 'var': return x;
     case 'var_y': return x; // single-variable mode: y maps to x
-    case 'unary': return -evalExprNode(node.arg, x);
-    case 'call': return node.fn(evalExprNode(node.arg, x));
-    case 'call2': return node.fn(evalExprNode(node.left, x), evalExprNode(node.right, x));
+    case 'unary': return -evalExprNode(node.arg, x, depth + 1);
+    case 'call': return node.fn(evalExprNode(node.arg, x, depth + 1));
+    case 'call2': return node.fn(evalExprNode(node.left, x, depth + 1), evalExprNode(node.right, x, depth + 1));
     case 'binary': {
-      const l = evalExprNode(node.left, x);
-      const r = evalExprNode(node.right, x);
+      const l = evalExprNode(node.left, x, depth + 1);
+      const r = evalExprNode(node.right, x, depth + 1);
       switch (node.op) {
         case '+': return l + r;
         case '-': return l - r;
@@ -705,24 +708,31 @@ export function parseMathExpression(expr: string): ((x: number) => number) | nul
   const withImplicitMul = insertImplicitMul(tokens);
   const ast = buildExprAST(withImplicitMul);
   if (!ast) return null;
-  return (x: number) => evalExprNode(ast, x);
+  return (x: number) => {
+    try {
+      return evalExprNode(ast, x);
+    } catch {
+      return NaN;
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Two-variable expression evaluator for slope fields and vector fields
 // ---------------------------------------------------------------------------
 
-function evalExprNode2Var(node: ExprNode, x: number, y: number): number {
+function evalExprNode2Var(node: ExprNode, x: number, y: number, depth = 0): number {
+  if (depth > MAX_EXPR_DEPTH) throw new Error('Expression depth limit exceeded');
   switch (node.kind) {
     case 'number': return node.value;
     case 'var': return x;
     case 'var_y': return y;
-    case 'unary': return -evalExprNode2Var(node.arg, x, y);
-    case 'call': return node.fn(evalExprNode2Var(node.arg, x, y));
-    case 'call2': return node.fn(evalExprNode2Var(node.left, x, y), evalExprNode2Var(node.right, x, y));
+    case 'unary': return -evalExprNode2Var(node.arg, x, y, depth + 1);
+    case 'call': return node.fn(evalExprNode2Var(node.arg, x, y, depth + 1));
+    case 'call2': return node.fn(evalExprNode2Var(node.left, x, y, depth + 1), evalExprNode2Var(node.right, x, y, depth + 1));
     case 'binary': {
-      const l = evalExprNode2Var(node.left, x, y);
-      const r = evalExprNode2Var(node.right, x, y);
+      const l = evalExprNode2Var(node.left, x, y, depth + 1);
+      const r = evalExprNode2Var(node.right, x, y, depth + 1);
       switch (node.op) {
         case '+': return l + r;
         case '-': return l - r;
@@ -751,7 +761,13 @@ export function parseMathExpression2Var(expr: string): ((x: number, y: number) =
   const withImplicitMul = insertImplicitMul(tokens);
   const ast = buildExprAST(withImplicitMul);
   if (!ast) return null;
-  return (x: number, y: number) => evalExprNode2Var(ast, x, y);
+  return (x: number, y: number) => {
+    try {
+      return evalExprNode2Var(ast, x, y);
+    } catch {
+      return NaN;
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------

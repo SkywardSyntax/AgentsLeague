@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 
 /**
  * Tests for the concurrent stream guard (activeStreams Set).
@@ -65,7 +66,7 @@ describe('Concurrent stream guard', () => {
 
   it('rejects second concurrent stream for same sessionId with 409', async () => {
     const { POST } = await import('@/app/api/agent/stream/route');
-    const sessionId = `concurrent-guard-${Date.now()}`;
+    const sessionId = randomUUID();
     const body = { sessionId, userMessage: 'first stream', history: [] };
 
     // First request — enters the guard, adds to activeStreams, starts streaming
@@ -81,7 +82,7 @@ describe('Concurrent stream guard', () => {
 
   it('allows new stream after previous stream completes', async () => {
     const { POST } = await import('@/app/api/agent/stream/route');
-    const sessionId = `sequential-guard-${Date.now()}`;
+    const sessionId = randomUUID();
     const body = { sessionId, userMessage: 'sequential test', history: [] };
 
     // First request — starts streaming
@@ -113,7 +114,7 @@ describe('Concurrent stream guard', () => {
     });
 
     const { POST } = await import('@/app/api/agent/stream/route');
-    const sessionId = `error-cleanup-${Date.now()}`;
+    const sessionId = randomUUID();
     const body = { sessionId, userMessage: 'error test', history: [] };
 
     // First request — enters guard, throws during processing
@@ -130,7 +131,7 @@ describe('Concurrent stream guard', () => {
 
   it('handles rapid sequential requests without race on cleanup', async () => {
     const { POST } = await import('@/app/api/agent/stream/route');
-    const sessionId = `rapid-sequential-${Date.now()}`;
+    const sessionId = randomUUID();
     const body = { sessionId, userMessage: 'rapid test', history: [] };
 
     // First request

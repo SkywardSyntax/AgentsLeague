@@ -40,21 +40,27 @@ export function sanitizePasteText(raw: unknown): SanitizeResult<string> {
   }
 
   let value = raw;
+  let prev: string;
 
-  if (NULL_BYTE_RE.test(value)) {
-    value = value.replace(NULL_BYTE_RE, '');
+  // Avoid .test() + .replace() on the same /g regex — .test() advances lastIndex,
+  // causing .replace() to miss matches. Instead, just .replace() and compare.
+  prev = value;
+  value = value.replace(NULL_BYTE_RE, '');
+  if (value !== prev) {
     sanitized = true;
     warnings.push('Null bytes removed');
   }
 
-  if (CONTROL_CHAR_RE.test(value)) {
-    value = value.replace(CONTROL_CHAR_RE, '');
+  prev = value;
+  value = value.replace(CONTROL_CHAR_RE, '');
+  if (value !== prev) {
     sanitized = true;
     warnings.push('Control characters removed');
   }
 
-  if (HTML_TAG_RE.test(value)) {
-    value = value.replace(HTML_TAG_RE, '');
+  prev = value;
+  value = value.replace(HTML_TAG_RE, '');
+  if (value !== prev) {
     sanitized = true;
     warnings.push('HTML tags stripped');
   }
@@ -127,18 +133,18 @@ export function sanitizeClipboardHtml(html: unknown): SanitizeResult<string> {
   let value = html;
   let sanitized = false;
 
-  // Remove script tags and their contents
-  const scriptRe = /<script[\s\S]*?<\/script>/gi;
-  if (scriptRe.test(value)) {
-    value = value.replace(scriptRe, '');
+  // Remove script tags and their contents (avoid .test() + .replace() on /g regex)
+  let prev = value;
+  value = value.replace(/<script[\s\S]*?<\/script>/gi, '');
+  if (value !== prev) {
     sanitized = true;
     warnings.push('Script tags removed');
   }
 
   // Remove event handler attributes
-  const eventHandlerRe = /\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
-  if (eventHandlerRe.test(value)) {
-    value = value.replace(eventHandlerRe, '');
+  prev = value;
+  value = value.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  if (value !== prev) {
     sanitized = true;
     warnings.push('Event handlers removed');
   }

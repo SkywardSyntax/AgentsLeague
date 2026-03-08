@@ -50,7 +50,7 @@ describe('WarningOverlay keyboard dismiss', () => {
   it('preserves existing role="status" and aria-live="polite"', () => {
     render(<WarningOverlay notifications={[makeNotification('Test warning')]} onDismissAll={vi.fn()} />);
 
-    const container = screen.getByRole('status');
+    const container = screen.getByRole('status', { name: 'Notifications' });
     expect(container.getAttribute('aria-live')).toBe('polite');
     expect(container.getAttribute('aria-label')).toBe('Notifications');
   });

@@ -37,6 +37,7 @@ export function createCircuitBreaker(opts: CircuitBreakerOptions): CircuitBreake
   let rejections = 0;
   let lastFailureTime: number | null = null;
   let openedAt: number | null = null;
+  let probing = false;
 
   function checkTransition(): void {
     if (currentState === 'open' && openedAt !== null) {
@@ -55,12 +56,23 @@ export function createCircuitBreaker(opts: CircuitBreakerOptions): CircuitBreake
         return Promise.reject(new CircuitOpenError());
       }
 
+      // Half-open: only one concurrent probe request allowed
+      if (currentState === 'half-open') {
+        if (probing) {
+          rejections++;
+          return Promise.reject(new CircuitOpenError());
+        }
+        probing = true;
+      }
+
       return fn().then(
         (result) => {
           successes++;
           consecutiveFailures = 0;
           if (currentState === 'half-open') {
+            // Probe succeeded → HALF_OPEN → CLOSED
             currentState = 'closed';
+            probing = false;
           }
           return result;
         },
@@ -70,8 +82,10 @@ export function createCircuitBreaker(opts: CircuitBreakerOptions): CircuitBreake
           lastFailureTime = Date.now();
 
           if (currentState === 'half-open') {
+            // Probe failed → HALF_OPEN → OPEN
             currentState = 'open';
             openedAt = Date.now();
+            probing = false;
           } else if (consecutiveFailures >= opts.failureThreshold) {
             currentState = 'open';
             openedAt = Date.now();
@@ -106,6 +120,7 @@ export function createCircuitBreaker(opts: CircuitBreakerOptions): CircuitBreake
       rejections = 0;
       lastFailureTime = null;
       openedAt = null;
+      probing = false;
     },
   };
 }

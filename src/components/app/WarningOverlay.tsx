@@ -105,6 +105,8 @@ export function WarningOverlay({ notifications, onDismissOne, onDismissAll }: Wa
       {visible.map((notification) => (
         <div
           key={notification.id}
+          role={notification.severity === 'error' ? 'alert' : 'status'}
+          aria-live={notification.severity === 'error' ? 'assertive' : 'polite'}
           className={`glass-panel flex items-start gap-2 rounded-xl border px-3 py-2 text-xs shadow-[var(--shadow-card)] animate-rise-in ${severityClasses[notification.severity]}`}
         >
           <span className="mt-0.5 shrink-0 text-sm leading-none" aria-hidden="true">

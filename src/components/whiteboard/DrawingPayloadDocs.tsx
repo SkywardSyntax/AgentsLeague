@@ -6,6 +6,8 @@ import { memo, useState, useCallback } from 'react';
 // Collapsible section helper
 // ---------------------------------------------------------------------------
 
+let sectionCounter = 0;
+
 function Section({
   title,
   defaultOpen = false,
@@ -16,22 +18,26 @@ function Section({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [sectionId] = useState(() => `docs-section-${++sectionCounter}`);
   return (
     <div className="border-b border-[var(--color-border)] last:border-b-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={sectionId}
         className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-soft)]"
       >
         {title}
         <span
           className="text-[var(--color-text-muted)] transition-transform duration-200"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          aria-hidden="true"
         >
           ▾
         </span>
       </button>
-      {open && <div className="px-3 pb-3">{children}</div>}
+      {open && <div id={sectionId} className="px-3 pb-3">{children}</div>}
     </div>
   );
 }

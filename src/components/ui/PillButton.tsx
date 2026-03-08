@@ -3,11 +3,11 @@ import type { ButtonHTMLAttributes } from 'react';
 
 const variantStyles = {
   default:
-    'border-[var(--color-border)] bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]',
+    'border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-high)]',
   accent:
     'border-[var(--color-accent)]/45 bg-[var(--color-accent-faint)] text-[var(--color-text-primary)]',
   ghost:
-    'border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-soft)]',
+    'border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)]',
 } as const;
 
 const sizeStyles = {

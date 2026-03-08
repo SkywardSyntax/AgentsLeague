@@ -639,22 +639,25 @@ export const DrawBatchSchema = z.object({
   schemaVersion: z.number().int().default(1),
 }).superRefine((data, ctx) => {
   for (let i = 0; i < data.elements.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const el = data.elements[i] as any;
-    if (el?.type === 'function_curve' && el.expression) {
-      const v = validateExpression(el.expression as string);
+    const el: Record<string, unknown> = data.elements[i];
+    if (el.type === 'function_curve' && typeof el.expression === 'string') {
+      const v = validateExpression(el.expression);
       if (!v.valid) {
         ctx.addIssue({ code: 'custom', message: v.error ?? 'Invalid expression', path: ['elements', i, 'expression'] });
       }
     }
-    if (el?.type === 'parametric_curve') {
-      const vx = validateExpression(el.xExpression as string);
-      if (!vx.valid) {
-        ctx.addIssue({ code: 'custom', message: vx.error ?? 'Invalid xExpression', path: ['elements', i, 'xExpression'] });
+    if (el.type === 'parametric_curve') {
+      if (typeof el.xExpression === 'string') {
+        const vx = validateExpression(el.xExpression);
+        if (!vx.valid) {
+          ctx.addIssue({ code: 'custom', message: vx.error ?? 'Invalid xExpression', path: ['elements', i, 'xExpression'] });
+        }
       }
-      const vy = validateExpression(el.yExpression as string);
-      if (!vy.valid) {
-        ctx.addIssue({ code: 'custom', message: vy.error ?? 'Invalid yExpression', path: ['elements', i, 'yExpression'] });
+      if (typeof el.yExpression === 'string') {
+        const vy = validateExpression(el.yExpression);
+        if (!vy.valid) {
+          ctx.addIssue({ code: 'custom', message: vy.error ?? 'Invalid yExpression', path: ['elements', i, 'yExpression'] });
+        }
       }
     }
   }
@@ -1019,7 +1022,10 @@ export function normalizeDrawBatchPayload(payload: unknown): {
   if (!rec) return { normalized: null, warnings: ['Draw batch payload is not an object'] };
 
   const rawElements = Array.isArray(rec.elements) ? rec.elements : [];
-  const elements: DrawBatchInput['elements'] = [];
+  /** Broader type for elements during normalization: includes "lowered" types
+   *  (function_curve, parametric_curve, etc.) not yet in the Zod union. */
+  type NormalizedElement = { id: string; type: string; [key: string]: unknown };
+  const elements: NormalizedElement[] = [];
 
   for (let idx = 0; idx < rawElements.length; idx++) {
     const raw = asRecord(rawElements[idx]);
@@ -1159,8 +1165,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         }
         if (points.length === 0) points = undefined;
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1212,8 +1217,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       }
       const steps = asNumber(raw.steps) ?? undefined;
       const label = asString(raw.label) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1249,8 +1253,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const steps = asNumber(raw.steps) ?? undefined;
       const showPolarGrid = typeof raw.showPolarGrid === 'boolean' ? raw.showPolarGrid : undefined;
       const label = asString(raw.label) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         cx,
@@ -1280,8 +1283,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         continue;
       }
       const label = asString(raw.label) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1343,8 +1345,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const fillColor = asString(raw.fillColor) ?? undefined;
       const strokeColor = asString(raw.strokeColor) ?? undefined;
       const label = asString(raw.label) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1377,8 +1378,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const showCenter = typeof raw.showCenter === 'boolean' ? raw.showCenter : undefined;
       const showRadius = typeof raw.showRadius === 'boolean' ? raw.showRadius : undefined;
       const radiusAngle = asNumber(raw.radiusAngle) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         cx,
@@ -1422,8 +1422,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const rawAngleLabels = Array.isArray(raw.angleLabels) ? raw.angleLabels : undefined;
       const sideLabels = rawSideLabels ? [asString(rawSideLabels[0]) ?? undefined, asString(rawSideLabels[1]) ?? undefined, asString(rawSideLabels[2]) ?? undefined] as [string?, string?, string?] : undefined;
       const angleLabels = rawAngleLabels ? [asString(rawAngleLabels[0]) ?? undefined, asString(rawAngleLabels[1]) ?? undefined, asString(rawAngleLabels[2]) ?? undefined] as [string?, string?, string?] : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         vertices: vertices as [typeof vertices[0], typeof vertices[1], typeof vertices[2]],
@@ -1462,8 +1461,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const method = (raw.method === 'left' || raw.method === 'right' || raw.method === 'midpoint') ? raw.method : undefined;
       const showFunction = typeof raw.showFunction === 'boolean' ? raw.showFunction : undefined;
       const showAxes = typeof raw.showAxes === 'boolean' ? raw.showAxes : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1508,8 +1506,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const length = asNumber(raw.length) ?? undefined;
       const showPoint = typeof raw.showPoint === 'boolean' ? raw.showPoint : undefined;
       const label = asString(raw.label) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1563,8 +1560,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const yMax = asNumber(raw.yMax) ?? undefined;
       const xLabel = asString(raw.xLabel) ?? undefined;
       const yLabel = asString(raw.yLabel) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1601,8 +1597,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const showMeanLine = typeof raw.showMeanLine === 'boolean' ? raw.showMeanLine : undefined;
       const showSigmaLines = typeof raw.showSigmaLines === 'boolean' ? raw.showSigmaLines : undefined;
       const showLabels = typeof raw.showLabels === 'boolean' ? raw.showLabels : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1658,8 +1653,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
           solutionCurve = { x0, y0, ...(steps != null ? { steps } : {}) };
         }
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1706,8 +1700,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const gridCols = asNumber(raw.gridCols) ?? undefined;
       const strokeColor = asString(raw.strokeColor) ?? undefined;
       const normalize = typeof raw.normalize === 'boolean' ? raw.normalize : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1746,8 +1739,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const strokeColor = asString(raw.strokeColor) ?? undefined;
       const strokeWidth = asNumber(raw.strokeWidth) ?? undefined;
       const showHiddenLines = typeof raw.showHiddenLines === 'boolean' ? raw.showHiddenLines : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         shape,
@@ -1802,8 +1794,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const strokeColor = asString(raw.strokeColor) ?? undefined;
       const dotRadius = asNumber(raw.dotRadius) ?? undefined;
       const showLines = typeof raw.showLines === 'boolean' ? raw.showLines : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         x,
@@ -1848,8 +1839,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const strokeWidth = asNumber(raw.strokeWidth) ?? undefined;
       const showControlPoints = typeof raw.showControlPoints === 'boolean' ? raw.showControlPoints : undefined;
       const showTangents = typeof raw.showTangents === 'boolean' ? raw.showTangents : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         points,
@@ -1890,8 +1880,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const cellHeight = asNumber(raw.cellHeight) ?? undefined;
       const title = asString(raw.title) ?? undefined;
       const showNames = typeof raw.showNames === 'boolean' ? raw.showNames : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         symbols,
@@ -1930,8 +1919,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const showBrace = typeof raw.showBrace === 'boolean' ? raw.showBrace : undefined;
       const lineSpacing = asNumber(raw.lineSpacing) ?? undefined;
       const fontSize = asNumber(raw.fontSize) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         equations,
@@ -1961,8 +1949,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const fontSize = asNumber(raw.fontSize) ?? undefined;
       const isLatex = typeof raw.isLatex === 'boolean' ? raw.isLatex : undefined;
       const strokeColor = asString(raw.strokeColor) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         text,
@@ -1995,8 +1982,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const fillColor = asString(raw.fillColor) ?? undefined;
       const padding = asNumber(raw.padding) ?? undefined;
       const title = asString(raw.title) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         formula,
@@ -2041,8 +2027,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const leftOnlyLabel = asString(raw.leftOnlyLabel) ?? undefined;
       const rightOnlyLabel = asString(raw.rightOnlyLabel) ?? undefined;
       const title = asString(raw.title) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         sets,
@@ -2086,8 +2071,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const headerColor = asString(raw.headerColor) ?? undefined;
       const trueColor = asString(raw.trueColor) ?? undefined;
       const falseColor = asString(raw.falseColor) ?? undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         variables,
@@ -2136,8 +2120,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const xMax = asNumber(raw.xMax) ?? undefined;
       const title = asString(raw.title) ?? undefined;
       const showNotation = typeof raw.showNotation === 'boolean' ? raw.showNotation : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (elements as any[]).push({
+      elements.push({
         id,
         type,
         intervals,
@@ -2169,7 +2152,9 @@ export function normalizeDrawBatchPayload(payload: unknown): {
   const normalized: DrawBatchInput = {
     batch_id,
     ...(style_preset ? { style_preset } : {}),
-    elements,
+    // Single controlled cast: the normalizer builds elements with broader types
+    // (e.g. function_curve, parametric_curve) that are lowered downstream.
+    elements: elements as DrawBatchInput['elements'],
     schemaVersion: 1,
   };
 

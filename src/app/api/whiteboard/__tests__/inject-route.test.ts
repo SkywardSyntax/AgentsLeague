@@ -128,8 +128,8 @@ describe('POST /api/whiteboard/inject', () => {
       (e: { type: string }) => e.type === 'text',
     );
     expect(textEl).toBeDefined();
-    // Sanitization happens downstream — the inject endpoint preserves raw text
-    expect(textEl.text).toBe(xssPayload);
+    // Phase 3: inject endpoint now sanitizes text fields (strips HTML tags)
+    expect(textEl.text).toBe('alert("xss")');
   });
 
   it("source field is stamped correctly as 'injection'", async () => {

@@ -2354,10 +2354,13 @@ function expandLinearTransform(el: LinearTransformElement, theme?: ColorTheme): 
 // Slope field expander
 // ---------------------------------------------------------------------------
 
+const MAX_FIELD_ROWS = 50;
+const MAX_FIELD_COLS = 50;
+
 function expandSlopeField(el: SlopeFieldElement): DrawElement[] {
   const result: DrawElement[] = [];
-  const rows = el.gridRows ?? 12;
-  const cols = el.gridCols ?? 16;
+  const rows = Math.min(el.gridRows ?? 12, MAX_FIELD_ROWS);
+  const cols = Math.min(el.gridCols ?? 16, MAX_FIELD_COLS);
   const [xMin, xMax] = el.xRange;
   const [yMin, yMax] = el.yRange;
   const mapper = makeCoordMapper(
@@ -2451,8 +2454,8 @@ function expandSlopeField(el: SlopeFieldElement): DrawElement[] {
 
 function expandVectorField2d(el: VectorField2dElement): DrawElement[] {
   const result: DrawElement[] = [];
-  const rows = el.gridRows ?? 8;
-  const cols = el.gridCols ?? 10;
+  const rows = Math.min(el.gridRows ?? 8, MAX_FIELD_ROWS);
+  const cols = Math.min(el.gridCols ?? 10, MAX_FIELD_COLS);
   const [xMin, xMax] = el.xRange;
   const [yMin, yMax] = el.yRange;
   const mapper = makeCoordMapper(

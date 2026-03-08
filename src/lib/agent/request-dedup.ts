@@ -13,13 +13,31 @@ export interface RequestDedup {
   clear(): void;
 }
 
-interface PendingEntry {
-  promise: Promise<Response>;
+/** Buffered response snapshot shared across dedup waiters. */
+interface BufferedResponse {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: ArrayBuffer;
+}
+
+/** Each PendingEntry stores a promise that resolves to a buffered snapshot. */
+interface BufferedPendingEntry {
+  promise: Promise<BufferedResponse>;
   expiresAt: number | null;
 }
 
 export function createRequestDedup(): RequestDedup {
-  const inflight = new Map<string, PendingEntry>();
+  const inflight = new Map<string, BufferedPendingEntry>();
+
+  /** Convert a buffered snapshot to a fresh Response instance. */
+  function makeResponse(snap: BufferedResponse): Response {
+    return new Response(snap.body.slice(0), {
+      status: snap.status,
+      statusText: snap.statusText,
+      headers: snap.headers,
+    });
+  }
 
   function dedupFetch(
     key: string,
@@ -32,22 +50,38 @@ export function createRequestDedup(): RequestDedup {
       if (existing.expiresAt !== null && Date.now() > existing.expiresAt) {
         inflight.delete(key);
       } else {
-        return existing.promise;
+        // Each waiter gets its own fresh Response with an unconsumed body.
+        return existing.promise.then(makeResponse);
       }
     }
 
-    const promise = fetchFn().finally(() => {
-      if (inflight.get(key)?.promise === promise) {
-        inflight.delete(key);
-      }
-    });
+    // Buffer the response body so multiple waiters can each read it safely.
+    const promise = fetchFn()
+      .then(async (response): Promise<BufferedResponse> => {
+        const body = await response.arrayBuffer();
+        const headers: Record<string, string> = {};
+        response.headers.forEach((value, name) => {
+          headers[name] = value;
+        });
+        return {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+          body,
+        };
+      })
+      .finally(() => {
+        if (inflight.get(key)?.promise === promise) {
+          inflight.delete(key);
+        }
+      });
 
     inflight.set(key, {
       promise,
       expiresAt: ttlMs != null ? Date.now() + ttlMs : null,
     });
 
-    return promise;
+    return promise.then(makeResponse);
   }
 
   function clear(): void {

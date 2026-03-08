@@ -11,8 +11,8 @@ export class RetryPolicy {
 
   canRetry(error: Error | Response): boolean {
     if (this.attempt >= this.config.maxRetries) return false;
-    if (error instanceof Response) {
-      return this.config.retryableStatuses.includes(error.status);
+    if (typeof error === 'object' && error !== null && 'status' in error && 'ok' in error) {
+      return this.config.retryableStatuses.includes((error as { status: number }).status);
     }
     // Network errors are retryable; AbortErrors are not
     return error.name !== 'AbortError';

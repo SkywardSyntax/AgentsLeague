@@ -139,6 +139,11 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
   const committedRef = useRef<HTMLCanvasElement>(null);
   const activeRef = useRef<HTMLCanvasElement>(null);
 
+  // Cached canvas contexts — avoids per-frame getContext('2d') calls
+  const ctxBgRef = useRef<CanvasRenderingContext2D | null>(null);
+  const ctxCommittedRef = useRef<CanvasRenderingContext2D | null>(null);
+  const ctxActiveRef = useRef<CanvasRenderingContext2D | null>(null);
+
   const isMobile = useIsMobile();
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const mobileToolbarRef = useRef<HTMLDivElement>(null);
@@ -308,6 +313,11 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
   const statsCommittedElRef = useRef<HTMLDivElement>(null);
   const statsActiveElRef = useRef<HTMLDivElement>(null);
 
+  // Periodic state snapshots for JSX-rendered stats (avoids stale ref reads in JSX)
+  const [displayZoom, setDisplayZoom] = useState(1);
+  const [displayStats, setDisplayStats] = useState({ active: 0, committed: 0 });
+  const lastStatsFlushRef = useRef(0);
+
   const debugVisibleRef = useRef(false);
   const statsFpsElRef = useRef<HTMLDivElement>(null);
   const statsDrawCallsElRef = useRef<HTMLDivElement>(null);
@@ -369,6 +379,11 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
     });
+
+    // Re-acquire contexts after resize (canvas resize resets context state)
+    ctxBgRef.current = bgRef.current?.getContext('2d') ?? null;
+    ctxCommittedRef.current = committedRef.current?.getContext('2d') ?? null;
+    ctxActiveRef.current = activeRef.current?.getContext('2d') ?? null;
 
     committedDirtyRef.current = true;
   }, []);
@@ -612,9 +627,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         return;
       }
 
-      const bgCtx = bgCanvas.getContext('2d');
-      const committedCtx = committedCanvas.getContext('2d');
-      const activeCtx = activeCanvas.getContext('2d');
+      const bgCtx = ctxBgRef.current;
+      const committedCtx = ctxCommittedRef.current;
+      const activeCtx = ctxActiveRef.current;
       if (!bgCtx || !committedCtx || !activeCtx) {
         rafRef.current = requestAnimationFrame(drawFrame);
         return;
@@ -937,6 +952,18 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       // Update zoom display on camera change
       if (cameraChanged && statsZoomElRef.current) {
         statsZoomElRef.current.textContent = `Zoom: ${(camera.zoom * 100).toFixed(0)}%`;
+      }
+
+      // Throttled React state flush for JSX-rendered stats (~250ms)
+      if (frameNow - lastStatsFlushRef.current > 250) {
+        lastStatsFlushRef.current = frameNow;
+        const sr = statsRef.current;
+        setDisplayStats((prev) =>
+          prev.active !== sr.active || prev.committed !== sr.committed
+            ? { active: sr.active, committed: sr.committed }
+            : prev,
+        );
+        setDisplayZoom((prev) => prev !== camera.zoom ? camera.zoom : prev);
       }
 
       // Update FPS and draw-call stats when debug overlay is visible
@@ -1381,13 +1408,16 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         tabIndex={0}
         className="relative h-full w-full cursor-grab active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
         style={{ touchAction: 'none' }}
-        role="img"
+        role="application"
         aria-label="Whiteboard drawing canvas"
         aria-describedby="whiteboard-drawing-description"
       >
-        <canvas ref={bgRef} className="absolute inset-0" />
-        <canvas ref={committedRef} className="absolute inset-0" />
-        <canvas ref={activeRef} className="absolute inset-0" />
+        <canvas ref={bgRef} className="absolute inset-0" aria-hidden="true" />
+        <canvas ref={committedRef} className="absolute inset-0" aria-hidden="true" />
+        <canvas ref={activeRef} className="absolute inset-0" aria-hidden="true" />
+        <div role="status" aria-live="polite" className="sr-only">
+          {batchAnnouncement}
+        </div>
       </div>
 
       {/* Drawing-in-progress progress bar */}
@@ -1412,10 +1442,6 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         {drawingDescription}
       </div>
 
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {batchAnnouncement}
-      </div>
-
       <span id="after-canvas" />
       {renderError && (
         <div
@@ -1438,9 +1464,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       )}
 
       <div data-testid="whiteboard-stats" className="glass-panel pointer-events-none absolute right-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
-        <div data-testid="whiteboard-zoom">Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
-        <div data-testid="whiteboard-committed" ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
-        <div data-testid="whiteboard-active" ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
+        <div data-testid="whiteboard-zoom">Zoom: {(displayZoom * 100).toFixed(0)}%</div>
+        <div data-testid="whiteboard-committed" ref={statsCommittedElRef}>Committed: {displayStats.committed}</div>
+        <div data-testid="whiteboard-active" ref={statsActiveElRef}>Active: {displayStats.active}</div>
       </div>
 
       {/* Coordinate readout — bottom-right, above toolbar */}
@@ -1523,7 +1549,7 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
               aria-live="polite"
               aria-atomic="true"
             >
-              {(cameraRef.current.zoom * 100).toFixed(0)}%
+              {(displayZoom * 100).toFixed(0)}%
             </span>
             <button
               type="button"
@@ -1616,7 +1642,7 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
 
       <WhiteboardStatusBar
         elementCount={elementCount ?? 0}
-        zoom={cameraRef.current.zoom}
+        zoom={displayZoom}
         autoSaved={autoSaved ?? false}
       />
     </section>

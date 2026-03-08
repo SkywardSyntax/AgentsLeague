@@ -35,92 +35,36 @@ export function sanitizeChatHtml(input: unknown): XssSanitizeResult {
   const threats: string[] = [];
   let value = input;
 
-  if (SCRIPT_TAG_RE.test(value)) {
-    threats.push('script_tag');
-    value = value.replace(SCRIPT_TAG_RE, '');
-  }
+  // Avoid .test() + .replace() on the same /g regex — .test() advances lastIndex,
+  // causing .replace() to miss matches. Instead, just .replace() and compare.
+  const strip = (re: RegExp, threat: string, replacement = '') => {
+    const cleaned = value.replace(re, replacement);
+    if (cleaned !== value) {
+      threats.push(threat);
+      value = cleaned;
+    }
+  };
 
-  if (STYLE_TAG_RE.test(value)) {
-    threats.push('style_tag');
-    value = value.replace(STYLE_TAG_RE, '');
-  }
-
-  if (IFRAME_RE.test(value)) {
-    threats.push('iframe');
-    value = value.replace(IFRAME_RE, '');
-  }
-
-  if (OBJECT_RE.test(value)) {
-    threats.push('object_tag');
-    value = value.replace(OBJECT_RE, '');
-  }
-
-  if (EMBED_RE.test(value)) {
-    threats.push('embed_tag');
-    value = value.replace(EMBED_RE, '');
-  }
-
-  if (SVG_SCRIPT_RE.test(value)) {
-    threats.push('svg_xss');
-    value = value.replace(SVG_SCRIPT_RE, '');
-  }
-
-  if (BASE_TAG_RE.test(value)) {
-    threats.push('base_tag');
-    value = value.replace(BASE_TAG_RE, '');
-  }
-
-  if (META_REFRESH_RE.test(value)) {
-    threats.push('meta_refresh');
-    value = value.replace(META_REFRESH_RE, '');
-  }
-
-  if (EVENT_HANDLER_RE.test(value)) {
-    threats.push('event_handler');
-    value = value.replace(EVENT_HANDLER_RE, '');
-  }
-
-  if (JAVASCRIPT_URI_RE.test(value)) {
-    threats.push('javascript_uri');
-    value = value.replace(JAVASCRIPT_URI_RE, '');
-  }
-
-  if (VBSCRIPT_URI_RE.test(value)) {
-    threats.push('vbscript_uri');
-    value = value.replace(VBSCRIPT_URI_RE, '');
-  }
-
-  if (DATA_URI_RE.test(value)) {
-    threats.push('data_uri');
-    value = value.replace(DATA_URI_RE, '');
-  }
-
-  if (EXPRESSION_RE.test(value)) {
-    threats.push('css_expression');
-    value = value.replace(EXPRESSION_RE, '');
-  }
-
-  if (URL_EXPRESSION_RE.test(value)) {
-    threats.push('css_url_js');
-    value = value.replace(URL_EXPRESSION_RE, 'url(');
-  }
-
-  if (IMPORT_RE.test(value)) {
-    threats.push('css_import');
-    value = value.replace(IMPORT_RE, '');
-  }
-
-  if (BINDING_RE.test(value)) {
-    threats.push('moz_binding');
-    value = value.replace(BINDING_RE, '');
-  }
+  strip(SCRIPT_TAG_RE, 'script_tag');
+  strip(STYLE_TAG_RE, 'style_tag');
+  strip(IFRAME_RE, 'iframe');
+  strip(OBJECT_RE, 'object_tag');
+  strip(EMBED_RE, 'embed_tag');
+  strip(SVG_SCRIPT_RE, 'svg_xss');
+  strip(BASE_TAG_RE, 'base_tag');
+  strip(META_REFRESH_RE, 'meta_refresh');
+  strip(EVENT_HANDLER_RE, 'event_handler');
+  strip(JAVASCRIPT_URI_RE, 'javascript_uri');
+  strip(VBSCRIPT_URI_RE, 'vbscript_uri');
+  strip(DATA_URI_RE, 'data_uri');
+  strip(EXPRESSION_RE, 'css_expression');
+  strip(URL_EXPRESSION_RE, 'css_url_js', 'url(');
+  strip(IMPORT_RE, 'css_import');
+  strip(BINDING_RE, 'moz_binding');
 
   for (const attr of DANGEROUS_ATTRS) {
     const attrRe = new RegExp(`\\s+${attr}\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+)`, 'gi');
-    if (attrRe.test(value)) {
-      threats.push(`dangerous_attr_${attr}`);
-      value = value.replace(attrRe, '');
-    }
+    strip(attrRe, `dangerous_attr_${attr}`);
   }
 
   return { clean: value, threats };

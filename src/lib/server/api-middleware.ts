@@ -191,7 +191,17 @@ export function withRateLimit(config: RateLimitConfig): Middleware {
   }
 
   return (handler: Handler) => async (request: Request, ctx: HandlerContext) => {
-    const extractKey = keyExtractor ?? ((req: Request) => req.headers.get('X-Session-Id'));
+    const extractKey = keyExtractor ?? ((req: Request) => {
+      const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+        || req.headers.get('x-real-ip')
+        || null;
+      const sessionId = req.headers.get('X-Session-Id');
+      // Combine IP + session ID so rotating session IDs doesn't bypass rate limits
+      if (ip && sessionId) return `${ip}:${sessionId}`;
+      if (ip) return ip;
+      // Dev fallback: use session ID alone when no IP headers are available
+      return sessionId;
+    });
     const rawKey = extractKey(request);
 
     // Reject requests without a session key to prevent shared-bucket DoS

@@ -49,11 +49,18 @@ function applyTheme(theme: Theme): void {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [theme, setTheme] = useState<Theme>('light');
+  const [mounted, setMounted] = useState(false);
+
+  // Hydration guard: read client-side theme only after mount
+  useEffect(() => {
+    setTheme(getInitialTheme());
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    if (mounted) applyTheme(theme);
+  }, [theme, mounted]);
 
   // Listen for OS-level theme changes when user has no explicit preference
   useEffect(() => {

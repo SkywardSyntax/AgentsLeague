@@ -21,9 +21,11 @@ describe('request dedup', () => {
     const fetchFn = vi.fn(() => delay(30).then(() => mockResponse('ok')));
     const p1 = dedup.fetch('k1', fetchFn);
     const p2 = dedup.fetch('k1', fetchFn);
-    expect(p1).toBe(p2);
+    // Dedup shares the underlying fetch — only one call is made
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    await p1;
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(await r1.text()).toBe('ok');
+    expect(await r2.text()).toBe('ok');
   });
 
   it('after resolution, new request starts fresh', async () => {

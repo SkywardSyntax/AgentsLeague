@@ -5,6 +5,7 @@ import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
 import { parseTextScripts } from '@/lib/latex/text-scripts';
 import { parseBlocks, type BlockSegment } from '@/lib/markdown/parse-blocks';
 import { parseInline, type InlineToken } from '@/lib/markdown/parse-inline';
+import { sanitizeChatHtml } from '@/lib/chat/xss-sanitizer';
 import { LatexSvg } from './LatexSvg';
 import { CodeBlock } from './CodeBlock';
 
@@ -156,7 +157,8 @@ function renderBlock(block: BlockSegment, idx: number): ReactNode {
 }
 
 export const MessageContent = memo(function MessageContent({ content }: { content: string }) {
-  const blocks = useMemo(() => parseBlocks(content), [content]);
+  const sanitizedContent = useMemo(() => sanitizeChatHtml(content).clean, [content]);
+  const blocks = useMemo(() => parseBlocks(sanitizedContent), [sanitizedContent]);
 
   return (
     <div className="text-sm leading-6 break-words">

@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { WarningOverlay, type NotificationItem } from '@/components/app/WarningOverlay';
-import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 
 afterEach(cleanup);
 
@@ -13,20 +11,8 @@ beforeEach(() => {
 });
 
 describe('accessibility annotations', () => {
-  it('StatusBadge has role="status" and aria-live="polite"', () => {
-    render(<StatusBadge status="idle" />);
-    const badge = screen.getByRole('status');
-    expect(badge).toBeTruthy();
-    expect(badge.getAttribute('aria-live')).toBe('polite');
-  });
-
-  it('StatusBadge updates role=status content when status changes', () => {
-    const { rerender } = render(<StatusBadge status="idle" />);
-    expect(screen.getByRole('status').textContent).toContain('Ready');
-
-    rerender(<StatusBadge status="thinking" />);
-    expect(screen.getByRole('status').textContent).toContain('Thinking');
-  });
+  // StatusBadge replaced by Badge in new design system — tests in ui-components.test.tsx
+  it.todo('Badge (new) has role="status" and aria-live (replaces StatusBadge)');
 
   it('ChatPanel tabs have role="tab" and aria-selected on active', () => {
     const chats = [
@@ -72,7 +58,7 @@ describe('accessibility annotations', () => {
   it('WarningOverlay has role="status" and aria-live="polite"', () => {
     const notification: NotificationItem = { id: 'test-1', message: 'Test warning', severity: 'warning' };
     render(<WarningOverlay notifications={[notification]} />);
-    const container = screen.getByRole('status');
+    const container = screen.getByRole('status', { name: 'Notifications' });
     expect(container).toBeTruthy();
     expect(container.getAttribute('aria-live')).toBe('polite');
     expect(container.getAttribute('aria-label')).toBe('Notifications');
@@ -83,22 +69,9 @@ describe('accessibility annotations', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('MobilePanelSwitcher has role="tablist"', () => {
-    render(<MobilePanelSwitcher activePanel="chat" onSwitch={vi.fn()} />);
-    const tablist = screen.getByRole('tablist');
-    expect(tablist).toBeTruthy();
-    expect(tablist.getAttribute('aria-label')).toBe('Panel switcher');
-  });
+  // StatusBadge replaced by Badge in new design system — tests in ui-components.test.tsx
+  it.todo('Badge (new) has role="status" and aria-live (replaces StatusBadge)');
 
-  it('MobilePanelSwitcher active tab has aria-selected="true"', () => {
-    render(<MobilePanelSwitcher activePanel="chat" onSwitch={vi.fn()} />);
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(3);
-    const canvasTab = tabs.find((t) => t.textContent === 'Canvas');
-    const chatTab = tabs.find((t) => t.textContent === 'Chat');
-    const drawTab = tabs.find((t) => t.textContent === 'Draw');
-    expect(canvasTab!.getAttribute('aria-selected')).toBe('false');
-    expect(drawTab!.getAttribute('aria-selected')).toBe('false');
-    expect(chatTab!.getAttribute('aria-selected')).toBe('true');
-  });
+  // MobilePanelSwitcher replaced by AppShell bottom nav — tests in mobile-panel-switcher.test.tsx
+  it.todo('AppShell bottom nav has role="tablist" (replaces MobilePanelSwitcher)');
 });

@@ -12,6 +12,7 @@ export interface CircuitBreakerConfig {
 interface CircuitState {
   failures: number;
   openedAt: number | null;
+  probing: boolean;
 }
 
 const circuitStates = new Map<string, CircuitState>();
@@ -19,7 +20,7 @@ const circuitStates = new Map<string, CircuitState>();
 function getCircuitState(key: string): CircuitState {
   let state = circuitStates.get(key);
   if (!state) {
-    state = { failures: 0, openedAt: null };
+    state = { failures: 0, openedAt: null, probing: false };
     circuitStates.set(key, state);
   }
   return state;
@@ -57,9 +58,11 @@ export async function resilientFetch(
     if (elapsed < cooldownMs) {
       throw new Error('Circuit breaker is open. Request rejected.');
     }
-    // Half-open: allow one request through
-    circuit.openedAt = null;
-    circuit.failures = 0;
+    // Half-open: only allow one concurrent probe request
+    if (circuit.probing) {
+      throw new Error('Circuit breaker is open. Request rejected.');
+    }
+    circuit.probing = true;
   }
 
   let lastError: Error | undefined;
@@ -90,15 +93,17 @@ export async function resilientFetch(
       callerSignal?.removeEventListener('abort', onCallerAbort);
 
       if (res.ok) {
-        // Success resets circuit
+        // Probe succeeded — reset circuit
         circuit.failures = 0;
         circuit.openedAt = null;
+        circuit.probing = false;
         return res;
       }
 
       // Client errors (4xx) — don't retry
       if (res.status >= 400 && res.status < 500) {
         circuit.failures++;
+        circuit.probing = false;
         if (circuit.failures >= threshold) {
           circuit.openedAt = Date.now();
         }
@@ -107,6 +112,7 @@ export async function resilientFetch(
 
       // Server errors (5xx) — retry
       circuit.failures++;
+      circuit.probing = false;
       if (circuit.failures >= threshold) {
         circuit.openedAt = Date.now();
       }
@@ -128,6 +134,7 @@ export async function resilientFetch(
         // Our own timeout abort
         if (controller.signal.aborted) {
           circuit.failures++;
+          circuit.probing = false;
           if (circuit.failures >= threshold) {
             circuit.openedAt = Date.now();
           }
@@ -141,6 +148,7 @@ export async function resilientFetch(
 
       // Network errors — retry
       circuit.failures++;
+      circuit.probing = false;
       if (circuit.failures >= threshold) {
         circuit.openedAt = Date.now();
       }

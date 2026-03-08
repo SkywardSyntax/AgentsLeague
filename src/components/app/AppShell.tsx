@@ -1,42 +1,28 @@
 'use client';
 
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
-import { useAgentStream } from '@/hooks/useAgentStream';
-import { useDrawHistory } from '@/hooks/useDrawHistory';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { useSessionManager, type ChatSessionState } from '@/hooks/useSessionManager';
+import { useChatSessions, createId, rebuildSceneFromBatches } from '@/hooks/useChatSessions';
+import { useDrawingEngine } from '@/hooks/useDrawingEngine';
+import { useStreamOrchestrator } from '@/hooks/useStreamOrchestrator';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
 import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
-import { buildWhiteboardContext, buildWhiteboardContextV2 } from '@/lib/whiteboard/context';
 import { decompressShareData } from '@/lib/share-url';
-import {
-  removeStreamOverlayFromBatches,
-  removeStreamOverlayFromScene,
-} from '@/lib/whiteboard/stream-overlay';
-import type {
-  AgentSSEEvent,
-  ChatMessage,
-  DrawBatch,
-  DrawElement,
-  SemanticBatch,
-  WhiteboardLayoutDiagnostics,
-} from '@/types/agent';
-import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
+import type { DrawBatch } from '@/types/agent';
 import { ErrorBoundary } from '@/components/app/ErrorBoundary';
-import { AppHeader } from '@/components/app/AppHeader';
-import { AgentSidebar } from '@/components/app/AgentSidebar';
-import { WarningOverlay, type NotificationItem } from '@/components/app/WarningOverlay';
-import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
-import { DrawPayloadInjector } from '@/components/whiteboard/DrawPayloadInjector';
-import { DrawingStatusPill, type DrawingPillState } from '@/components/whiteboard/DrawingStatusPill';
-import { DrawingStatistics, type DrawSource } from '@/components/whiteboard/DrawingStatistics';
+import { WarningOverlay } from '@/components/app/WarningOverlay';
+import { useTheme } from '@/components/app/ThemeProvider';
+import { DrawingStatusPill } from '@/components/whiteboard/DrawingStatusPill';
+import { DrawingStatistics } from '@/components/whiteboard/DrawingStatistics';
 import { ElementInspector } from '@/components/whiteboard/ElementInspector';
 import { KeyboardShortcutsModal } from '@/components/whiteboard/KeyboardShortcutsModal';
-import type { StreamPhase, DrawingProgressInfo } from '@/components/chat/StreamProgress';
-import { friendlyEventErrorMessage } from '@/lib/client/error-messages';
-import { useScenePersistence } from '@/hooks/useScenePersistence';
+import { PayloadPlayground } from '@/components/whiteboard/PayloadPlayground';
+import { Badge } from '@/components/ui/Badge';
+import { IconButton } from '@/components/ui/IconButton';
+
+/* ── Agent API types ─────────────────────────────────────────────────────── */
 
 interface AgentAPI {
   submitQuery: (text: string) => Promise<void>;
@@ -54,61 +40,184 @@ declare global {
   }
 }
 
-function createId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+/* ── SVG Icons ───────────────────────────────────────────────────────────── */
+
+function DiamondIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" className={className} fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M10 2L18 10L10 18L2 10Z" />
+      <path d="M10 6L14 10L10 14L6 10Z" opacity="0.4" />
+    </svg>
+  );
 }
 
-function createMessage(
-  role: ChatMessage['role'],
-  content: string,
-  errorMeta?: ChatMessage['errorMeta'],
-): ChatMessage {
-  return {
-    id: createId(),
-    role,
-    content,
-    createdAt: Date.now(),
-    ...(errorMeta ? { errorMeta } : {}),
-  };
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5M3.4 3.4L4.5 4.5M11.5 11.5L12.6 12.6M3.4 12.6L4.5 11.5M11.5 4.5L12.6 3.4" />
+    </svg>
+  );
 }
 
-function looksDefaultTitle(title: string): boolean {
-  return /^Chat \d+$/.test(title.trim());
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M13.5 8.5A5.5 5.5 0 117.5 2.5a4 4 0 006 6z" />
+    </svg>
+  );
 }
 
-function buildChatTitleFromMessage(content: string): string {
-  const normalized = content.replace(/\s+/g, ' ').trim();
-  if (!normalized) return 'New Chat';
-  return normalized.length > 40 ? `${normalized.slice(0, 40)}…` : normalized;
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <circle cx="8" cy="8" r="2" />
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.9 2.9l1.4 1.4M11.7 11.7l1.4 1.4M2.9 13.1l1.4-1.4M11.7 4.3l1.4-1.4" />
+    </svg>
+  );
 }
 
-function withoutStreamOverlay(chat: ChatSessionState): ChatSessionState {
-  const nextScene = removeStreamOverlayFromScene(chat.scene);
-  const nextBatches = removeStreamOverlayFromBatches(chat.batches);
-  if (nextScene === chat.scene && nextBatches === chat.batches) return chat;
-  return {
-    ...chat,
-    scene: nextScene,
-    batches: nextBatches,
-  };
+function ChevronLeftIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M10 3L5 8L10 13" />
+    </svg>
+  );
 }
 
-/** Replay a batches array to reconstruct the flat element scene. */
-function rebuildSceneFromBatches(batches: DrawBatch[]): DrawElement[] {
-  const scene: DrawElement[] = [];
-  for (const batch of batches) {
-    if (batch.elements.some((el) => el.type === 'clear')) {
-      scene.length = 0;
-    }
-    for (const el of batch.elements) {
-      if (el.type !== 'clear') scene.push(el);
-    }
-  }
-  return scene;
+function ChevronRightIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M6 3L11 8L6 13" />
+    </svg>
+  );
 }
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M2 3h12v8H6l-4 3V3z" />
+    </svg>
+  );
+}
+
+function CanvasIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <rect x="2" y="2" width="12" height="12" rx="2" />
+      <path d="M2 6h12M6 2v12" />
+    </svg>
+  );
+}
+
+function CodeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M5 4L1 8L5 12M11 4L15 8L11 12" />
+    </svg>
+  );
+}
+
+/* ── Agent Sidebar ───────────────────────────────────────────────────────── */
+
+function AgentSidebar({
+  agentDomain,
+  statusLabel,
+  agentLastQuery,
+  agentRunning,
+  onToggleAgent,
+  onClear,
+}: {
+  agentDomain: string;
+  statusLabel: string;
+  agentLastQuery: string;
+  agentRunning: boolean;
+  onToggleAgent: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex h-full w-full flex-col gap-3 rounded-lg bg-[var(--color-surface)] p-4 md:w-[280px]">
+      <h3 className="text-sm font-bold text-[var(--color-text-primary)]" style={{ fontFamily: 'var(--font-display)' }}>
+        Agent Mode
+      </h3>
+      <div className="space-y-2 text-xs text-[var(--color-text-secondary)]">
+        <div className="flex items-center justify-between">
+          <span>Status</span>
+          <Badge variant={agentRunning ? 'mint' : 'default'} dot>{statusLabel}</Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>Domain</span>
+          <Badge variant="accent">{agentDomain}</Badge>
+        </div>
+        {agentLastQuery && (
+          <p className="mt-2 rounded-md bg-[var(--color-surface-raised)] p-2 text-[11px] text-[var(--color-text-muted)]">
+            {agentLastQuery}
+          </p>
+        )}
+      </div>
+      <div className="mt-auto flex gap-2">
+        <button
+          onClick={onToggleAgent}
+          className={`cursor-pointer flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+            agentRunning
+              ? 'bg-[var(--color-danger)] text-white'
+              : 'bg-[var(--color-mint)] text-[#09090F]'
+          }`}
+        >
+          {agentRunning ? 'Stop' : 'Start'}
+        </button>
+        <button
+          onClick={onClear}
+          className="cursor-pointer rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-raised)]"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Mobile Bottom Nav ───────────────────────────────────────────────────── */
+
+type MobilePanel = 'chat' | 'whiteboard' | 'playground';
+
+function MobileBottomNav({
+  active,
+  onSwitch,
+}: {
+  active: MobilePanel;
+  onSwitch: (panel: MobilePanel) => void;
+}) {
+  const tabs: { id: MobilePanel; label: string; icon: React.ReactNode }[] = [
+    { id: 'chat', label: 'Chat', icon: <ChatIcon /> },
+    { id: 'whiteboard', label: 'Canvas', icon: <CanvasIcon /> },
+    { id: 'playground', label: 'API', icon: <CodeIcon /> },
+  ];
+
+  return (
+    <nav className="glass-panel fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-[var(--color-border)] py-1.5 md:hidden">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => onSwitch(tab.id)}
+          className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-lg px-4 py-1.5 text-[10px] font-medium transition-colors ${
+            active === tab.id
+              ? 'text-[var(--color-accent)]'
+              : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
+          }`}
+        >
+          {tab.icon}
+          {tab.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/* ── AppShell ────────────────────────────────────────────────────────────── */
 
 export function AppShell() {
+  // ─── Chat sessions ──
   const {
     chatSessions,
     setChatSessions,
@@ -122,91 +231,66 @@ export function AppShell() {
     deleteChat: deleteChatBase,
     panelSizes,
     setPanelSizes,
-  } = useSessionManager();
+    pushWarning,
+    dismissWarnings,
+    dismissOneWarning,
+    chatMeta,
+  } = useChatSessions();
 
+  // ─── Drawing engine ──
+  const drawing = useDrawingEngine({
+    activeChatId,
+    activeChat,
+    setChatSessions,
+    activeChatIdRef,
+    pushWarning,
+  });
+
+  // ─── Stream orchestrator ──
+  const stream = useStreamOrchestrator({
+    setChatSessions,
+    activeChat,
+    activeChatIdRef,
+    sessionId,
+    drawing,
+    pushWarning,
+  });
+  const { status, cancel, resetStreamState, sendMessage } = stream;
+
+  // ─── Theme ──
+  const { theme, toggleTheme } = useTheme();
+
+  // ─── App mode & local UI state ──
   const [appMode] = useState<AppMode>(() => {
     if (typeof window === 'undefined') return getInitialAppMode();
     return getClientAppMode(window.location.search);
   });
   const isAgentMode = appMode === 'agent';
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState<'idle' | 'thinking' | 'streaming' | 'drawing'>('idle');
   const [agentRunning, setAgentRunning] = useState(() => appMode === 'agent');
   const [agentLastQuery, setAgentLastQuery] = useState('');
   const [agentDomainIndex, setAgentDomainIndex] = useState(0);
-  const [mobileActivePanel, setMobileActivePanel] = useState<'whiteboard' | 'chat' | 'draw'>('whiteboard');
-
-  // Drawing progress tracking
-  const [drawingElementCount, setDrawingElementCount] = useState(0);
-  const [drawingTypeCounts, setDrawingTypeCounts] = useState<Partial<Record<DrawElement['type'], number>>>({});
-  const [batchJustCompleted, setBatchJustCompleted] = useState(false);
-  const [lastDrawSource, setLastDrawSource] = useState<DrawSource>('None');
-  const [drawingPillState, setDrawingPillState] = useState<DrawingPillState>({ kind: 'idle' });
-  const batchCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const [mobileActivePanel, setMobileActivePanel] = useState<MobilePanel>('whiteboard');
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
-  const injectorToggleRef = useRef<(() => void) | null>(null);
   const exportToggleRef = useRef<(() => void) | null>(null);
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const streamChatIdRef = useRef<string | null>(null);
-  const currentAssistantMessageId = useRef<string | null>(null);
-  const turnHadRenderableOutputRef = useRef(false);
-  const turnSawToolBatchRef = useRef(false);
   const agentQueryEngineRef = useRef(new QueryEngine());
   const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const partialCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTurnEventsRef = useRef<string[]>([]);
-  const pendingDiagnosticsRef = useRef<
-    Map<
-      string,
-      {
-        batchId: string;
-        templateUsed: WhiteboardLayoutDiagnostics['templateUsed'];
-        fallbackUsed: boolean;
-        violationsFixed: string[];
-        semanticBatch?: SemanticBatch;
-      }
-    >
-  >(new Map());
-  const { run, cancel } = useAgentStream();
+  const [autosaveFlash, setAutosaveFlash] = useState(false);
 
-  // --- Undo / Redo history ---
-  const {
-    canUndo, canRedo,
-    pushState: pushHistoryState,
-    undo: historyUndo,
-    redo: historyRedo,
-  } = useDrawHistory(activeChatId, activeChat?.batches ?? []);
-
-  // Stable refs so the streaming event handler can call pushState without a
-  // stale closure (handleEvent's deps intentionally exclude draw-history).
-  const pushHistoryRef = useRef(pushHistoryState);
-  pushHistoryRef.current = pushHistoryState;
-  const activeBatchesRef = useRef<DrawBatch[]>(activeChat?.batches ?? []);
-  if (activeChat) activeBatchesRef.current = activeChat.batches;
-
-  // --- Scene persistence ---
-  const {
-    savedSceneExists,
-    restoreScene,
-    clearSavedScene,
-    snapshots,
-    saveSnapshot,
-    restoreSnapshot,
-    deleteSnapshot,
-  } = useScenePersistence(activeChat?.batches ?? []);
-
+  // ─── Scene restore / share banners ──
   const [showRestoreBanner, setShowRestoreBanner] = useState(false);
   const [showSharedToast, setShowSharedToast] = useState(false);
   const sceneRestoredRef = useRef(false);
 
-  // Show restore banner when a saved scene exists on mount
   useEffect(() => {
-    if (didRestoreSession && savedSceneExists && !sceneRestoredRef.current) {
+    if (didRestoreSession && drawing.savedSceneExists && !sceneRestoredRef.current) {
       setShowRestoreBanner(true);
     }
-  }, [didRestoreSession, savedSceneExists]);
+  }, [didRestoreSession, drawing.savedSceneExists]);
 
   // Load scene from ?scene= URL param on mount
   useEffect(() => {
@@ -223,411 +307,47 @@ export function AppShell() {
         const batches = JSON.parse(json) as DrawBatch[];
         if (!Array.isArray(batches) || batches.length === 0) return;
 
-      setShowSharedToast(true);
-      setTimeout(() => setShowSharedToast(false), 3000);
+        setShowSharedToast(true);
+        setTimeout(() => setShowSharedToast(false), 3000);
 
-      // Inject each batch into the active chat
-      setChatSessions((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== activeChat.id) return chat;
-          let scene = [...chat.scene];
-          const allBatches = [...chat.batches];
-          for (const batch of batches) {
-            if (batch.elements.some((el) => el.type === 'clear')) {
-              scene = [];
+        setChatSessions((prev) =>
+          prev.map((chat) => {
+            if (chat.id !== activeChat.id) return chat;
+            let scene = [...chat.scene];
+            const allBatches = [...chat.batches];
+            for (const batch of batches) {
+              if (batch.elements.some((el) => el.type === 'clear')) {
+                scene = [];
+              }
+              for (const el of batch.elements) {
+                if (el.type !== 'clear') scene.push(el);
+              }
+              allBatches.push(batch);
             }
-            for (const el of batch.elements) {
-              if (el.type !== 'clear') scene.push(el);
-            }
-            allBatches.push(batch);
-          }
-          return { ...chat, updatedAt: Date.now(), scene, batches: allBatches };
-        }),
-      );
+            return { ...chat, updatedAt: Date.now(), scene, batches: allBatches };
+          }),
+        );
 
-      // Clean URL
-      const url = new URL(window.location.href);
-      url.searchParams.delete('scene');
-      window.history.replaceState({}, '', url.toString());
-    } catch {
-      // invalid data — ignore
-    }
+        const url = new URL(window.location.href);
+        url.searchParams.delete('scene');
+        window.history.replaceState({}, '', url.toString());
+      } catch {
+        // invalid data — ignore
+      }
     })();
-    // Run only once after session restore
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [didRestoreSession]);
 
-  // STATE-001: Buffering for deterministic cross-channel batch ordering
-  const nextExpectedSeqRef = useRef(1);
-  const pendingBatchEventsRef = useRef<Map<number, AgentSSEEvent & { type: 'whiteboard.batch' }>>(new Map());
-
-  const resetStreamState = useCallback(() => {
-    if (partialCompletionTimerRef.current) {
-      clearTimeout(partialCompletionTimerRef.current);
-      partialCompletionTimerRef.current = null;
+  // ─── Auto-save flash ──
+  useEffect(() => {
+    if (drawing.savedSceneExists) {
+      setAutosaveFlash(true);
+      const t = setTimeout(() => setAutosaveFlash(false), 800);
+      return () => clearTimeout(t);
     }
-    if (batchCompletionTimerRef.current) {
-      clearTimeout(batchCompletionTimerRef.current);
-      batchCompletionTimerRef.current = null;
-    }
-    streamChatIdRef.current = null;
-    currentAssistantMessageId.current = null;
-    turnHadRenderableOutputRef.current = false;
-    turnSawToolBatchRef.current = false;
-    pendingDiagnosticsRef.current.clear();
-    setDrawingElementCount(0);
-    setDrawingTypeCounts({});
-    setBatchJustCompleted(false);
-    setDrawingPillState({ kind: 'idle' });
-  }, []);
+  }, [drawing.savedSceneExists]);
 
-  const pushTurnEvent = useCallback((event: unknown) => {
-    lastTurnEventsRef.current.push(JSON.stringify(event));
-    if (lastTurnEventsRef.current.length > 80) {
-      lastTurnEventsRef.current = lastTurnEventsRef.current.slice(-80);
-    }
-  }, []);
-
-  const pushWarning = useCallback((warning: string, chatIdOverride?: string, severity: NotificationItem['severity'] = 'warning') => {
-    const targetChatId = chatIdOverride ?? streamChatIdRef.current ?? activeChatIdRef.current;
-    if (!targetChatId) return;
-
-    setChatSessions((prev) =>
-      prev.map((chat) => {
-        if (chat.id !== targetChatId) return chat;
-        if (chat.warnings[chat.warnings.length - 1]?.message === warning) return chat;
-        const item: NotificationItem = { id: createId(), message: warning, severity };
-        return {
-          ...chat,
-          updatedAt: Date.now(),
-          warnings: [...chat.warnings, item].slice(-8),
-        };
-      }),
-    );
-  }, []);
-
-  const handleEvent = useCallback(
-    (event: AgentSSEEvent) => {
-      pushTurnEvent(event);
-      const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
-      if (!targetChatId) return;
-
-      if (event.type === 'assistant.text.delta') {
-        turnHadRenderableOutputRef.current = true;
-        setStatus('streaming');
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
-
-            const currentId = currentAssistantMessageId.current;
-            if (!currentId) {
-              const nextMsg = createMessage('assistant', event.delta);
-              currentAssistantMessageId.current = nextMsg.id;
-              return {
-                ...chat,
-                updatedAt: Date.now(),
-                messages: [...chat.messages, nextMsg],
-              };
-            }
-
-            const hasTarget = chat.messages.some((msg) => msg.id === currentId);
-            if (!hasTarget) {
-              const nextMsg = createMessage('assistant', event.delta);
-              currentAssistantMessageId.current = nextMsg.id;
-              return {
-                ...chat,
-                updatedAt: Date.now(),
-                messages: [...chat.messages, nextMsg],
-              };
-            }
-
-            return {
-              ...chat,
-              updatedAt: Date.now(),
-              messages: chat.messages.map((msg) =>
-                msg.id === currentId ? { ...msg, content: `${msg.content}${event.delta}` } : msg,
-              ),
-            };
-          }),
-        );
-        return;
-      }
-
-      if (event.type === 'assistant.text.done') {
-        currentAssistantMessageId.current = null;
-        return;
-      }
-
-      if (event.type === 'whiteboard.batch') {
-        // STATE-001: deterministic cross-channel batch ordering.
-        // If the batch has a sequenceNumber, buffer out-of-order arrivals
-        // and apply them in monotonically increasing order.
-        const seq = event.batch.sequenceNumber;
-        if (seq != null && seq > nextExpectedSeqRef.current) {
-          pendingBatchEventsRef.current.set(seq, event);
-          return;
-        }
-
-        const applyBatch = (batchEvent: AgentSSEEvent & { type: 'whiteboard.batch' }) => {
-          turnHadRenderableOutputRef.current = true;
-          const isProvisionalStreamBatch = batchEvent.batch.batch_id.startsWith('stream-provisional-');
-          const firstToolBatch = !isProvisionalStreamBatch && !turnSawToolBatchRef.current;
-
-          // Snapshot batches before the first real batch of this turn so the
-          // entire turn can be undone in a single step.
-          if (firstToolBatch) {
-            pushHistoryRef.current(activeBatchesRef.current);
-          }
-
-          if (!isProvisionalStreamBatch) {
-            turnSawToolBatchRef.current = true;
-          }
-          const diagnostics = pendingDiagnosticsRef.current.get(batchEvent.batch.batch_id);
-          if (diagnostics) pendingDiagnosticsRef.current.delete(batchEvent.batch.batch_id);
-          setStatus('drawing');
-
-          // Track drawing progress for UI feedback
-          const drawableElements = batchEvent.batch.elements.filter((el) => el.type !== 'clear');
-          const batchTypeCounts: Partial<Record<DrawElement['type'], number>> = {};
-          for (const el of drawableElements) {
-            batchTypeCounts[el.type] = (batchTypeCounts[el.type] ?? 0) + 1;
-          }
-          setDrawingElementCount((prev) => prev + drawableElements.length);
-          setDrawingTypeCounts((prev) => {
-            const merged = { ...prev };
-            for (const [type, count] of Object.entries(batchTypeCounts)) {
-              const key = type as DrawElement['type'];
-              merged[key] = (merged[key] ?? 0) + (count ?? 0);
-            }
-            return merged;
-          });
-          setLastDrawSource('AI');
-          setDrawingPillState({ kind: 'ai_drawing', elementCount: drawableElements.length, typeCounts: batchTypeCounts });
-
-          // Flash batch completion
-          setBatchJustCompleted(true);
-          if (batchCompletionTimerRef.current) clearTimeout(batchCompletionTimerRef.current);
-          batchCompletionTimerRef.current = setTimeout(() => {
-            batchCompletionTimerRef.current = null;
-            setBatchJustCompleted(false);
-          }, 1500);
-
-          setChatSessions((prev) =>
-            prev.map((chat) => {
-              if (chat.id !== targetChatId) return chat;
-              const baseChat = firstToolBatch ? withoutStreamOverlay(chat) : chat;
-              const hasClear = batchEvent.batch.elements.some((el) => el.type === 'clear');
-              const baseScene = hasClear ? [] : [...baseChat.scene];
-              batchEvent.batch.elements.forEach((element) => {
-                if (element.type !== 'clear') baseScene.push(element);
-              });
-
-              const nextPlannerMeta =
-                diagnostics != null
-                  ? [
-                      ...baseChat.plannerMeta,
-                      {
-                        batchId: diagnostics.batchId,
-                        templateUsed: diagnostics.templateUsed,
-                        fallbackUsed: diagnostics.fallbackUsed,
-                        violationsFixed: diagnostics.violationsFixed,
-                      },
-                    ].slice(-40)
-                  : baseChat.plannerMeta;
-
-              const semanticBatch =
-                diagnostics?.semanticBatch ??
-                fromLegacyDrawBatchToSemanticStub(batchEvent.batch.batch_id, batchEvent.batch.elements);
-              const nextSemanticScene = [...baseChat.semanticScene, semanticBatch].slice(-80);
-              return {
-                ...baseChat,
-                updatedAt: Date.now(),
-                scene: baseScene,
-                semanticScene: nextSemanticScene,
-                plannerMeta: nextPlannerMeta,
-                batches: [...baseChat.batches, batchEvent.batch],
-              };
-            }),
-          );
-        };
-
-        applyBatch(event);
-        if (seq != null) {
-          nextExpectedSeqRef.current = seq + 1;
-          // Drain any buffered batches that are now in order
-          while (pendingBatchEventsRef.current.has(nextExpectedSeqRef.current)) {
-            const buffered = pendingBatchEventsRef.current.get(nextExpectedSeqRef.current)!;
-            pendingBatchEventsRef.current.delete(nextExpectedSeqRef.current);
-            applyBatch(buffered);
-            nextExpectedSeqRef.current++;
-          }
-        }
-        return;
-      }
-
-      if (event.type === 'whiteboard.layout.diagnostics') {
-        pendingDiagnosticsRef.current.set(event.batchId, {
-          batchId: event.batchId,
-          templateUsed: event.templateUsed,
-          fallbackUsed: event.fallbackUsed,
-          violationsFixed: event.violationsFixed,
-          semanticBatch: event.semanticBatch,
-        });
-        return;
-      }
-
-      if (event.type === 'warning') {
-        pushWarning(event.message + (event.context ? ` (${event.context})` : ''), targetChatId);
-        return;
-      }
-
-      if (event.type === 'error') {
-        currentAssistantMessageId.current = null;
-        resetStreamState();
-        setStatus('idle');
-        const friendly = friendlyEventErrorMessage(
-          event.code,
-          event.message,
-          event.retryAfterMs,
-        );
-        setChatSessions((prev) =>
-          prev.map((chat) =>
-            chat.id === targetChatId
-              ? {
-                  ...chat,
-                  updatedAt: Date.now(),
-                  messages: [
-                    ...chat.messages,
-                    createMessage('assistant', friendly.message, {
-                      code: event.code,
-                      retryable: friendly.retryable,
-                    }),
-                  ],
-                }
-              : chat,
-          ),
-        );
-        return;
-      }
-
-      if (event.type === 'turn.done') {
-        const hadRenderableOutput = turnHadRenderableOutputRef.current;
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
-            if (hadRenderableOutput) return chat;
-            return {
-              ...chat,
-              updatedAt: Date.now(),
-              messages: [
-                ...chat.messages,
-                createMessage('assistant', 'I could not produce output for that turn. Please try again.'),
-              ],
-            };
-          }),
-        );
-        turnHadRenderableOutputRef.current = false;
-        // Show done pill briefly if we drew shapes, then reset
-        if (turnSawToolBatchRef.current) {
-          setDrawingPillState((prev) =>
-            prev.kind === 'ai_drawing'
-              ? { kind: 'done', shapeCount: prev.elementCount, typeCounts: prev.typeCounts }
-              : { kind: 'done', shapeCount: 0 },
-          );
-        }
-        resetStreamState();
-        setStatus('idle');
-      }
-    },
-    [pushTurnEvent, pushWarning, resetStreamState],
-  );
-
-  const sendMessage = useCallback(
-    (rawInput: string): boolean => {
-      if (!activeChat) return false;
-      const message = rawInput.trim();
-      if (!message || status !== 'idle') return false;
-
-      const chatId = activeChat.id;
-      const userMessage = createMessage('user', message);
-      const history = [...activeChat.messages];
-      const whiteboardContext = buildWhiteboardContext(activeChat.scene);
-      const whiteboardContextV2 = buildWhiteboardContextV2(activeChat.scene, activeChat.semanticScene);
-
-      setChatSessions((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== chatId) return chat;
-          const nextTitle =
-            chat.messages.length === 0 || looksDefaultTitle(chat.title)
-              ? buildChatTitleFromMessage(message)
-              : chat.title;
-          return {
-            ...chat,
-            updatedAt: Date.now(),
-            title: nextTitle,
-            messages: [...chat.messages, userMessage],
-          };
-        }),
-      );
-      setStatus('thinking');
-      resetStreamState();
-      turnHadRenderableOutputRef.current = false;
-      streamChatIdRef.current = chatId;
-      lastTurnEventsRef.current = [JSON.stringify({ type: 'turn.started' })];
-
-      void run({
-        sessionId,
-        userMessage: message,
-        history,
-        plannerMode: 'semantic_preferred',
-        whiteboardContext,
-        whiteboardContextV2,
-        maxRetries: 0,
-        handlers: {
-          onEvent: handleEvent,
-          onError: (msg, meta) => {
-            const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
-            const hadRenderableOutput = turnHadRenderableOutputRef.current;
-            resetStreamState();
-            setStatus('idle');
-            pushTurnEvent({ type: 'client.error', message: msg });
-            if (!targetChatId) return;
-            if (hadRenderableOutput) return;
-
-            setChatSessions((prev) =>
-              prev.map((chat) =>
-                chat.id === targetChatId
-                  ? {
-                      ...chat,
-                      updatedAt: Date.now(),
-                      messages: [
-                        ...chat.messages,
-                        createMessage('assistant', msg, meta ? { code: meta.code, retryable: meta.retryable } : undefined),
-                      ],
-                    }
-                  : chat,
-              ),
-            );
-          },
-          onComplete: ({ lastEvent }) => {
-            if (!lastEvent) return;
-            if (lastEvent.type === 'turn.done' || lastEvent.type === 'error') return;
-            pushTurnEvent({ type: 'client.complete', partial: true, source: lastEvent.type });
-            if (partialCompletionTimerRef.current) {
-              clearTimeout(partialCompletionTimerRef.current);
-            }
-            partialCompletionTimerRef.current = setTimeout(() => {
-              partialCompletionTimerRef.current = null;
-              resetStreamState();
-              setStatus('idle');
-            }, 8_000);
-          },
-        },
-      });
-      return true;
-    },
-    [activeChat, handleEvent, pushTurnEvent, resetStreamState, run, sessionId, status],
-  );
+  // ─── Chat CRUD wrappers ──
 
   const send = useCallback(() => {
     const sent = sendMessage(input);
@@ -646,35 +366,32 @@ export function AppShell() {
       selectChatBase(chatId, {
         cancel,
         resetStreamState,
-        streamChatId: streamChatIdRef.current,
+        streamChatId: stream.streamChatIdRef.current,
       });
       setInput('');
     },
-    [cancel, resetStreamState, selectChatBase],
+    [cancel, resetStreamState, selectChatBase, stream.streamChatIdRef],
   );
 
   const deleteChat = useCallback(
     (chatId: string) => {
       if (status !== 'idle') return;
-
       deleteChatBase(chatId, {
         cancel,
         resetStreamState: () => {
-          setStatus('idle');
+          stream.setStatus('idle');
           resetStreamState();
         },
-        streamChatId: streamChatIdRef.current,
+        streamChatId: stream.streamChatIdRef.current,
       });
-
       setInput('');
     },
-    [cancel, deleteChatBase, resetStreamState, status],
+    [cancel, deleteChatBase, resetStreamState, status, stream],
   );
 
   const clearActiveChat = useCallback(() => {
     if (!activeChat || status !== 'idle') return;
-
-    pushHistoryState(activeChat.batches);
+    drawing.pushHistoryState(activeChat.batches);
     resetStreamState();
 
     const clearBatch: DrawBatch = {
@@ -699,15 +416,16 @@ export function AppShell() {
           : chat,
       ),
     );
-    clearSavedScene();
-  }, [activeChat, clearSavedScene, pushHistoryState, resetStreamState, status]);
+    drawing.clearSavedScene();
+  }, [activeChat, drawing, resetStreamState, setChatSessions, status]);
 
   const clearForAgent = useCallback(() => {
     clearActiveChat();
     setAgentLastQuery('');
-    lastTurnEventsRef.current = [];
-  }, [clearActiveChat]);
+    stream.lastTurnEventsRef.current = [];
+  }, [clearActiveChat, stream.lastTurnEventsRef]);
 
+  // ─── Agent mode ──
   const AGENT_SCENE_LIMIT = 60;
   const AGENT_INTER_TURN_DELAY_MS = 2000;
 
@@ -715,7 +433,6 @@ export function AppShell() {
     if (!isAgentMode || !agentRunning) return;
     if (status !== 'idle') return;
 
-    // Auto-clear scene only (preserve domain progress) when crowded
     if (activeChat.scene.length > AGENT_SCENE_LIMIT) {
       agentDelayRef.current = setTimeout(() => {
         agentDelayRef.current = null;
@@ -729,14 +446,12 @@ export function AppShell() {
       };
     }
 
-    // Inter-turn delay to prevent rapid-fire queries
     agentDelayRef.current = setTimeout(() => {
       agentDelayRef.current = null;
       const domain = AGENT_DOMAINS[agentDomainIndex % AGENT_DOMAINS.length]!;
       const query = agentQueryEngineRef.current.generate(domain);
       const sent = sendMessage(query);
       if (!sent) return;
-
       setAgentLastQuery(query);
       setAgentDomainIndex((prev) => prev + 1);
     }, AGENT_INTER_TURN_DELAY_MS);
@@ -751,102 +466,39 @@ export function AppShell() {
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isAgentMode || !activeChat) return;
-
     window.__agentAPI = {
-      submitQuery: async (text: string) => {
-        sendMessage(text);
-      },
+      submitQuery: async (text: string) => { sendMessage(text); },
       getStatus: () => status,
       getMessages: () => activeChat.messages.map((m) => ({ role: m.role, content: m.content })),
       getElementCount: () => activeChat.scene.length,
       clearActiveChat: clearForAgent,
-      getLastTurnEvents: () => [...lastTurnEventsRef.current],
+      getLastTurnEvents: () => [...stream.lastTurnEventsRef.current],
       getLastDomain: () => {
         const idx = Math.max(0, agentDomainIndex - 1);
         return AGENT_DOMAINS[idx % AGENT_DOMAINS.length]!;
       },
     };
+    return () => { delete window.__agentAPI; };
+  }, [activeChat, agentDomainIndex, clearForAgent, isAgentMode, sendMessage, status, stream.lastTurnEventsRef]);
 
-    return () => {
-      delete window.__agentAPI;
-    };
-  }, [activeChat, agentDomainIndex, clearForAgent, isAgentMode, sendMessage, status]);
-
+  // ─── Panel resize ──
   const resizeBy = useCallback((delta: number) => {
     setPanelSizes(([left]) => {
       const nextLeft = Math.min(75, Math.max(42, left + delta));
       return [nextLeft, 100 - nextLeft];
     });
-  }, []);
+  }, [setPanelSizes]);
 
-  const chatMeta = useMemo<ChatThreadMeta[]>(
-    () =>
-      chatSessions.map((chat) => ({
-        id: chat.id,
-        title: chat.title,
-        messageCount: chat.messages.length,
-      })),
-    [chatSessions],
-  );
-
+  // ─── Derived values ──
   const statusLabel =
-    status === 'idle'
-      ? 'Ready'
-      : status === 'thinking'
-        ? 'Thinking'
-        : status === 'streaming'
-          ? 'Responding'
-          : 'Drawing';
+    status === 'idle' ? 'Ready' : status === 'thinking' ? 'Thinking' : status === 'streaming' ? 'Responding' : 'Drawing';
   const agentDomain = AGENT_DOMAINS[agentDomainIndex % AGENT_DOMAINS.length]!;
+  const streamPhase = drawing.computeStreamPhase(status);
+  const drawingProgress = drawing.computeDrawingProgress(status);
+  const handleUndo = useCallback(() => drawing.handleUndo(status), [drawing, status]);
+  const handleRedo = useCallback(() => drawing.handleRedo(status), [drawing, status]);
 
-  // Derived stream phase for ChatPanel → StreamProgress
-  const streamPhase: StreamPhase | undefined =
-    status === 'thinking'
-      ? 'thinking'
-      : status === 'streaming'
-        ? 'streaming_text'
-        : status === 'drawing'
-          ? 'drawing'
-          : undefined;
-
-  const drawingProgress: DrawingProgressInfo | undefined =
-    status === 'drawing'
-      ? {
-          elementCount: drawingElementCount,
-          typeCounts: drawingTypeCounts,
-          batchJustCompleted,
-        }
-      : undefined;
-
-  // --- Undo / Redo restore ---
-  const restoreFromBatches = useCallback(
-    (batches: DrawBatch[]) => {
-      const scene = rebuildSceneFromBatches(batches);
-      const semanticScene = batches
-        .map((b) => fromLegacyDrawBatchToSemanticStub(b.batch_id, b.elements))
-        .slice(-80);
-      setChatSessions((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== activeChatIdRef.current) return chat;
-          return { ...chat, updatedAt: Date.now(), batches, scene, semanticScene };
-        }),
-      );
-    },
-    [setChatSessions],
-  );
-
-  const handleUndo = useCallback(() => {
-    if (status !== 'idle') return;
-    const batches = historyUndo();
-    if (batches) restoreFromBatches(batches);
-  }, [historyUndo, restoreFromBatches, status]);
-
-  const handleRedo = useCallback(() => {
-    if (status !== 'idle') return;
-    const batches = historyRedo();
-    if (batches) restoreFromBatches(batches);
-  }, [historyRedo, restoreFromBatches, status]);
-
+  // ─── Keyboard shortcuts ──
   useKeyboardShortcuts(
     useMemo(
       () => ({
@@ -856,7 +508,7 @@ export function AppShell() {
           if (status !== 'idle') {
             cancel();
             resetStreamState();
-            setStatus('idle');
+            stream.setStatus('idle');
           }
         },
         prevChat: () => {
@@ -869,13 +521,13 @@ export function AppShell() {
         },
         togglePanel: () =>
           setMobileActivePanel((p) => (p === 'whiteboard' ? 'chat' : 'whiteboard')),
-        toggleInjector: () => injectorToggleRef.current?.(),
+        toggleInjector: () => setRightPanelOpen((p) => !p),
         undo: handleUndo,
         redo: handleRedo,
         openExport: () => exportToggleRef.current?.(),
         saveSnapshot: () => {
           if (activeChat && activeChat.batches.length > 0) {
-            saveSnapshot(activeChat.batches);
+            drawing.saveSnapshot(activeChat.batches);
           }
         },
         copyShareUrl: async () => {
@@ -890,125 +542,22 @@ export function AppShell() {
         },
         showShortcuts: () => setShortcutsModalOpen((v) => !v),
         selectAll: () => {
-          // Focus the whiteboard canvas section for accessibility
           const el = document.getElementById('panel-whiteboard');
           el?.focus();
         },
       }),
-      [activeChatId, activeChat, cancel, chatSessions, createChat, handleRedo, handleUndo, resetStreamState, saveSnapshot, selectChat, status],
+      [activeChatId, activeChat, cancel, chatSessions, createChat, drawing, handleRedo, handleUndo, resetStreamState, selectChat, status, stream],
     ),
   );
 
-  const dismissWarnings = useCallback(() => {
-    if (!activeChat) return;
-    setChatSessions((prev) =>
-      prev.map((chat) =>
-        chat.id === activeChat.id ? { ...chat, warnings: [] } : chat,
-      ),
-    );
-  }, [activeChat, setChatSessions]);
-
-  const dismissOneWarning = useCallback(
-    (notificationId: string) => {
-      if (!activeChat) return;
-      setChatSessions((prev) =>
-        prev.map((chat) =>
-          chat.id === activeChat.id
-            ? { ...chat, warnings: chat.warnings.filter((w) => w.id !== notificationId) }
-            : chat,
-        ),
-      );
-    },
-    [activeChat, setChatSessions],
-  );
-
-  const handleDrawInject = useCallback(
-    (batch: DrawBatch) => {
-      if (!activeChat) return;
-      pushHistoryState(activeChat.batches);
-
-      // Determine source from batch_id prefix
-      const source: DrawSource = batch.batch_id.startsWith('tpl-') ? 'Template' : 'Injected';
-
-      // Mark non-critical UI updates (pill, stats, toast) as non-urgent so they
-      // don't block the canvas animation frame.
-      startTransition(() => {
-        setLastDrawSource(source);
-        const drawableEls = batch.elements.filter((el) => el.type !== 'clear');
-        const injectCount = drawableEls.length;
-        const injectTypeCounts: Partial<Record<DrawElement['type'], number>> = {};
-        for (const el of drawableEls) {
-          injectTypeCounts[el.type] = (injectTypeCounts[el.type] ?? 0) + 1;
-        }
-        setDrawingPillState({ kind: 'done', shapeCount: injectCount, typeCounts: injectTypeCounts });
-
-        // Build type breakdown for toast
-        const typeBreakdown = Object.entries(injectTypeCounts)
-          .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0))
-          .slice(0, 3)
-          .map(([type, count]) => `${count} ${type}`)
-          .join(', ');
-        const toastMsg = typeBreakdown
-          ? `✓ Injected ${injectCount} element${injectCount !== 1 ? 's' : ''} (${typeBreakdown})`
-          : `✓ ${injectCount} element${injectCount !== 1 ? 's' : ''} injected`;
-        pushWarning(toastMsg, activeChat.id, 'success');
-      });
-
-      const hasClear = batch.elements.some((el) => el.type === 'clear');
-      setChatSessions((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== activeChat.id) return chat;
-          const baseScene = hasClear ? [] : [...chat.scene];
-          batch.elements.forEach((element) => {
-            if (element.type !== 'clear') baseScene.push(element);
-          });
-          const semanticBatch = fromLegacyDrawBatchToSemanticStub(batch.batch_id, batch.elements);
-          return {
-            ...chat,
-            updatedAt: Date.now(),
-            scene: baseScene,
-            semanticScene: [...chat.semanticScene, semanticBatch].slice(-80),
-            batches: [...chat.batches, batch],
-          };
-        }),
-      );
-    },
-    [activeChat, pushHistoryState, pushWarning, setChatSessions],
-  );
-
-  const handleCopySceneJson = useCallback(() => {
-    const scene = chatSessions.find((c) => c.id === activeChatId)?.scene ?? [];
-    const batch: DrawBatch = {
-      batch_id: `export-${Date.now()}`,
-      elements: scene,
-      source: 'injection' as const,
-      schemaVersion: 1,
-    };
-    navigator.clipboard.writeText(JSON.stringify(batch, null, 2)).then(
-      () => {
-        const targetId = activeChatIdRef.current;
-        if (targetId) {
-          pushWarning(`✓ Copied ${scene.length} element${scene.length !== 1 ? 's' : ''} as JSON`, targetId, 'success');
-        }
-      },
-      () => {
-        const targetId = activeChatIdRef.current;
-        if (targetId) {
-          pushWarning('Failed to copy to clipboard', targetId, 'error');
-        }
-      },
-    );
-  }, [chatSessions, activeChatId, pushWarning]);
-
+  // ─── Loading state ──
   if (!didRestoreSession) {
     return (
       <ErrorBoundary>
-        <main className="relative h-screen w-screen overflow-hidden p-2 sm:p-4" style={{ height: '100dvh' }}>
-          <div className="app-card glass-panel flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
-            <div className="h-14 border-b border-[var(--color-border)]" />
-            <div className="flex flex-1 items-center justify-center">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
-            </div>
+        <main className="relative flex h-screen w-screen items-center justify-center bg-[var(--color-bg)]" style={{ height: '100dvh' }}>
+          <div className="flex flex-col items-center gap-3">
+            <DiamondIcon className="h-8 w-8 text-[var(--color-accent)] animate-spinner" />
+            <span className="text-xs text-[var(--color-text-muted)]">Loading…</span>
           </div>
         </main>
       </ErrorBoundary>
@@ -1019,21 +568,101 @@ export function AppShell() {
 
   return (
     <ErrorBoundary>
-    <main id="main-content" className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:text-[var(--color-text-primary)] focus:shadow-lg">Skip to main content</a>
-      <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
-        <AppHeader status={status} canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} inspectorOpen={inspectorOpen} onToggleInspector={() => setInspectorOpen((p) => !p)} />
+      <main
+        id="main-content"
+        className="relative flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-text-primary)]"
+        style={{ height: '100dvh' }}
+      >
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:text-[var(--color-text-primary)] focus:shadow-lg">
+          Skip to main content
+        </a>
 
-        {/* Restore saved scene banner */}
+        {/* ── Header ── */}
+        <header className="glass-header animate-header-in relative z-30 flex h-[var(--header-height)] flex-shrink-0 items-center justify-between px-4">
+          {/* Left: Logo + nav */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <DiamondIcon className="h-5 w-5 text-[var(--color-accent)]" />
+              <span className="text-sm font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
+                AgentsLeague
+              </span>
+            </div>
+
+            {/* Status badge */}
+            {status !== 'idle' && (
+              <Badge variant={status === 'drawing' ? 'mint' : 'accent'} dot>
+                {statusLabel}
+              </Badge>
+            )}
+          </div>
+
+          {/* Right: Controls */}
+          <div className="flex items-center gap-1">
+            {!isAgentMode && (
+              <>
+                <IconButton
+                  variant="ghost"
+                  tooltip="Undo (⌘Z)"
+                  icon={
+                    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M3 8h7a3 3 0 010 6H8" />
+                      <path d="M6 5L3 8L6 11" />
+                    </svg>
+                  }
+                  onClick={handleUndo}
+                  disabled={!drawing.canUndo}
+                />
+                <IconButton
+                  variant="ghost"
+                  tooltip="Redo (⌘⇧Z)"
+                  icon={
+                    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M13 8H6a3 3 0 000 6h2" />
+                      <path d="M10 5L13 8L10 11" />
+                    </svg>
+                  }
+                  onClick={handleRedo}
+                  disabled={!drawing.canRedo}
+                />
+                <div className="mx-1 h-4 w-px bg-[var(--color-border-subtle)]" />
+              </>
+            )}
+            <IconButton
+              variant="ghost"
+              tooltip={inspectorOpen ? 'Close Inspector' : 'Inspector'}
+              icon={
+                <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <rect x="2" y="2" width="12" height="12" rx="2" />
+                  <path d="M6 2v12" />
+                </svg>
+              }
+              onClick={() => setInspectorOpen((p) => !p)}
+            />
+            <IconButton
+              variant="ghost"
+              tooltip={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              icon={theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+              onClick={toggleTheme}
+            />
+            <IconButton
+              variant="ghost"
+              tooltip="Shortcuts (?)"
+              icon={<SettingsIcon />}
+              onClick={() => setShortcutsModalOpen(true)}
+            />
+          </div>
+        </header>
+
+        {/* ── Restore banner ── */}
         {showRestoreBanner && (
           <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-accent-faint)] px-4 py-2 text-xs text-[var(--color-text-secondary)]">
             <span>You have a saved scene.</span>
             <div className="flex gap-2">
               <button
                 type="button"
-                className="rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-white hover:opacity-90"
+                className="cursor-pointer rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-white hover:opacity-90"
                 onClick={() => {
-                  const batches = restoreScene();
+                  const batches = drawing.restoreScene();
                   if (batches && activeChat) {
                     const scene = rebuildSceneFromBatches(batches);
                     setChatSessions((prev) =>
@@ -1052,7 +681,7 @@ export function AppShell() {
               </button>
               <button
                 type="button"
-                className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
+                className="cursor-pointer rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
                 onClick={() => {
                   setShowRestoreBanner(false);
                   sceneRestoredRef.current = true;
@@ -1064,43 +693,114 @@ export function AppShell() {
           </div>
         )}
 
-        {/* Shared scene loading toast */}
+        {/* ── Shared toast ── */}
         {showSharedToast && (
           <div className="absolute left-1/2 top-16 z-50 -translate-x-1/2 rounded-lg border border-[var(--color-accent-soft)] bg-[var(--color-surface)] px-4 py-2 text-xs font-medium text-[var(--color-accent)] shadow-lg">
             Loading shared scene…
           </div>
         )}
 
-        <div
-          className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 md:flex-row"
-          style={{ ['--left-width' as string]: `${panelSizes[0]}%` }}
-        >
+        {/* ── 3-column layout ── */}
+        <div className="relative flex min-h-0 flex-1">
+
+          {/* ── Left Panel: Chat ── */}
+          {!isAgentMode && (
+            <section
+              id="panel-chat"
+              data-testid="chat-panel"
+              className={`animate-panel-left hidden flex-shrink-0 border-r border-[var(--color-border-subtle)] md:flex ${
+                leftPanelOpen ? 'w-[320px]' : 'w-0'
+              } panel-collapsible flex-col`}
+            >
+              {leftPanelOpen && (
+                <div className="panel-content-fade flex h-full flex-col">
+                  <ChatPanel
+                    chats={chatMeta}
+                    activeChatId={activeChat.id}
+                    messages={activeChat.messages}
+                    input={input}
+                    status={status}
+                    streamPhase={streamPhase}
+                    drawingProgress={drawingProgress}
+                    inputRef={chatInputRef}
+                    onInput={setInput}
+                    onSend={send}
+                    onCancel={() => {
+                      cancel();
+                      resetStreamState();
+                      stream.setStatus('idle');
+                    }}
+                    onSelectChat={selectChat}
+                    onCreateChat={createChat}
+                    onDeleteChat={deleteChat}
+                    onDeleteMessage={(messageId) => {
+                      if (stream.currentAssistantMessageId.current === messageId) {
+                        stream.currentAssistantMessageId.current = null;
+                      }
+                      setChatSessions((prev) =>
+                        prev.map((chat) =>
+                          chat.id === activeChat.id
+                            ? {
+                                ...chat,
+                                updatedAt: Date.now(),
+                                messages: chat.messages.filter((m) => m.id !== messageId),
+                              }
+                            : chat,
+                        ),
+                      );
+                    }}
+                    onClearChat={clearActiveChat}
+                    onRetry={(lastUserMessage) => {
+                      sendMessage(lastUserMessage);
+                    }}
+                    disabled={status !== 'idle'}
+                  />
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── Left panel toggle (desktop) ── */}
+          {!isAgentMode && (
+            <button
+              onClick={() => setLeftPanelOpen((p) => !p)}
+              className="hidden md:flex absolute left-[318px] top-1/2 z-20 -translate-y-1/2 cursor-pointer items-center justify-center rounded-r-md border border-l-0 border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text-secondary)]"
+              style={{ left: leftPanelOpen ? '318px' : '0px' }}
+              title={leftPanelOpen ? 'Collapse chat' : 'Expand chat'}
+            >
+              {leftPanelOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+            </button>
+          )}
+
+          {/* ── Center: Canvas ── */}
           <section
             id="panel-whiteboard"
             data-testid="whiteboard-canvas"
             tabIndex={-1}
-            className={`relative ${isAgentMode ? 'h-full w-full' : 'min-h-0 w-full flex-1 md:h-full md:w-[var(--left-width)]'}`}
+            className={`animate-canvas-in relative min-h-0 flex-1 ${
+              mobileActivePanel === 'whiteboard' ? '' : 'hidden md:block'
+            }`}
           >
             <WhiteboardCanvas
               key={activeChat.id}
               batches={activeChat.batches}
               onWarning={(warning) => pushWarning(warning, activeChat.id)}
               exportToggleRef={exportToggleRef}
-              autoSaved={savedSceneExists}
+              autoSaved={drawing.savedSceneExists}
               elementCount={activeChat.scene.length}
             />
-            <DrawingStatusPill state={drawingPillState} />
+            <DrawingStatusPill state={drawing.drawingPillState} />
             <DrawingStatistics
               scene={activeChat.scene}
               batches={activeChat.batches}
-              lastDrawSource={lastDrawSource}
-              onCopyScene={handleCopySceneJson}
-              snapshots={snapshots}
-              onSaveSnapshot={() => saveSnapshot(activeChat.batches)}
+              lastDrawSource={drawing.lastDrawSource}
+              onCopyScene={drawing.handleCopySceneJson}
+              snapshots={drawing.snapshots}
+              onSaveSnapshot={() => drawing.saveSnapshot(activeChat.batches)}
               onRestoreSnapshot={(id) => {
-                const batches = restoreSnapshot(id);
+                const batches = drawing.restoreSnapshot(id);
                 if (batches && activeChat) {
-                  pushHistoryState(activeChat.batches);
+                  drawing.pushHistoryState(activeChat.batches);
                   const scene = rebuildSceneFromBatches(batches);
                   setChatSessions((prev) =>
                     prev.map((chat) =>
@@ -1111,7 +811,7 @@ export function AppShell() {
                   );
                 }
               }}
-              onDeleteSnapshot={deleteSnapshot}
+              onDeleteSnapshot={drawing.deleteSnapshot}
             />
             <ElementInspector
               scene={activeChat.scene}
@@ -1119,92 +819,39 @@ export function AppShell() {
               open={inspectorOpen}
               onClose={() => setInspectorOpen(false)}
             />
-            {!isAgentMode && (
-              <DrawPayloadInjector onInject={handleDrawInject} sessionId={activeChat.id} forceOpen={mobileActivePanel === 'draw'} toggleRef={injectorToggleRef} />
-            )}
           </section>
 
-          {!isAgentMode && (
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              className="group relative hidden w-2 cursor-col-resize rounded-full bg-transparent md:block"
-              onPointerDown={(e) => {
-                let lastX = e.clientX;
-                const target = e.currentTarget;
-                target.setPointerCapture(e.pointerId);
-
-                const onMove = (ev: PointerEvent) => {
-                  const dx = ev.clientX - lastX;
-                  lastX = ev.clientX;
-                  const containerWidth = target.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
-                  resizeBy((dx / containerWidth) * 100);
-                };
-                const onUp = () => {
-                  target.removeEventListener('pointermove', onMove);
-                  target.removeEventListener('pointerup', onUp);
-                };
-
-                target.addEventListener('pointermove', onMove);
-                target.addEventListener('pointerup', onUp);
-              }}
-            >
-              <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-[var(--color-border)]/80" />
-              <div className="absolute inset-y-1/2 left-1/2 h-14 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--color-accent)]/30 transition group-hover:bg-[var(--color-accent)]/65" />
-            </div>
-          )}
-
+          {/* ── Right Panel: Payload Playground ── */}
           {!isAgentMode && (
             <section
-              id="panel-chat"
-              data-testid="chat-panel"
-              tabIndex={-1}
-              className="min-h-0 w-full flex-1 md:h-full md:flex-1"
+              className={`animate-panel-right hidden flex-shrink-0 border-l border-[var(--color-border-subtle)] md:flex ${
+                rightPanelOpen ? 'w-[380px]' : 'w-0'
+              } panel-collapsible flex-col`}
             >
-              <ChatPanel
-                chats={chatMeta}
-                activeChatId={activeChat.id}
-                messages={activeChat.messages}
-                input={input}
-                status={status}
-                streamPhase={streamPhase}
-                drawingProgress={drawingProgress}
-                inputRef={chatInputRef}
-                onInput={setInput}
-                onSend={send}
-                onCancel={() => {
-                  cancel();
-                  resetStreamState();
-                  setStatus('idle');
-                }}
-                onSelectChat={selectChat}
-                onCreateChat={createChat}
-                onDeleteChat={deleteChat}
-                onDeleteMessage={(messageId) => {
-                  if (currentAssistantMessageId.current === messageId) {
-                    currentAssistantMessageId.current = null;
-                  }
-                  setChatSessions((prev) =>
-                    prev.map((chat) =>
-                      chat.id === activeChat.id
-                        ? {
-                            ...chat,
-                            updatedAt: Date.now(),
-                            messages: chat.messages.filter((m) => m.id !== messageId),
-                          }
-                        : chat,
-                    ),
-                  );
-                }}
-                onClearChat={clearActiveChat}
-                onRetry={(lastUserMessage) => {
-                  sendMessage(lastUserMessage);
-                }}
-                disabled={status !== 'idle'}
-              />
+              {rightPanelOpen && (
+                <div className="panel-content-fade h-full">
+                  <PayloadPlayground
+                    onInject={drawing.handleDrawInject}
+                    sessionId={activeChat.id}
+                  />
+                </div>
+              )}
             </section>
           )}
 
+          {/* ── Right panel toggle (desktop) ── */}
+          {!isAgentMode && (
+            <button
+              onClick={() => setRightPanelOpen((p) => !p)}
+              className="hidden md:flex absolute top-1/2 z-20 -translate-y-1/2 cursor-pointer items-center justify-center rounded-l-md border border-r-0 border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text-secondary)]"
+              style={{ right: rightPanelOpen ? '378px' : '0px' }}
+              title={rightPanelOpen ? 'Collapse playground' : 'Expand playground'}
+            >
+              {rightPanelOpen ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+            </button>
+          )}
+
+          {/* ── Agent sidebar ── */}
           {isAgentMode && (
             <AgentSidebar
               agentDomain={agentDomain}
@@ -1216,21 +863,85 @@ export function AppShell() {
             />
           )}
 
+          {/* ── Warnings overlay ── */}
           <WarningOverlay
             notifications={activeChat.warnings}
             onDismissOne={dismissOneWarning}
             onDismissAll={dismissWarnings}
           />
         </div>
-      </div>
-      {!isAgentMode && (
-        <MobilePanelSwitcher
-          activePanel={mobileActivePanel}
-          onSwitch={setMobileActivePanel}
-        />
-      )}
-      <KeyboardShortcutsModal open={shortcutsModalOpen} onClose={() => setShortcutsModalOpen(false)} />
-    </main>
+
+        {/* ── Mobile panels ── */}
+        {!isAgentMode && mobileActivePanel === 'chat' && (
+          <div className="fixed inset-0 z-30 bg-[var(--color-bg)] pt-[var(--header-height)] pb-14 md:hidden">
+            <ChatPanel
+              chats={chatMeta}
+              activeChatId={activeChat.id}
+              messages={activeChat.messages}
+              input={input}
+              status={status}
+              streamPhase={streamPhase}
+              drawingProgress={drawingProgress}
+              inputRef={chatInputRef}
+              onInput={setInput}
+              onSend={send}
+              onCancel={() => { cancel(); resetStreamState(); stream.setStatus('idle'); }}
+              onSelectChat={selectChat}
+              onCreateChat={createChat}
+              onDeleteChat={deleteChat}
+              onDeleteMessage={(messageId) => {
+                if (stream.currentAssistantMessageId.current === messageId) {
+                  stream.currentAssistantMessageId.current = null;
+                }
+                setChatSessions((prev) =>
+                  prev.map((chat) =>
+                    chat.id === activeChat.id
+                      ? { ...chat, updatedAt: Date.now(), messages: chat.messages.filter((m) => m.id !== messageId) }
+                      : chat,
+                  ),
+                );
+              }}
+              onClearChat={clearActiveChat}
+              onRetry={(lastUserMessage) => { sendMessage(lastUserMessage); }}
+              disabled={status !== 'idle'}
+            />
+          </div>
+        )}
+
+        {!isAgentMode && mobileActivePanel === 'playground' && (
+          <div className="fixed inset-0 z-30 bg-[var(--color-bg)] pt-[var(--header-height)] pb-14 md:hidden">
+            <PayloadPlayground
+              onInject={drawing.handleDrawInject}
+              sessionId={activeChat.id}
+            />
+          </div>
+        )}
+
+        {/* ── Status Bar ── */}
+        <footer className="flex h-6 flex-shrink-0 items-center justify-between border-t border-[var(--color-border-subtle)] bg-[var(--color-surface)] px-3 text-[10px] tabular-nums text-[var(--color-text-muted)]">
+          <div className="flex items-center gap-3">
+            <span>{activeChat.scene.length} element{activeChat.scene.length !== 1 ? 's' : ''}</span>
+            <span className="opacity-30">·</span>
+            <span>{activeChat.batches.length} batch{activeChat.batches.length !== 1 ? 'es' : ''}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {drawing.savedSceneExists && (
+              <span className={`flex items-center gap-1 ${autosaveFlash ? 'animate-mint-pulse' : ''}`}>
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-mint)]" />
+                Autosaved
+              </span>
+            )}
+            <span>{status !== 'idle' ? statusLabel : 'Ready'}</span>
+          </div>
+        </footer>
+
+        {/* ── Mobile bottom nav ── */}
+        {!isAgentMode && (
+          <MobileBottomNav active={mobileActivePanel} onSwitch={setMobileActivePanel} />
+        )}
+
+        <KeyboardShortcutsModal open={shortcutsModalOpen} onClose={() => setShortcutsModalOpen(false)} />
+      </main>
     </ErrorBoundary>
   );
 }
