@@ -127,6 +127,8 @@ function clampElement(el: DrawElement): DrawElement {
     case 'slope_field':
     case 'vector_field_2d':
     case 'wireframe_3d':
+    case 'complex_plane':
+    case 'number_theory_grid':
       return el;
     default:
       return el;

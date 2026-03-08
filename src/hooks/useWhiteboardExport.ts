@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, type RefObject } from 'react';
-import type { WhiteboardExportHandle } from '@/lib/whiteboard/canvas-export';
+import type { WhiteboardExportHandle, LatexExportInfo } from '@/lib/whiteboard/canvas-export';
 import { triggerBlobDownload } from '@/lib/whiteboard/canvas-export';
 
 // ─── Public Types ────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ export interface ExportOptions {
 
 export interface WhiteboardExportActions {
   exportAsPNG(options?: Partial<ExportOptions>): Promise<Blob>;
-  exportAsSVG(): string;
+  exportAsSVG(latexElements?: LatexExportInfo[]): string;
   copyToClipboard(options?: Partial<ExportOptions>): Promise<void>;
   downloadAs(filename: string, options?: Partial<ExportOptions>): Promise<void>;
 }
@@ -49,10 +49,10 @@ export function useWhiteboardExport(
     [whiteboardRef],
   );
 
-  const exportAsSVG = useCallback((): string => {
+  const exportAsSVG = useCallback((latexElements?: LatexExportInfo[]): string => {
     const handle = whiteboardRef.current;
     if (!handle) throw new Error('Whiteboard not ready');
-    return handle.exportAsSVG();
+    return handle.exportAsSVG(latexElements);
   }, [whiteboardRef]);
 
   const copyToClipboard = useCallback(

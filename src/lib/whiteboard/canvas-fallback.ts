@@ -80,6 +80,8 @@ function elementPosition(el: DrawElement): string {
     case 'wireframe_3d':
     case 'sequence_plot':
     case 'bezier_curve':
+    case 'complex_plane':
+    case 'number_theory_grid':
     default:
       return el.type;
   }

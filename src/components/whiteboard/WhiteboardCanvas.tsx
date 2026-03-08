@@ -16,13 +16,14 @@ import {
 } from '@/lib/whiteboard/geometry';
 import { drawSmoothStroke, drawStroke as drawStrokeImported, drawTextFallback } from '@/lib/whiteboard/canvas-draw';
 import { computeFps, isDebugShortcut, createDrawCallCounter, formatFps } from '@/lib/whiteboard/canvas-debug';
-import type { WhiteboardExportHandle } from '@/lib/whiteboard/canvas-export';
+import type { WhiteboardExportHandle, LatexExportInfo } from '@/lib/whiteboard/canvas-export';
 import {
   renderStrokesToBlob,
   copyCanvasLayersToClipboard,
   exportStrokesToSVG,
   DEFAULT_EXPORT_OPTIONS,
 } from '@/lib/whiteboard/canvas-export';
+import { getCachedSvg } from '@/lib/latex/mathjax-client';
 import { computeAlignmentGuides } from '@/lib/whiteboard/alignment';
 import type { AlignGuide } from '@/lib/whiteboard/alignment';
 import { ExportButton } from '@/components/whiteboard/ExportButton';
@@ -100,6 +101,29 @@ function drawStroke(
 
 const MAX_RETRY_ATTEMPTS = 3;
 
+/** Extract LaTeX element info from batches for enhanced SVG export. */
+function extractLatexExportInfo(batches: DrawBatch[]): LatexExportInfo[] {
+  const result: LatexExportInfo[] = [];
+  for (const batch of batches) {
+    for (const el of batch.elements) {
+      if (el.type === 'latex') {
+        const cached = getCachedSvg(el.tex, el.displayMode ?? true);
+        result.push({
+          id: el.id,
+          x: el.x,
+          y: el.y,
+          tex: el.tex,
+          displayMode: el.displayMode ?? true,
+          fontSize: el.fontSize ?? 16,
+          color: el.color ?? '#1f2a44',
+          cachedSvg: cached,
+        });
+      }
+    }
+  }
+  return result;
+}
+
 const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanvasProps>(
   function WhiteboardCanvasInner({ batches, onWarning, onBatchAnimationComplete }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -166,12 +190,13 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         });
         return blob;
       },
-      exportAsSVG() {
+      exportAsSVG(latexElements?: LatexExportInfo[]) {
         const allStrokes: StrokeTrajectory[] = [
           ...committedStrokesRef.current,
           ...activeStrokesRef.current,
         ];
-        return exportStrokesToSVG(allStrokes);
+        const latexInfo = latexElements ?? extractLatexExportInfo(batches);
+        return exportStrokesToSVG(allStrokes, { latexElements: latexInfo });
       },
       async copyToClipboard() {
         const bg = bgRef.current;
@@ -991,12 +1016,13 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       return blob;
     },
 
-    exportAsSVG() {
+    exportAsSVG(latexElements?: LatexExportInfo[]) {
       const allStrokes: StrokeTrajectory[] = [
         ...committedStrokesRef.current,
         ...activeStrokesRef.current,
       ];
-      return exportStrokesToSVG(allStrokes);
+      const latexInfo = latexElements ?? extractLatexExportInfo(batches);
+      return exportStrokesToSVG(allStrokes, { latexElements: latexInfo });
     },
 
     async copyToClipboard() {

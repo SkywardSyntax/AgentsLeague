@@ -258,6 +258,41 @@ const NormalDistributionSchema = BaseElementSchema.extend({
   style: StylePresetSchema.optional(),
 });
 
+const ComplexPlanePointSchema = z.object({
+  re: z.number().finite(),
+  im: z.number().finite(),
+  label: z.string().max(100).optional(),
+  color: z.string().max(30).regex(COLOR_REGEX).optional(),
+});
+
+const ComplexPlaneSchema = BaseElementSchema.extend({
+  type: z.literal('complex_plane'),
+  points: z.array(ComplexPlanePointSchema).max(50).optional(),
+  vectors: z.array(ComplexPlanePointSchema).max(50).optional(),
+  showUnitCircle: z.boolean().optional(),
+  xRange: z.tuple([z.number().finite(), z.number().finite()]).optional(),
+  yRange: z.tuple([z.number().finite(), z.number().finite()]).optional(),
+  strokeColor: z.string().max(30).regex(COLOR_REGEX).optional(),
+});
+
+const NumberTheoryGridHighlightSchema = z.object({
+  i: z.number().int().nonnegative(),
+  j: z.number().int().nonnegative(),
+  color: z.string().max(30).regex(COLOR_REGEX).optional(),
+  label: z.string().max(100).optional(),
+});
+
+const NumberTheoryGridSchema = BaseElementSchema.extend({
+  type: z.literal('number_theory_grid'),
+  n: z.number().int().min(1).max(20),
+  highlights: z.array(NumberTheoryGridHighlightSchema).max(400),
+  showConnections: z.boolean().optional(),
+  modulus: z.number().int().min(1).max(100).optional(),
+  cx: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  cy: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  cellSize: z.number().positive().max(200).optional(),
+});
+
 export const DrawElementSchema = z.discriminatedUnion('type', [
   RectSchema,
   EllipseSchema,
@@ -277,6 +312,8 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
   TriangleWithAnglesSchema,
   HistogramSchema,
   NormalDistributionSchema,
+  ComplexPlaneSchema,
+  NumberTheoryGridSchema,
 ]);
 
 const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optional();
@@ -1514,7 +1551,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'riemann_sum', 'tangent_line', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve', 'complex_plane', 'number_theory_grid'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch'] as const;
 

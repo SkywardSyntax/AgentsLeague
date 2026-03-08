@@ -22,6 +22,8 @@ import type {
   Wireframe3dElement,
   SequencePlotElement,
   BezierCurveElement,
+  ComplexPlaneElement,
+  NumberTheoryGridElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -115,6 +117,8 @@ function drawOrderPriority(el: DrawElement): number {
     case 'wireframe_3d':
     case 'sequence_plot':
     case 'bezier_curve':
+    case 'complex_plane':
+    case 'number_theory_grid':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -2809,11 +2813,224 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandSequencePlot(el));
     } else if (el.type === 'bezier_curve') {
       result.push(...expandBezierCurve(el));
+    } else if (el.type === 'complex_plane') {
+      result.push(...expandComplexPlane(el, theme));
+    } else if (el.type === 'number_theory_grid') {
+      result.push(...expandNumberTheoryGrid(el));
     } else {
       result.push(el);
     }
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Complex plane expansion
+// ---------------------------------------------------------------------------
+
+function expandComplexPlane(el: ComplexPlaneElement, theme?: ColorTheme): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const [xMin, xMax] = el.xRange ?? [-2, 2];
+  const [yMin, yMax] = el.yRange ?? [-2, 2];
+  const axisColor = el.strokeColor ?? (theme ? getThemeColors(theme).axis : '#1f2a44');
+  const xSpan = xMax - xMin || 1;
+  const ySpan = yMax - yMin || 1;
+
+  // Default canvas region: 400×400 centered at 700,350
+  const W = 400, H = 400;
+  const canvasX = 500, canvasY = 150;
+
+  const toX = (re: number) => canvasX + (re - xMin) / xSpan * W;
+  const toY = (im: number) => canvasY + H - (im - yMin) / ySpan * H;
+
+  // Re axis (horizontal arrow)
+  out.push({
+    id: `${id}-re-axis`,
+    type: 'arrow',
+    from: { x: canvasX, y: toY(0) },
+    to: { x: canvasX + W, y: toY(0) },
+    color: axisColor,
+  });
+
+  // Im axis (vertical arrow)
+  out.push({
+    id: `${id}-im-axis`,
+    type: 'arrow',
+    from: { x: toX(0), y: canvasY + H },
+    to: { x: toX(0), y: canvasY },
+    color: axisColor,
+  });
+
+  // Axis labels
+  out.push({
+    id: `${id}-re-label`,
+    type: 'text',
+    x: canvasX + W + 5,
+    y: toY(0) - 6,
+    text: 'Re',
+    size: 14,
+    color: axisColor,
+  });
+  out.push({
+    id: `${id}-im-label`,
+    type: 'text',
+    x: toX(0) + 5,
+    y: canvasY - 5,
+    text: 'Im',
+    size: 14,
+    color: axisColor,
+  });
+
+  // Unit circle
+  if (el.showUnitCircle) {
+    const ucRadius = (1 / xSpan) * W;
+    out.push({
+      id: `${id}-unit-circle`,
+      type: 'ellipse',
+      cx: toX(0),
+      cy: toY(0),
+      rx: ucRadius,
+      ry: (1 / ySpan) * H,
+      color: axisColor,
+      lineStyle: 'dashed' as const,
+    });
+  }
+
+  // Points
+  if (el.points) {
+    for (let i = 0; i < el.points.length; i++) {
+      const p = el.points[i]!;
+      const cx = toX(p.re);
+      const cy = toY(p.im);
+      const dotColor = p.color ?? getCurveColor(theme ?? 'default', i);
+      out.push({
+        id: `${id}-pt-${i}`,
+        type: 'ellipse',
+        cx,
+        cy,
+        rx: 4,
+        ry: 4,
+        color: dotColor,
+      });
+      if (p.label) {
+        out.push({
+          id: `${id}-pt-${i}-label`,
+          type: 'text',
+          x: cx + 6,
+          y: cy - 6,
+          text: p.label,
+          size: 12,
+          color: dotColor,
+        });
+      }
+    }
+  }
+
+  // Vectors
+  if (el.vectors) {
+    for (let i = 0; i < el.vectors.length; i++) {
+      const v = el.vectors[i]!;
+      const vColor = v.color ?? getCurveColor(theme ?? 'default', i);
+      out.push({
+        id: `${id}-vec-${i}`,
+        type: 'arrow',
+        from: { x: toX(0), y: toY(0) },
+        to: { x: toX(v.re), y: toY(v.im) },
+        color: vColor,
+      });
+      if (v.label) {
+        out.push({
+          id: `${id}-vec-${i}-label`,
+          type: 'text',
+          x: toX(v.re) + 6,
+          y: toY(v.im) - 6,
+          text: v.label,
+          size: 12,
+          color: vColor,
+        });
+      }
+    }
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Number theory grid expansion
+// ---------------------------------------------------------------------------
+
+function expandNumberTheoryGrid(el: NumberTheoryGridElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const n = Math.min(el.n, 20);
+  const cellSize = el.cellSize ?? 20;
+  const totalW = n * cellSize;
+  const totalH = n * cellSize;
+  const originX = el.cx - totalW / 2;
+  const originY = el.cy - totalH / 2;
+  const defaultColor = '#ddd';
+
+  // Build highlight lookup
+  const hlMap = new Map<string, { color?: string; label?: string }>();
+  for (const h of el.highlights) {
+    hlMap.set(`${h.i},${h.j}`, h);
+  }
+
+  // Draw n×n grid of rects
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const x = originX + j * cellSize;
+      const y = originY + i * cellSize;
+      const hl = hlMap.get(`${i},${j}`);
+      out.push({
+        id: `${id}-cell-${i}-${j}`,
+        type: 'rect',
+        x,
+        y,
+        w: cellSize,
+        h: cellSize,
+        color: hl?.color ?? defaultColor,
+      });
+      if (hl?.label) {
+        out.push({
+          id: `${id}-cell-${i}-${j}-lbl`,
+          type: 'text',
+          x: x + cellSize / 2 - 4,
+          y: y + cellSize / 2 - 6,
+          text: hl.label,
+          size: Math.max(8, cellSize * 0.5),
+        });
+      }
+    }
+  }
+
+  // Connection lines (i*j ≡ 0 mod modulus)
+  if (el.showConnections) {
+    const modulus = el.modulus ?? n;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if ((i * j) % modulus === 0) {
+          out.push({
+            id: `${id}-conn-${i}-${j}`,
+            type: 'line',
+            from: {
+              x: originX + i * cellSize + cellSize / 2,
+              y: originY,
+            },
+            to: {
+              x: originX + j * cellSize + cellSize / 2,
+              y: originY,
+            },
+            color: '#4a90d9',
+            lineStyle: 'dashed' as const,
+          });
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 /**
@@ -2822,7 +3039,7 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement | ComplexPlaneElement | NumberTheoryGridElement,
   theme?: ColorTheme,
 ): DrawElement[] {
   switch (el.type) {
@@ -2868,6 +3085,10 @@ export function lowerMathPrimitive(
       return expandSequencePlot(el);
     case 'bezier_curve':
       return expandBezierCurve(el);
+    case 'complex_plane':
+      return expandComplexPlane(el, theme);
+    case 'number_theory_grid':
+      return expandNumberTheoryGrid(el);
   }
 }
 

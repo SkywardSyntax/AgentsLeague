@@ -267,3 +267,30 @@ pre {
 [data-testid="chat-messages"] {
   contain: content;
 }
+
+/* ── Print / Save-as-PDF ─────────────────────────────────────────────────── */
+@media print {
+  /* Hide everything except the whiteboard canvas */
+  body > *:not(.print-canvas-root) {
+    display: none !important;
+  }
+
+  .print-canvas-root {
+    display: block !important;
+    position: static !important;
+    width: 100vw !important;
+    height: 100vh !important;
+  }
+
+  /* Hide UI overlays inside the whiteboard during print */
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Ensure canvas layers fill the printed page */
+  .print-canvas-root canvas {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+}

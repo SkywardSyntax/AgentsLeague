@@ -34,7 +34,7 @@ export const DRAW_TOOL_DEFINITION = {
   type: 'function' as const,
   name: 'emit_draw_batch',
   description:
-    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles, slope_field, vector_field_2d, wireframe_3d, sequence_plot, bezier_curve). Use when a visual explanation helps.',
+    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles, slope_field, vector_field_2d, wireframe_3d, sequence_plot, bezier_curve, complex_plane, number_theory_grid). Use when a visual explanation helps.',
   strict: false,
   parameters: {
     type: 'object',
@@ -55,7 +55,7 @@ export const DRAW_TOOL_DEFINITION = {
             type: {
               type: 'string',
               enum: [...DRAW_ELEMENT_TYPES],
-              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y. wireframe_3d: 3D wireframe projection of shapes (cube, tetrahedron, octahedron, axes_3d, surface). Uses cx,cy center, size, rotationX/Y. sequence_plot: Visualize numeric sequences a_n=f(n). Uses expression with variable \'n\', nMin/nMax range, optional limit line. bezier_curve: Smooth parametric Bezier curves via control points. Uses points array of [x,y] pairs (3=quadratic, 4=cubic, more=polyBezier). Optional showControlPoints, showTangents.',
+              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y. wireframe_3d: 3D wireframe projection of shapes (cube, tetrahedron, octahedron, axes_3d, surface). Uses cx,cy center, size, rotationX/Y. sequence_plot: Visualize numeric sequences a_n=f(n). Uses expression with variable \'n\', nMin/nMax range, optional limit line. bezier_curve: Smooth parametric Bezier curves via control points. Uses points array of [x,y] pairs (3=quadratic, 4=cubic, more=polyBezier). Optional showControlPoints, showTangents. complex_plane: Complex number plane with Re/Im axes. Mark points and vectors with re/im coordinates. Optional showUnitCircle, xRange/yRange. number_theory_grid: Modular arithmetic visualization. n×n grid of cells with highlights. Optional showConnections for modular relationships.',
             },
             x: { type: 'number', description: 'X position in canvas pixels. Safe range: [50, 1350].' },
             y: { type: 'number', description: 'Y position in canvas pixels. Safe range: [50, 650]. Y is inverted: smaller = higher on screen.' },
@@ -159,6 +159,14 @@ export const DRAW_TOOL_DEFINITION = {
             // bezier_curve fields
             showControlPoints: { type: 'boolean', description: 'Show control polygon and control point dots for bezier_curve. Default: false.' },
             showTangents: { type: 'boolean', description: 'Show tangent lines at endpoints for bezier_curve. Default: false.' },
+            // complex_plane fields
+            showUnitCircle: { type: 'boolean', description: 'Show the unit circle on complex_plane. Default: false.' },
+            // number_theory_grid fields
+            n: { type: 'number', description: 'Grid size (n×n) for number_theory_grid. Max 20.' },
+            highlights: { type: 'array', items: { type: 'object', properties: { i: { type: 'number' }, j: { type: 'number' }, color: { type: 'string' }, label: { type: 'string' } }, required: ['i', 'j'] }, description: 'Cells to highlight in number_theory_grid.' },
+            showConnections: { type: 'boolean', description: 'Show modular connection lines in number_theory_grid.' },
+            modulus: { type: 'number', description: 'Modulus for connection computation in number_theory_grid.' },
+            cellSize: { type: 'number', description: 'Cell size in pixels for number_theory_grid. Default: 20.' },
           },
           required: ['id', 'type'],
         },
@@ -344,6 +352,8 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Probability trees | emit_semantic_batch | template: "probability_tree" | Tree layout with branch probabilities and cumulative P |
 | Histograms, bar charts | emit_draw_batch | histogram | Auto-computed bars with labels and axes |
 | Normal distribution curves | emit_draw_batch | normal_distribution | Bell curve with shading, σ lines |
+| Numeric sequences (a_n convergence) | emit_draw_batch | sequence_plot | Dot plot with optional limit line |
+| Bezier / spline curves | emit_draw_batch | bezier_curve | Smooth curves via control points (quad, cubic, poly) |
 | Complex multi-panel text-based diagram | emit_graph_script | graph + node + edge DSL | Rich DSL with references and connections |
 
 - You may alternate text and drawings multiple times in a single turn
@@ -432,6 +442,8 @@ For graphs with cartesian_axes, use these defaults:
 | slope_field | x, y, width, height, expression, xRange, yRange, gridRows, gridCols, strokeColor, solutionCurve | Direction field for ODE dy/dx = f(x,y) |
 | vector_field_2d | x, y, width, height, Px, Py, xRange, yRange, gridRows, gridCols, strokeColor, normalize | 2D vector field F(x,y) = (Px, Py) |
 | wireframe_3d | cx, cy, size, shape, rotationX, rotationY, expression, gridN, strokeColor, strokeWidth, showHiddenLines | 3D wireframe projection (cube, tetrahedron, octahedron, axes_3d, surface) |
+| sequence_plot | x, y, width, height, expression, nMin, nMax, limit, xRange, yRange, dotRadius, showLines | Numeric sequence a_n dot plot with optional convergence line |
+| bezier_curve | points (array of [x,y]), strokeColor, strokeWidth, showControlPoints, showTangents | Quadratic/cubic/poly Bézier curve via control points |
 
 ### Quick Type Selection — what to use for common requests
 | Want to show | Use these types |
@@ -448,6 +460,8 @@ For graphs with cartesian_axes, use these defaults:
 | Slope / direction field (ODE) | slope_field (optionally with solutionCurve) |
 | 2D vector field (flow, E&M) | vector_field_2d |
 | 3D wireframe (cube, tetrahedron, surface) | wireframe_3d |
+| Numeric sequence convergence (a_n → L) | sequence_plot (with limit line) |
+| Smooth parametric Bézier / spline curves | bezier_curve (with showControlPoints for pedagogy) |
 | Geometric shape with angles | triangle_with_angles or lines + angle_arc |
 | Unit circle / labeled circle | circle_with_radius + angle_arc + latex labels |
 | Linear transformation | linear_transform (with matrix and basis vectors) |
@@ -543,6 +557,52 @@ Draws a 2D vector field F(x,y) = (Px(x,y), Py(x,y)). Provide \`Px\` and \`Py\` a
 Arrows are drawn at grid points, scaled by magnitude. Set \`normalize: true\` for uniform arrow lengths.
 Grid density: gridRows (default 8), gridCols (default 10). Pair with cartesian_axes for labeled axes.
 Example: {"type":"vector_field_2d","id":"vf1","x":100,"y":50,"width":600,"height":400,"Px":"-y","Py":"x","xRange":[-3,3],"yRange":[-3,3],"normalize":true}
+
+### wireframe_3d Details
+Renders a 3D wireframe projection of geometric shapes. \`shape\` selects the geometry: "cube", "tetrahedron", "octahedron", "axes_3d" (labeled 3D coordinate axes), or "surface" (z = f(x,y) mesh).
+Center at (cx, cy) in canvas pixels. \`size\` sets the edge length in pixels. \`rotationX\` and \`rotationY\` control camera rotation in degrees (defaults: 20° and 30°).
+For \`shape: "surface"\`: provide \`expression\` with variables x, y (e.g. "sin(x)*cos(y)"). \`gridN\` (default 8) sets surface sample density — keep ≤ 15 for smooth rendering.
+\`showHiddenLines\` (default false) uses painter's algorithm to show occluded edges as dashed.
+Example — wireframe cube:
+\`\`\`json
+{"type":"wireframe_3d","id":"w1","cx":700,"cy":350,"size":200,"shape":"cube","rotationX":25,"rotationY":35}
+\`\`\`
+Example — 3D surface z = sin(x)cos(y):
+\`\`\`json
+{"type":"wireframe_3d","id":"w2","cx":700,"cy":350,"size":250,"shape":"surface","expression":"sin(x)*cos(y)","gridN":10,"rotationX":30,"rotationY":45,"strokeColor":"#2563eb"}
+\`\`\`
+
+### sequence_plot Details
+Visualises a numeric sequence a_n = f(n) as a dot plot. Provide \`expression\` with variable \`n\` (e.g. "1/n", "(-1)^n/n", "n*sin(1/n)").
+\`nMin\` (default 1) and \`nMax\` (default 20) set the index range. \`dotRadius\` (default 4) controls dot size. \`showLines\` (default false) connects consecutive dots with thin lines.
+Set \`limit\` to draw a horizontal dashed convergence line at y = limit (great for showing a_n → L).
+\`x\`, \`y\`, \`width\`, \`height\` define the plot bounding box. \`xRange\` and \`yRange\` are auto-computed if omitted.
+Pair with cartesian_axes at the same position for labeled axes.
+Example — sequence 1/n converging to 0:
+\`\`\`json
+{"type":"sequence_plot","id":"sp1","x":100,"y":50,"width":600,"height":400,"expression":"1/n","nMin":1,"nMax":25,"limit":0,"showLines":true,"strokeColor":"#2563eb"}
+\`\`\`
+Example — alternating sequence (-1)^n / n:
+\`\`\`json
+{"type":"sequence_plot","id":"sp2","x":100,"y":50,"width":600,"height":400,"expression":"(-1)^n/n","nMin":1,"nMax":30,"limit":0,"dotRadius":5}
+\`\`\`
+
+### bezier_curve Details
+Draws smooth Bézier curves from control points. \`points\` is an array of [x, y] pairs in canvas pixel coordinates:
+  - 3 points → quadratic Bézier
+  - 4 points → cubic Bézier
+  - 5+ points → polyBézier (chained cubic segments)
+\`showControlPoints\` (default false) draws the control polygon and dots at each control point — useful for teaching Bézier geometry.
+\`showTangents\` (default false) draws tangent lines at the curve endpoints.
+\`strokeColor\` and \`strokeWidth\` control curve appearance.
+Example — cubic Bézier:
+\`\`\`json
+{"type":"bezier_curve","id":"bz1","points":[[200,400],[350,100],[650,100],[800,400]],"strokeColor":"#2563eb","strokeWidth":2,"showControlPoints":true}
+\`\`\`
+Example — quadratic Bézier:
+\`\`\`json
+{"type":"bezier_curve","id":"bz2","points":[[300,500],[550,150],[800,500]],"strokeColor":"#dc2626","showControlPoints":true,"showTangents":true}
+\`\`\`
 
 ### Dos and Don'ts for Math Drawings
 ✅ DO: Use cartesian_axes for any graph with a coordinate system — it auto-generates ticks
@@ -923,4 +983,28 @@ FIX: Limit text elements to ≤ 8 per batch. If you need more labels, split acro
 ### ❌ Mistake 10: Multi-diagram request drawn in one overlapping region
 BAD — "show sine and cosine" drawn on top of each other without separation:
 Why wrong: When asked to show multiple distinct diagrams, placing them all at the same coordinates creates an unreadable mess.
-FIX: For multi-diagram requests ("show me X and Y"), use separate placement zones — e.g. left half (x: 80–620) for diagram A, right half (x: 720–1320) for diagram B. Or use top/bottom split.`;
+FIX: For multi-diagram requests ("show me X and Y"), use separate placement zones — e.g. left half (x: 80–620) for diagram A, right half (x: 720–1320) for diagram B. Or use top/bottom split.
+
+### ❌ Mistake 11: wireframe_3d with gridN too high
+BAD — surface becomes a laggy pixel soup:
+\`\`\`json
+{"id":"slow-surface","type":"wireframe_3d","cx":700,"cy":350,"size":250,"shape":"surface","expression":"sin(x)*cos(y)","gridN":25}
+\`\`\`
+Why wrong: gridN=25 generates 25×25=625 quads and hundreds of projected line segments — severe rendering lag on most devices.
+FIX: Keep gridN ≤ 15 (default 8). Use gridN=10–12 for detailed surfaces.
+
+### ❌ Mistake 12: sequence_plot with nMax too large
+BAD — 200 dots crammed into a tiny plot:
+\`\`\`json
+{"id":"too-many-dots","type":"sequence_plot","x":100,"y":50,"width":600,"height":400,"expression":"1/n","nMin":1,"nMax":200}
+\`\`\`
+Why wrong: nMax=200 draws 200 overlapping dots. After n≈30, dots merge into an unreadable blob.
+FIX: Keep nMax ≤ 50 (default 20). Use nMax=20–30 for most sequences.
+
+### ❌ Mistake 13: bezier_curve with fewer than 3 control points
+BAD — only 2 points produces a straight line, not a curve:
+\`\`\`json
+{"id":"not-a-curve","type":"bezier_curve","points":[[200,300],[800,300]]}
+\`\`\`
+Why wrong: 2 points define a straight line — use type="line" instead. Bézier curves need ≥ 3 control points.
+FIX: Use ≥ 3 points for quadratic, 4 for cubic. Keep total points ≤ 13 to avoid overly complex polyBézier chains.`;

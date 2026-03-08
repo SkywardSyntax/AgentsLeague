@@ -537,6 +537,39 @@ export interface BezierCurveElement extends BaseDrawElement {
   showTangents?: boolean;
 }
 
+export interface ComplexPlaneElement extends BaseDrawElement {
+  type: 'complex_plane';
+  /** Points to mark on the complex plane */
+  points?: Array<{ re: number; im: number; label?: string; color?: string }>;
+  /** Vectors from origin */
+  vectors?: Array<{ re: number; im: number; label?: string; color?: string }>;
+  /** Show the unit circle */
+  showUnitCircle?: boolean;
+  /** Real axis range (default [-2, 2]) */
+  xRange?: [number, number];
+  /** Imaginary axis range (default [-2, 2]) */
+  yRange?: [number, number];
+  strokeColor?: string;
+}
+
+export interface NumberTheoryGridElement extends BaseDrawElement {
+  type: 'number_theory_grid';
+  /** Grid size (n × n), max 20 */
+  n: number;
+  /** Cells to highlight */
+  highlights: Array<{ i: number; j: number; color?: string; label?: string }>;
+  /** Show modular connection lines (connect i to j if i*j ≡ 0 mod n) */
+  showConnections?: boolean;
+  /** Modulus for connections (defaults to n) */
+  modulus?: number;
+  /** Center X of the grid */
+  cx: number;
+  /** Center Y of the grid */
+  cy: number;
+  /** Cell size in pixels (default 20) */
+  cellSize?: number;
+}
+
 export type DrawElement =
   | RectElement
   | EllipseElement
@@ -565,7 +598,9 @@ export type DrawElement =
   | VectorField2dElement
   | Wireframe3dElement
   | SequencePlotElement
-  | BezierCurveElement;
+  | BezierCurveElement
+  | ComplexPlaneElement
+  | NumberTheoryGridElement;
 
 /**
  * Exhaustive-check helper for the DrawElement discriminated union.

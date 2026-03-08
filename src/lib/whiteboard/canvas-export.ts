@@ -9,7 +9,7 @@
  * - G7: Clipboard API requires HTTPS — detect insecure context and throw descriptive error
  */
 
-import type { StrokeTrajectory, Point } from '@/types/agent';
+import type { StrokeTrajectory, LatexElement, Point } from '@/types/agent';
 import { strokesBoundingBox, catmullRomToBezier } from '@/lib/whiteboard/geometry';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -43,10 +43,23 @@ export interface ExportResult {
   strokeCount: number;
 }
 
+/** LaTeX element info for enhanced SVG export with embedded MathJax SVGs. */
+export interface LatexExportInfo {
+  id: string;
+  x: number;
+  y: number;
+  tex: string;
+  displayMode: boolean;
+  fontSize: number;
+  color: string;
+  /** Cached MathJax SVG output (if available). */
+  cachedSvg?: string;
+}
+
 /** Imperative handle exposed by WhiteboardCanvas via forwardRef */
 export interface WhiteboardExportHandle {
   exportAsPNG(scale?: number, whiteBackground?: boolean): Promise<Blob>;
-  exportAsSVG(): string;
+  exportAsSVG(latexElements?: LatexExportInfo[]): string;
   copyToClipboard(): Promise<void>;
   getStrokeData(): StrokeTrajectory[];
   getContentBounds(): { minX: number; minY: number; maxX: number; maxY: number } | null;
@@ -154,11 +167,12 @@ export async function renderStrokesToBlob(
 
 /** Convert canvas or OffscreenCanvas to a PNG Blob. */
 async function canvasToBlob(canvas: OffscreenCanvas | HTMLCanvasElement): Promise<Blob> {
-  if (canvas instanceof OffscreenCanvas) {
+  if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
     return canvas.convertToBlob({ type: 'image/png' });
   }
+  const htmlCanvas = canvas as HTMLCanvasElement;
   return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
+    htmlCanvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('canvas.toBlob returned null'))),
       'image/png',
     );
@@ -321,6 +335,8 @@ export async function copyCanvasLayersToClipboard(
 export interface SvgExportOptions {
   whiteBackground: boolean;
   padding: number;
+  /** Embed MathJax SVG output directly for these LaTeX elements. */
+  latexElements?: LatexExportInfo[];
 }
 
 const DEFAULT_SVG_OPTIONS: SvgExportOptions = {
@@ -332,27 +348,65 @@ const DEFAULT_SVG_OPTIONS: SvgExportOptions = {
  * Convert stroke trajectories to a standalone SVG string.
  * Uses Catmull-Rom → Bézier conversion for smooth paths.
  * Full-content export — uses world-space bounds, not viewport (G2).
+ *
+ * When `latexElements` are provided, their MathJax SVG is embedded directly
+ * as nested `<g>` nodes and the stroke-based paths for those elements are skipped.
  */
 export function exportStrokesToSVG(
   strokes: StrokeTrajectory[],
   options: Partial<SvgExportOptions> = {},
 ): string {
   const opts = { ...DEFAULT_SVG_OPTIONS, ...options };
+  const latexEls = opts.latexElements ?? [];
 
-  if (strokes.length === 0) {
+  if (strokes.length === 0 && latexEls.length === 0) {
     return '<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"></svg>';
   }
 
-  const bounds = strokesBoundingBox(strokes, opts.padding);
+  // Build set of element IDs that have embedded LaTeX SVG
+  const embeddedLatexIds = new Set<string>();
+  for (const el of latexEls) {
+    if (el.cachedSvg) {
+      embeddedLatexIds.add(el.id);
+    }
+  }
+
+  // Filter out stroke paths that originated from embedded LaTeX elements
+  const filteredStrokes = embeddedLatexIds.size > 0
+    ? strokes.filter((s) => !embeddedLatexIds.has(s.elementId))
+    : strokes;
+
+  const bounds = strokesBoundingBox(
+    [...filteredStrokes, ...latexEls.map((el) => ({
+      points: [{ x: el.x, y: el.y }, { x: el.x + 100, y: el.y + 30 }] as Point[],
+    }))],
+    opts.padding,
+  );
   if (!bounds) {
     return '<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"></svg>';
   }
 
-  const paths = strokes.map((stroke) => strokeToSVGPath(stroke));
+  const paths = filteredStrokes.map((stroke) => strokeToSVGPath(stroke));
 
   const bg = opts.whiteBackground
     ? `  <rect width="${bounds.width}" height="${bounds.height}" fill="#ffffff"/>\n`
     : '';
+
+  // Build embedded LaTeX SVG nodes
+  const latexNodes: string[] = [];
+  for (const el of latexEls) {
+    if (!el.cachedSvg) continue;
+    // Extract inner SVG content — strip the outer <svg> wrapper and embed as <g>
+    const innerSvg = extractSvgInnerContent(el.cachedSvg);
+    if (!innerSvg) continue;
+
+    const scale = (el.fontSize ?? 16) / 16;
+    latexNodes.push(
+      `    <g transform="translate(${el.x}, ${el.y}) scale(${scale})" data-latex-id="${el.id}" data-tex="${escapeXmlAttr(el.tex)}">`,
+      `      ${innerSvg}`,
+      `    </g>`,
+    );
+  }
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg"`,
@@ -362,8 +416,35 @@ export function exportStrokesToSVG(
     `  <g stroke-linecap="round" stroke-linejoin="round" fill="none">`,
     ...paths.filter(Boolean).map((p) => `    ${p}`),
     `  </g>`,
+    ...(latexNodes.length > 0 ? [
+      `  <g class="latex-elements">`,
+      ...latexNodes,
+      `  </g>`,
+    ] : []),
     `</svg>`,
   ].join('\n');
+}
+
+/** Extract the inner content of an SVG string (everything inside the root <svg> tag). */
+function extractSvgInnerContent(svgString: string): string | null {
+  // Find opening <svg ...> tag end
+  const openMatch = svgString.match(/<svg[^>]*>/);
+  if (!openMatch) return null;
+  const start = openMatch.index! + openMatch[0].length;
+  // Find closing </svg>
+  const closeIdx = svgString.lastIndexOf('</svg>');
+  if (closeIdx <= start) return null;
+  return svgString.slice(start, closeIdx).trim();
+}
+
+/** Escape a string for use in XML attributes. */
+function escapeXmlAttr(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function strokeToSVGPath(stroke: StrokeTrajectory): string {

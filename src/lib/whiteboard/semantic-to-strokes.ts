@@ -469,7 +469,8 @@ async function compileOneElement(
     || element.type === 'histogram' || element.type === 'normal_distribution'
     || element.type === 'slope_field' || element.type === 'vector_field_2d'
     || element.type === 'wireframe_3d'
-    || element.type === 'sequence_plot' || element.type === 'bezier_curve') {
+    || element.type === 'sequence_plot' || element.type === 'bezier_curve'
+    || element.type === 'complex_plane' || element.type === 'number_theory_grid') {
     const lowered = lowerMathPrimitive(element);
     for (const lowEl of lowered) {
       const sub = await compileOneElement(lowEl, preset);
@@ -562,7 +563,9 @@ function expandAndSortForInjection(
       el.type === 'normal_distribution' ||
       el.type === 'wireframe_3d' ||
       el.type === 'sequence_plot' ||
-      el.type === 'bezier_curve'
+      el.type === 'bezier_curve' ||
+      el.type === 'complex_plane' ||
+      el.type === 'number_theory_grid'
     ) {
       const lowered = lowerMathPrimitive(el, colorTheme);
       for (const child of lowered) {

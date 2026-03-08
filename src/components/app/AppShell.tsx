@@ -10,6 +10,7 @@ import { useSessionManager, type ChatSessionState } from '@/hooks/useSessionMana
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
 import { type AppMode, getClientAppMode, getInitialAppMode } from '@/lib/mode';
 import { buildWhiteboardContext, buildWhiteboardContextV2 } from '@/lib/whiteboard/context';
+import { decompressShareData } from '@/lib/share-url';
 import {
   removeStreamOverlayFromBatches,
   removeStreamOverlayFromScene,
@@ -211,10 +212,11 @@ export function AppShell() {
     const sceneParam = params.get('scene');
     if (!sceneParam) return;
 
-    try {
-      const json = atob(sceneParam);
-      const batches = JSON.parse(json) as DrawBatch[];
-      if (!Array.isArray(batches) || batches.length === 0) return;
+    (async () => {
+      try {
+        const json = await decompressShareData(sceneParam);
+        const batches = JSON.parse(json) as DrawBatch[];
+        if (!Array.isArray(batches) || batches.length === 0) return;
 
       setShowSharedToast(true);
       setTimeout(() => setShowSharedToast(false), 3000);
@@ -243,8 +245,9 @@ export function AppShell() {
       url.searchParams.delete('scene');
       window.history.replaceState({}, '', url.toString());
     } catch {
-      // invalid base64 or JSON — ignore
+      // invalid data — ignore
     }
+    })();
     // Run only once after session restore
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [didRestoreSession]);

@@ -291,5 +291,23 @@ export function computeElementBounds(
     };
   }
 
+  // complex_plane: default 400×400 canvas region
+  if (el.type === 'complex_plane') {
+    return { minX: 500, minY: 150, maxX: 900, maxY: 550 };
+  }
+
+  // number_theory_grid: bounding box from center, n, cellSize
+  if (el.type === 'number_theory_grid') {
+    const cellSize = el.cellSize ?? 20;
+    const total = el.n * cellSize;
+    if (!allFinite(el.cx, el.cy) || !isFinitePositive(total)) return null;
+    return {
+      minX: el.cx - total / 2,
+      minY: el.cy - total / 2,
+      maxX: el.cx + total / 2,
+      maxY: el.cy + total / 2,
+    };
+  }
+
   return null;
 }
