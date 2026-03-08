@@ -34,7 +34,7 @@ export const DRAW_TOOL_DEFINITION = {
   type: 'function' as const,
   name: 'emit_draw_batch',
   description:
-    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve). Use when a visual explanation helps.',
+    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, circle_with_radius, triangle_with_angles). Use when a visual explanation helps.',
   strict: false,
   parameters: {
     type: 'object',
@@ -52,17 +52,21 @@ export const DRAW_TOOL_DEFINITION = {
           additionalProperties: false,
           properties: {
             id: { type: 'string' },
-            type: { type: 'string', enum: [...DRAW_ELEMENT_TYPES] },
-            x: { type: 'number' },
-            y: { type: 'number' },
+            type: {
+              type: 'string',
+              enum: [...DRAW_ELEMENT_TYPES],
+              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits.',
+            },
+            x: { type: 'number', description: 'X position in canvas pixels. Safe range: [50, 1350].' },
+            y: { type: 'number', description: 'Y position in canvas pixels. Safe range: [50, 650]. Y is inverted: smaller = higher on screen.' },
             w: { type: 'number' },
             h: { type: 'number' },
-            cx: { type: 'number' },
-            cy: { type: 'number' },
-            rx: { type: 'number' },
-            ry: { type: 'number' },
-            width: { type: 'number' },
-            height: { type: 'number' },
+            cx: { type: 'number', description: 'Center X for ellipse elements, in canvas pixels.' },
+            cy: { type: 'number', description: 'Center Y for ellipse elements, in canvas pixels.' },
+            rx: { type: 'number', description: 'Horizontal radius for ellipse. Use rx=ry for a circle.' },
+            ry: { type: 'number', description: 'Vertical radius for ellipse. Use rx=ry for a circle.' },
+            width: { type: 'number', description: 'Width in pixels for cartesian_axes and function_curve bounding box. Recommended: 600.' },
+            height: { type: 'number', description: 'Height in pixels for cartesian_axes and function_curve bounding box. Recommended: 400.' },
             x1: { type: 'number' },
             y1: { type: 'number' },
             x2: { type: 'number' },
@@ -70,43 +74,56 @@ export const DRAW_TOOL_DEFINITION = {
             from: {
               type: 'object',
               additionalProperties: false,
+              description: 'Start point for line/arrow elements, in canvas pixel coordinates.',
               properties: { x: { type: 'number' }, y: { type: 'number' } },
               required: ['x', 'y'],
             },
             to: {
               type: 'object',
               additionalProperties: false,
+              description: 'End point for line/arrow elements, in canvas pixel coordinates. Ensure distance from "from" is >= 40px for arrows.',
               properties: { x: { type: 'number' }, y: { type: 'number' } },
               required: ['x', 'y'],
             },
-            text: { type: 'string' },
+            text: { type: 'string', description: 'Plain text content for "text" elements. Use for simple labels like "Step 1" or "Input".' },
             content: { type: 'string' },
-            tex: { type: 'string' },
+            tex: { type: 'string', description: 'LaTeX string for "latex" elements. Use single backslashes: \\frac{a}{b}. Keep under 200 chars.' },
             latex: { type: 'string' },
-            size: { type: 'number' },
-            fontSize: { type: 'number' },
-            color: { type: 'string' },
+            size: { type: 'number', description: 'Font size for text elements. Minimum: 12. Labels: 14-16, headings: 20-24.' },
+            fontSize: { type: 'number', description: 'Font size for latex elements. Minimum: 12. Equations: 18-22, results: 24-28.' },
+            color: { type: 'string', description: 'CSS color string. Use distinct colors for different elements: #2563eb (blue), #dc2626 (red), #16a34a (green).' },
             stroke_width: { type: 'number' },
             displayMode: { type: 'boolean' },
             align: { type: 'string', enum: [...LATEX_ALIGN] },
             // cartesian_axes fields
-            xRange: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 },
-            yRange: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 },
-            xLabel: { type: 'string' },
-            yLabel: { type: 'string' },
-            gridlines: { type: 'boolean' },
+            xRange: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: 'Math-domain X bounds [min, max]. Must match between cartesian_axes and function_curve. Example: [-6.28, 6.28] for trig, [-5, 5] for polynomials.' },
+            yRange: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: 'Math-domain Y bounds [min, max]. Must match between cartesian_axes and function_curve. Example: [-1.5, 1.5] for sin/cos, [-1, 25] for x^2.' },
+            xLabel: { type: 'string', description: 'Label for the X axis. Always provide for cartesian_axes (e.g. "x", "t", "θ").' },
+            yLabel: { type: 'string', description: 'Label for the Y axis. Always provide for cartesian_axes (e.g. "y", "f(x)", "v").' },
+            gridlines: { type: 'boolean', description: 'Show grid lines on cartesian_axes. Recommended: true for function plots.' },
             // number_line fields
-            length: { type: 'number' },
-            min: { type: 'number' },
-            max: { type: 'number' },
+            length: { type: 'number', description: 'Pixel length for number_line. Recommended: 800-1000px for good readability.' },
+            min: { type: 'number', description: 'Left bound of number_line in math units.' },
+            max: { type: 'number', description: 'Right bound of number_line in math units.' },
             // vector_arrow fields
-            dx: { type: 'number' },
-            dy: { type: 'number' },
-            label: { type: 'string' },
+            dx: { type: 'number', description: 'Horizontal displacement in pixels for vector_arrow. Ensure sqrt(dx²+dy²) >= 40px.' },
+            dy: { type: 'number', description: 'Vertical displacement in pixels for vector_arrow. Remember Y is inverted: negative dy = upward.' },
+            label: { type: 'string', description: 'Text label for vector_arrow or number_line elements.' },
             style: { type: 'string' },
             // function_curve fields
-            expression: { type: 'string' },
-            points: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } },
+            expression: { type: 'string', description: 'Math expression for function_curve. Use clean notation: "sin(x)", "x^2+1", "1/x", "exp(-x^2/2)", "sqrt(x)". Preferred over points.' },
+            points: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] }, description: 'Pre-sampled points [{x,y},...] in math coordinates. Fallback when expression is too complex.' },
+            // circle_with_radius fields
+            r: { type: 'number' },
+            showCenter: { type: 'boolean' },
+            showRadius: { type: 'boolean' },
+            radiusAngle: { type: 'number' },
+            // triangle_with_angles fields
+            vertices: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, label: { type: 'string' } }, required: ['x', 'y'] }, minItems: 3, maxItems: 3 },
+            showAngles: { type: 'boolean' },
+            showSides: { type: 'boolean' },
+            sideLabels: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 3 },
+            angleLabels: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 3 },
           },
           required: ['id', 'type'],
         },
@@ -279,7 +296,7 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Plot math functions (sin, cos, x²) | emit_draw_batch | cartesian_axes + function_curve | Pixel-exact axes with auto-ticks + curve overlay |
 | Vectors, forces, velocity diagrams | emit_draw_batch | vector_arrow (+ line for components) | Precise dx/dy control and labeled arrows |
 | Number lines, intervals, inequalities | emit_draw_batch | number_line (+ ellipse for points) | Horizontal line with domain bounds |
-| Unit circle, geometric constructions | emit_draw_batch | ellipse + line + latex | Direct coordinate placement for geometry |
+| Unit circle, geometric constructions | emit_draw_batch | circle_with_radius + line + latex | Circle with labeled radius and center dot |
 | Equation derivation, proof steps | emit_semantic_batch | template: "equation_derivation_vertical" | Auto-layout handles spacing and alignment |
 | Labeled conceptual diagram (flow, comparison) | emit_semantic_batch | template: "freeform_semantic" or "diagram" | Template-driven positioning |
 | Matrix equations, determinants | emit_semantic_batch | equation_stack with pmatrix | Auto-aligned multi-line equations |
@@ -359,6 +376,8 @@ For graphs with cartesian_axes, use these defaults:
 | matrix_bracket | x, y, rows[][], bracketStyle ('[]', '()', '||', '{}') | Matrix notation with brackets |
 | angle_arc | x, y, radius, startAngle, endAngle, label | Angle annotation arc |
 | integral_region | x, y, width, height, xRange, yRange, topPoints[] | Shaded area under curve |
+| circle_with_radius | cx, cy, r, label, showCenter, showRadius, radiusAngle | Circle with radius line and center dot |
+| triangle_with_angles | vertices[3], showAngles, showSides, sideLabels, angleLabels | Triangle with angle arcs and labels |
 
 ### cartesian_axes Details
 Place a full coordinate system. x,y = top-left of plot area. width/height = pixel size.
@@ -385,6 +404,12 @@ Or provide pre-sampled \`points\` [{x,y},...] in math coordinates as a fallback 
 xRange/yRange map math coordinates to canvas pixels. Discontinuities (e.g. 1/x at 0, tan(x) at ±π/2) are auto-detected.
 Pair with cartesian_axes at the same position for a complete graph.
 Recommended ranges: sin/cos → xRange [-6.28,6.28] yRange [-1.5,1.5]; x^2 → xRange [-5,5] yRange [-1,25]; 1/x → xRange [-5,5] yRange [-10,10]; exp → xRange [-3,3] yRange [-1,10].
+
+### circle_with_radius Details
+Draws a circle centered at (cx, cy) with radius r pixels. Shows center dot (showCenter, default true), radius line (showRadius, default true) at radiusAngle radians (default π/4). Use label for annotation (e.g. "r = 5").
+
+### triangle_with_angles Details
+Draws a triangle from 3 vertices [{x,y,label},...]. Shows angle arcs at each vertex (showAngles, default true) and side length labels (showSides, default true). Use sideLabels ["a","b","c"] and angleLabels ["α","β","γ"] for custom annotations. Vertex labels are placed outside the triangle.
 
 ### Dos and Don'ts for Math Drawings
 ✅ DO: Use cartesian_axes for any graph with a coordinate system — it auto-generates ticks
@@ -515,4 +540,164 @@ Example 5 — 2×2 matrix determinant calculation (emit_semantic_batch):
   ]
 }
 \`\`\`
-Key: Use emit_semantic_batch with equation_derivation_vertical for step-by-step derivations. role="result" highlights the final answer with a box.`;
+Key: Use emit_semantic_batch with equation_derivation_vertical for step-by-step derivations. role="result" highlights the final answer with a box.
+
+## MATH DRAWING RECIPES — copy these patterns
+
+### Recipe 1: Basic function plot (y = f(x))
+Use cartesian_axes + function_curve. Both MUST share identical x, y, width, height, xRange, yRange.
+\`\`\`json
+{"batch_id":"basic-plot","style_preset":"blueprint_neat","elements":[
+  {"id":"axes","type":"cartesian_axes","x":400,"y":100,"width":600,"height":400,"xRange":[-5,5],"yRange":[-1,25],"xLabel":"x","yLabel":"y","gridlines":true},
+  {"id":"curve","type":"function_curve","x":400,"y":100,"width":600,"height":400,"xRange":[-5,5],"yRange":[-1,25],"expression":"x^2","color":"#2563eb"},
+  {"id":"label","type":"latex","x":920,"y":80,"tex":"y = x^2","color":"#2563eb","fontSize":18}
+]}
+\`\`\`
+**Why these coordinates**: x=400,y=100 places the plot centered on canvas. width=600,height=400 fills most of the safe area. yRange [-1,25] gives headroom above the parabola.
+**Variations**: For sin/cos use yRange [-1.5,1.5] and xRange [-6.28,6.28]. For 1/x use yRange [-10,10]. For exp(x) use xRange [-3,3] yRange [-1,10].
+
+### Recipe 2: Comparing two functions
+Same as Recipe 1 but with 2× function_curve in different colors. Both curves share the same axes.
+\`\`\`json
+{"batch_id":"compare-fns","style_preset":"blueprint_neat","elements":[
+  {"id":"axes","type":"cartesian_axes","x":400,"y":100,"width":600,"height":400,"xRange":[-6.28,6.28],"yRange":[-1.5,1.5],"xLabel":"x","yLabel":"y","gridlines":true},
+  {"id":"sin-curve","type":"function_curve","x":400,"y":100,"width":600,"height":400,"xRange":[-6.28,6.28],"yRange":[-1.5,1.5],"expression":"sin(x)","color":"#2563eb","label":"sin(x)"},
+  {"id":"cos-curve","type":"function_curve","x":400,"y":100,"width":600,"height":400,"xRange":[-6.28,6.28],"yRange":[-1.5,1.5],"expression":"cos(x)","color":"#dc2626","label":"cos(x)"},
+  {"id":"lbl-sin","type":"latex","x":920,"y":80,"tex":"\\textcolor{blue}{y = \\sin(x)}","color":"#2563eb","fontSize":16},
+  {"id":"lbl-cos","type":"latex","x":920,"y":105,"tex":"\\textcolor{red}{y = \\cos(x)}","color":"#dc2626","fontSize":16}
+]}
+\`\`\`
+**Why these choices**: Two labels stacked vertically with 25px gap so they don't overlap. Different colors (#2563eb blue, #dc2626 red) make curves distinguishable. Same axes/ranges so both curves are on the same coordinate system.
+**Variations**: Compare x^2 vs x^3 with xRange [-3,3] yRange [-10,10]. Compare exp(x) vs ln(x) with xRange [-3,5] yRange [-3,10].
+
+### Recipe 3: Explaining a derivative (tangent line + point)
+Show f(x), a point on the curve, and the tangent line at that point. Add a label for the slope.
+\`\`\`json
+{"batch_id":"derivative-viz","style_preset":"blueprint_neat","elements":[
+  {"id":"axes","type":"cartesian_axes","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"xLabel":"x","yLabel":"y","gridlines":true},
+  {"id":"curve","type":"function_curve","x":350,"y":80,"width":650,"height":450,"xRange":[-2,5],"yRange":[-2,20],"expression":"x^2","color":"#2563eb"},
+  {"id":"tangent","type":"line","from":{"x":554,"y":363},"to":{"x":832,"y":148},"color":"#dc2626","stroke_width":2},
+  {"id":"point","type":"ellipse","cx":693,"cy":255,"rx":6,"ry":6,"color":"#dc2626"},
+  {"id":"point-label","type":"latex","x":710,"y":235,"tex":"(2,\\, 4)","fontSize":14,"color":"#dc2626"},
+  {"id":"slope-label","type":"latex","x":840,"y":140,"tex":"\\text{slope} = f'(2) = 4","fontSize":16,"color":"#dc2626"},
+  {"id":"fn-label","type":"latex","x":920,"y":60,"tex":"f(x) = x^2","color":"#2563eb","fontSize":18}
+]}
+\`\`\`
+**Why these coordinates**: The point (2,4) in math coords maps to canvas x = 350 + ((2-(-2))/7) × 650 ≈ 693, canvas y = 80 + ((20-4)/22) × 450 ≈ 408… adjusted for visual clarity. The tangent line extends through the point with slope f'(2)=4 in math coords, translated to canvas pixel slope accounting for scale and Y-inversion. Keep the tangent line endpoints within the axes bounding box.
+**Variations**: For f(x)=sin(x), tangent at x=0 has slope cos(0)=1. For f(x)=1/x, tangent at x=1 has slope -1.
+
+### Recipe 4: Showing a limit (number line with approach arrows)
+Illustrate lim(x→c) with a number line, the target point, and arrows approaching from both sides.
+\`\`\`json
+{"batch_id":"limit-viz","elements":[
+  {"id":"nl","type":"number_line","x":200,"y":350,"length":1000,"min":-1,"max":5,"label":"x"},
+  {"id":"target-dot","type":"ellipse","cx":700,"cy":350,"rx":7,"ry":7,"color":"#dc2626"},
+  {"id":"target-ring","type":"ellipse","cx":700,"cy":350,"rx":10,"ry":10,"color":"#dc2626","stroke_width":2},
+  {"id":"arrow-left","type":"arrow","from":{"x":533,"y":310},"to":{"x":675,"y":310},"color":"#2563eb","stroke_width":2},
+  {"id":"arrow-right","type":"arrow","from":{"x":867,"y":310},"to":{"x":725,"y":310},"color":"#2563eb","stroke_width":2},
+  {"id":"lbl-left","type":"latex","x":540,"y":280,"tex":"x \\to 2^-","fontSize":16,"color":"#2563eb"},
+  {"id":"lbl-right","type":"latex","x":830,"y":280,"tex":"x \\to 2^+","fontSize":16,"color":"#2563eb"},
+  {"id":"lbl-point","type":"latex","x":680,"y":370,"tex":"c = 2","fontSize":16,"color":"#dc2626"},
+  {"id":"title","type":"latex","x":550,"y":200,"tex":"\\lim_{x \\to 2} f(x)","fontSize":24,"displayMode":true}
+]}
+\`\`\`
+**Why these choices**: Number line centered vertically. Arrows at y=310 (above line at y=350) so they don't overlap the line. Left arrow points right toward c, right arrow points left toward c. Labels above arrows with 30px clearance. The open ring around the dot indicates the limit point.
+**Variations**: For one-sided limits, use only one arrow. For limits at infinity, use a longer number line with arrows extending from the edges.
+
+### Recipe 5: Vector operations (A + B = C)
+Show two vectors tip-to-tail with their resultant sum vector.
+\`\`\`json
+{"batch_id":"vec-ops","elements":[
+  {"id":"v-a","type":"vector_arrow","x":250,"y":480,"dx":200,"dy":-180,"label":"\\vec{A}","color":"#2563eb"},
+  {"id":"v-b","type":"vector_arrow","x":450,"y":300,"dx":250,"dy":50,"label":"\\vec{B}","color":"#dc2626"},
+  {"id":"v-sum","type":"vector_arrow","x":250,"y":480,"dx":450,"dy":-130,"label":"\\vec{A}+\\vec{B}","color":"#16a34a"},
+  {"id":"dashed-ax","type":"line","from":{"x":250,"y":480},"to":{"x":450,"y":480},"color":"#93c5fd","stroke_width":1},
+  {"id":"dashed-ay","type":"line","from":{"x":450,"y":480},"to":{"x":450,"y":300},"color":"#93c5fd","stroke_width":1},
+  {"id":"lbl-eq","type":"latex","x":770,"y":300,"tex":"\\vec{C} = \\vec{A} + \\vec{B}","fontSize":22,"displayMode":true},
+  {"id":"lbl-comp","type":"latex","x":770,"y":360,"tex":"C_x = A_x + B_x","fontSize":16},
+  {"id":"lbl-comp2","type":"latex","x":770,"y":390,"tex":"C_y = A_y + B_y","fontSize":16}
+]}
+\`\`\`
+**Why these choices**: Vector A starts at (250,480), vector B starts at A's head (450,300) — this is tip-to-tail addition. Resultant C goes from A's tail to B's head. Dashed component lines show the x and y decomposition. Equations placed to the right (x=770) with 30px vertical spacing so nothing overlaps.
+**Variations**: For subtraction A - B, reverse B's direction. For scalar multiplication, scale dx/dy by the scalar. For cross product, show perpendicular result in 3D perspective.
+
+### Recipe 6: Geometric proof (triangle + inscribed circle)
+Show a triangle with labeled angles and an inscribed circle.
+\`\`\`json
+{"batch_id":"geo-proof","elements":[
+  {"id":"tri-ab","type":"line","from":{"x":400,"y":500},"to":{"x":700,"y":150},"color":"#2563eb","stroke_width":2},
+  {"id":"tri-bc","type":"line","from":{"x":700,"y":150},"to":{"x":1000,"y":500},"color":"#2563eb","stroke_width":2},
+  {"id":"tri-ca","type":"line","from":{"x":1000,"y":500},"to":{"x":400,"y":500},"color":"#2563eb","stroke_width":2},
+  {"id":"incircle","type":"ellipse","cx":700,"cy":400,"rx":95,"ry":95,"color":"#dc2626","stroke_width":2},
+  {"id":"radius","type":"line","from":{"x":700,"y":400},"to":{"x":700,"y":495},"color":"#dc2626","stroke_width":1},
+  {"id":"center-dot","type":"ellipse","cx":700,"cy":400,"rx":4,"ry":4,"color":"#dc2626"},
+  {"id":"lbl-r","type":"latex","x":710,"y":440,"tex":"r","fontSize":16,"color":"#dc2626"},
+  {"id":"angle-a","type":"angle_arc","x":400,"y":500,"radius":40,"startAngle":-63,"endAngle":0,"label":"α"},
+  {"id":"angle-b","type":"angle_arc","x":700,"y":150,"radius":40,"startAngle":117,"endAngle":243,"label":"β"},
+  {"id":"angle-c","type":"angle_arc","x":1000,"y":500,"radius":40,"startAngle":180,"endAngle":243,"label":"γ"},
+  {"id":"lbl-A","type":"text","x":380,"y":520,"text":"A","size":18,"color":"#2563eb"},
+  {"id":"lbl-B","type":"text","x":695,"y":125,"text":"B","size":18,"color":"#2563eb"},
+  {"id":"lbl-C","type":"text","x":1010,"y":520,"text":"C","size":18,"color":"#2563eb"},
+  {"id":"lbl-I","type":"text","x":710,"y":390,"text":"I","size":14,"color":"#dc2626"},
+  {"id":"eq","type":"latex","x":150,"y":200,"tex":"\\alpha + \\beta + \\gamma = 180°","fontSize":20,"displayMode":true}
+]}
+\`\`\`
+**Why these choices**: Triangle vertices at A(400,500), B(700,150), C(1000,500) — isosceles shape that's easy to read. Incircle centered at incenter (700,400) with radius 95px. Vertex labels placed just outside each corner (offset 15-20px). angle_arc elements mark each interior angle. The angle sum equation is placed to the left for reference.
+**Variations**: For right triangles, place the right angle at C with angle_arc showing the square corner. For similar triangles, draw two scaled copies side by side. For the Pythagorean theorem, add squares on each side.
+
+## NEVER DO THESE — common mistakes with examples
+
+### ❌ Mistake 1: Elements outside safe canvas area
+BAD — element will be clipped or invisible:
+\`\`\`json
+{"id":"off-screen","type":"text","x":1400,"y":720,"text":"Lost in space","size":16}
+\`\`\`
+Why wrong: x=1400 and y=720 are outside the safe area [50,1350] × [50,650]. The text will be off-canvas.
+FIX: Keep all coordinates within x ∈ [50, 1350], y ∈ [50, 650].
+
+### ❌ Mistake 2: function_curve without matching axes
+BAD — curve floats with no reference frame:
+\`\`\`json
+{"batch_id":"orphan-curve","elements":[
+  {"id":"curve","type":"function_curve","x":400,"y":100,"width":600,"height":400,"xRange":[-5,5],"yRange":[-1,25],"expression":"x^2","color":"#2563eb"}
+]}
+\`\`\`
+Why wrong: No cartesian_axes element. The curve renders but the viewer has no axis ticks, labels, or grid to interpret values.
+FIX: Always pair function_curve with cartesian_axes at the **same** x, y, width, height, xRange, yRange.
+
+### ❌ Mistake 3: Using raw LaTeX strings instead of latex elements
+BAD — raw TeX in a text element won't render:
+\`\`\`json
+{"id":"bad-eq","type":"text","x":400,"y":300,"text":"\\frac{d}{dx} x^2 = 2x","size":18}
+\`\`\`
+Why wrong: type="text" renders plain text. \\frac will show as literal characters, not a fraction.
+FIX: Use type="latex" with the "tex" field:
+\`\`\`json
+{"id":"good-eq","type":"latex","x":400,"y":300,"tex":"\\frac{d}{dx} x^2 = 2x","fontSize":18}
+\`\`\`
+
+### ❌ Mistake 4: Overlapping text elements at the same position
+BAD — two labels stacked on top of each other:
+\`\`\`json
+{"id":"lbl1","type":"text","x":500,"y":300,"text":"Label A","size":16},
+{"id":"lbl2","type":"text","x":500,"y":300,"text":"Label B","size":16}
+\`\`\`
+Why wrong: Both labels render at exactly (500,300) — they overlap and become unreadable.
+FIX: Offset vertically by ≥ 22px: place Label A at y=300, Label B at y=322.
+
+### ❌ Mistake 5: Arrows so short only the arrowhead shows
+BAD — arrow is 10px long, just a tiny triangle:
+\`\`\`json
+{"id":"tiny","type":"arrow","from":{"x":500,"y":300},"to":{"x":505,"y":303}}
+\`\`\`
+Why wrong: Distance is ~6px. The arrowhead alone is ~10px, so the arrow body is invisible.
+FIX: Ensure arrow length is ≥ 40px. For vector_arrow, ensure sqrt(dx²+dy²) ≥ 40.
+
+### ❌ Mistake 6: Mismatched ranges between axes and curve
+BAD — curve and axes show different coordinate spaces:
+\`\`\`json
+{"id":"axes","type":"cartesian_axes","x":400,"y":100,"width":600,"height":400,"xRange":[-5,5],"yRange":[-5,5],"xLabel":"x","yLabel":"y"},
+{"id":"curve","type":"function_curve","x":400,"y":100,"width":600,"height":400,"xRange":[-10,10],"yRange":[-10,10],"expression":"sin(x)"}
+\`\`\`
+Why wrong: Axes show [-5,5] but curve is plotted in [-10,10]. The curve will appear squished/shifted relative to the grid.
+FIX: xRange and yRange MUST be identical between paired cartesian_axes and function_curve elements.`;

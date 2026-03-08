@@ -181,5 +181,29 @@ export function computeElementBounds(
     };
   }
 
+  // circle_with_radius: center ± radius
+  if (el.type === 'circle_with_radius') {
+    if (!allFinite(el.cx, el.cy, el.r) || !isFinitePositive(el.r)) return null;
+    return {
+      minX: el.cx - el.r,
+      minY: el.cy - el.r,
+      maxX: el.cx + el.r,
+      maxY: el.cy + el.r,
+    };
+  }
+
+  // triangle_with_angles: bounding box of all vertices
+  if (el.type === 'triangle_with_angles') {
+    const xs = el.vertices.map((v) => v.x);
+    const ys = el.vertices.map((v) => v.y);
+    if (!allFinite(...xs, ...ys)) return null;
+    return {
+      minX: Math.min(...xs),
+      minY: Math.min(...ys),
+      maxX: Math.max(...xs),
+      maxY: Math.max(...ys),
+    };
+  }
+
   return null;
 }

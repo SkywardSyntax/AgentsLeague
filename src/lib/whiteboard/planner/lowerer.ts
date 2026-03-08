@@ -7,6 +7,8 @@ import type {
   FunctionCurveElement,
   AngleArcElement,
   IntegralRegionElement,
+  CircleWithRadiusElement,
+  TriangleWithAnglesElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -16,7 +18,7 @@ import { boundsOf } from './bounds';
 import { tickMarksForRange, computeArrowHead } from '../math-sampling';
 import { parseMathExpression } from '../graph-script';
 
-export const DEFAULT_MAX_LOWERED_ELEMENTS = 60;
+export const DEFAULT_MAX_LOWERED_ELEMENTS = 500;
 
 // ---------------------------------------------------------------------------
 // Shared coordinate mapping utilities
@@ -58,6 +60,8 @@ function drawOrderPriority(el: DrawElement): number {
     case 'angle_arc':
     case 'integral_region':
     case 'matrix_bracket':
+    case 'circle_with_radius':
+    case 'triangle_with_angles':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -345,7 +349,8 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
   const result: DrawElement[] = [];
   const { x, y, width, height, xRange, yRange } = el;
   const color = el.color ?? '#1f2a44';
-  const sw = el.stroke_width ?? 1.5;
+  // Axes are drawn thicker than function curves (2px vs 1.5px) for visual hierarchy
+  const sw = el.stroke_width ?? 2;
 
   const xSpan = xRange[1] - xRange[0];
   const ySpan = yRange[1] - yRange[0];
@@ -435,7 +440,7 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
     result.push({
       id: `${el.id}-xtlbl-${i}`,
       type: 'text' as const,
-      x: sx,
+      x: sx - 4,
       y: originY + TICK_HALF + 12,
       text: t.label,
       size: 10,
@@ -460,7 +465,7 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
     result.push({
       id: `${el.id}-ytlbl-${i}`,
       type: 'text' as const,
-      x: originX - TICK_HALF - 10,
+      x: originX - TICK_HALF - 18,
       y: sy,
       text: t.label,
       size: 10,
@@ -684,10 +689,214 @@ function expandVectorArrow(el: VectorArrowElement): DrawElement[] {
   return result;
 }
 
+function expandCircleWithRadius(el: CircleWithRadiusElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const { cx, cy, r, id } = el;
+  const color = el.color ?? '#1f2a44';
+  const showCenter = el.showCenter !== false;
+  const showRadius = el.showRadius !== false;
+  const radiusAngle = el.radiusAngle ?? Math.PI / 4;
+
+  // Main circle (as ellipse with rx = ry = r)
+  result.push({
+    id: `${id}-circle`,
+    type: 'ellipse' as const,
+    cx,
+    cy,
+    rx: r,
+    ry: r,
+    color,
+    stroke_width: el.stroke_width ?? 1.5,
+  });
+
+  // Center dot (small filled ellipse)
+  if (showCenter) {
+    result.push({
+      id: `${id}-center`,
+      type: 'ellipse' as const,
+      cx,
+      cy,
+      rx: 3,
+      ry: 3,
+      color,
+    });
+  }
+
+  // Radius line
+  if (showRadius) {
+    const rx = cx + r * Math.cos(radiusAngle);
+    const ry = cy - r * Math.sin(radiusAngle);
+    result.push({
+      id: `${id}-radius`,
+      type: 'line' as const,
+      from: { x: cx, y: cy },
+      to: { x: rx, y: ry },
+      color,
+      stroke_width: el.stroke_width ?? 1,
+      lineStyle: 'dashed' as const,
+    });
+
+    // Label at midpoint of radius
+    if (el.label) {
+      const mx = (cx + rx) / 2;
+      const my = (cy + ry) / 2;
+      const offsetX = 8 * Math.sin(radiusAngle);
+      const offsetY = 8 * Math.cos(radiusAngle);
+      result.push({
+        id: `${id}-label`,
+        type: 'text' as const,
+        x: mx + offsetX,
+        y: my + offsetY,
+        text: el.label,
+        size: 14,
+        color,
+      });
+    }
+  }
+
+  return result;
+}
+
+function expandTriangleWithAngles(el: TriangleWithAnglesElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const { vertices, id } = el;
+  const color = el.color ?? '#1f2a44';
+  const showAngles = el.showAngles !== false;
+  const showSides = el.showSides !== false;
+  const v = vertices;
+
+  // 3 sides: side 0 = v[0]→v[1], side 1 = v[1]→v[2], side 2 = v[2]→v[0]
+  const sides: [number, number][] = [[0, 1], [1, 2], [2, 0]];
+  for (let i = 0; i < 3; i++) {
+    const [a, b] = sides[i]!;
+    result.push({
+      id: `${id}-side-${i}`,
+      type: 'line' as const,
+      from: { x: v[a]!.x, y: v[a]!.y },
+      to: { x: v[b]!.x, y: v[b]!.y },
+      color,
+      stroke_width: el.stroke_width ?? 1.5,
+    });
+  }
+
+  // Centroid for outward offset direction
+  const centroidX = (v[0]!.x + v[1]!.x + v[2]!.x) / 3;
+  const centroidY = (v[0]!.y + v[1]!.y + v[2]!.y) / 3;
+
+  // Vertex labels (A, B, C or custom)
+  for (let i = 0; i < 3; i++) {
+    const vt = v[i]!;
+    const label = vt.label;
+    if (label) {
+      // Offset outward from centroid
+      const dx = vt.x - centroidX;
+      const dy = vt.y - centroidY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const offsetDist = 18;
+      result.push({
+        id: `${id}-vlabel-${i}`,
+        type: 'text' as const,
+        x: vt.x + (dx / dist) * offsetDist,
+        y: vt.y + (dy / dist) * offsetDist,
+        text: label,
+        size: 14,
+        color,
+      });
+    }
+  }
+
+  // Side labels (a, b, c)
+  if (showSides) {
+    const defaultSideLabels = ['a', 'b', 'c'];
+    for (let i = 0; i < 3; i++) {
+      const [a, b] = sides[i]!;
+      const label = el.sideLabels?.[i] ?? defaultSideLabels[i]!;
+      const mx = (v[a]!.x + v[b]!.x) / 2;
+      const my = (v[a]!.y + v[b]!.y) / 2;
+      // Offset away from centroid
+      const dx = mx - centroidX;
+      const dy = my - centroidY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const offsetDist = 16;
+      result.push({
+        id: `${id}-slabel-${i}`,
+        type: 'text' as const,
+        x: mx + (dx / dist) * offsetDist,
+        y: my + (dy / dist) * offsetDist,
+        text: label,
+        size: 13,
+        color,
+      });
+    }
+  }
+
+  // Angle arcs at each vertex
+  if (showAngles) {
+    const arcRadius = 20;
+    const arcSteps = 16;
+    const defaultAngleLabels = ['α', 'β', 'γ'];
+    // vertex order: angle at v[i] is formed by edges v[i]→v[prev] and v[i]→v[next]
+    for (let i = 0; i < 3; i++) {
+      const prev = (i + 2) % 3;
+      const next = (i + 1) % 3;
+      const vx = v[i]!.x;
+      const vy = v[i]!.y;
+      // Vectors from vertex to adjacent vertices
+      const dx1 = v[prev]!.x - vx;
+      const dy1 = v[prev]!.y - vy;
+      const dx2 = v[next]!.x - vx;
+      const dy2 = v[next]!.y - vy;
+      let angle1 = Math.atan2(dy1, dx1);
+      let angle2 = Math.atan2(dy2, dx2);
+      // Ensure we draw the interior arc (shorter arc)
+      let sweep = angle2 - angle1;
+      if (sweep < -Math.PI) sweep += 2 * Math.PI;
+      if (sweep > Math.PI) sweep -= 2 * Math.PI;
+      const startAngle = sweep > 0 ? angle1 : angle2;
+      const endAngle = sweep > 0 ? angle2 : angle1;
+
+      // Build arc polyline as short line segments
+      let aStart = startAngle;
+      let aSweep = endAngle - startAngle;
+      if (aSweep < 0) aSweep += 2 * Math.PI;
+
+      for (let s = 0; s < arcSteps; s++) {
+        const t0 = aStart + (aSweep * s) / arcSteps;
+        const t1 = aStart + (aSweep * (s + 1)) / arcSteps;
+        result.push({
+          id: `${id}-arc-${i}-${s}`,
+          type: 'line' as const,
+          from: { x: vx + arcRadius * Math.cos(t0), y: vy + arcRadius * Math.sin(t0) },
+          to: { x: vx + arcRadius * Math.cos(t1), y: vy + arcRadius * Math.sin(t1) },
+          color,
+          stroke_width: 1,
+        });
+      }
+
+      // Angle label inside the arc
+      const aLabel = el.angleLabels?.[i] ?? defaultAngleLabels[i]!;
+      const midAngle = aStart + aSweep / 2;
+      const labelRadius = arcRadius + 12;
+      result.push({
+        id: `${id}-alabel-${i}`,
+        type: 'text' as const,
+        x: vx + labelRadius * Math.cos(midAngle),
+        y: vy + labelRadius * Math.sin(midAngle),
+        text: aLabel,
+        size: 12,
+        color,
+      });
+    }
+  }
+
+  return result;
+}
+
 /**
  * Expand composite math primitives into basic DrawElements.
  * angle_arc, integral_region, function_curve, cartesian_axes,
- * number_line, and vector_arrow are decomposed into line + arrow + text
+ * number_line, vector_arrow, circle_with_radius, and triangle_with_angles
+ * are decomposed into line + arrow + text + ellipse
  * elements so the rest of the pipeline can handle them uniformly.
  */
 function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
@@ -705,6 +914,10 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
       result.push(...expandNumberLine(el));
     } else if (el.type === 'vector_arrow') {
       result.push(...expandVectorArrow(el));
+    } else if (el.type === 'circle_with_radius') {
+      result.push(...expandCircleWithRadius(el));
+    } else if (el.type === 'triangle_with_angles') {
+      result.push(...expandTriangleWithAngles(el));
     } else {
       result.push(el);
     }
@@ -718,7 +931,7 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement,
 ): DrawElement[] {
   switch (el.type) {
     case 'cartesian_axes':
@@ -733,6 +946,10 @@ export function lowerMathPrimitive(
       return expandAngleArc(el);
     case 'integral_region':
       return expandIntegralRegion(el);
+    case 'circle_with_radius':
+      return expandCircleWithRadius(el);
+    case 'triangle_with_angles':
+      return expandTriangleWithAngles(el);
   }
 }
 

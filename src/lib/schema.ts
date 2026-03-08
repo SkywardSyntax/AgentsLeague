@@ -151,6 +151,34 @@ const IntegralRegionSchema = BaseElementSchema.extend({
   style: StylePresetSchema.optional(),
 });
 
+const CircleWithRadiusSchema = BaseElementSchema.extend({
+  type: z.literal('circle_with_radius'),
+  cx: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  cy: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  r: z.number().positive().max(COORD_MAX),
+  label: z.string().max(100).optional(),
+  showCenter: z.boolean().optional(),
+  showRadius: z.boolean().optional(),
+  radiusAngle: z.number().finite().optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const TriangleVertexSchema = z.object({
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  label: z.string().max(100).optional(),
+});
+
+const TriangleWithAnglesSchema = BaseElementSchema.extend({
+  type: z.literal('triangle_with_angles'),
+  vertices: z.tuple([TriangleVertexSchema, TriangleVertexSchema, TriangleVertexSchema]),
+  showAngles: z.boolean().optional(),
+  showSides: z.boolean().optional(),
+  sideLabels: z.tuple([z.string().max(100).optional(), z.string().max(100).optional(), z.string().max(100).optional()]).optional(),
+  angleLabels: z.tuple([z.string().max(100).optional(), z.string().max(100).optional(), z.string().max(100).optional()]).optional(),
+  style: StylePresetSchema.optional(),
+});
+
 export const DrawElementSchema = z.discriminatedUnion('type', [
   RectSchema,
   EllipseSchema,
@@ -165,6 +193,8 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
   MatrixBracketSchema,
   AngleArcSchema,
   IntegralRegionSchema,
+  CircleWithRadiusSchema,
+  TriangleWithAnglesSchema,
 ]);
 
 const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optional();
@@ -762,6 +792,79 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // circle_with_radius: pass through with validation
+    if (type === 'circle_with_radius') {
+      const cx = asNumber(raw.cx) ?? asNumber(raw.x);
+      const cy = asNumber(raw.cy) ?? asNumber(raw.y);
+      const r = asNumber(raw.r) ?? asNumber(raw.radius);
+      if (cx == null || cy == null || r == null) {
+        warnings.push(`CircleWithRadius ${id} has invalid coordinates or radius`);
+        continue;
+      }
+      const label = asString(raw.label) ?? undefined;
+      const showCenter = typeof raw.showCenter === 'boolean' ? raw.showCenter : undefined;
+      const showRadius = typeof raw.showRadius === 'boolean' ? raw.showRadius : undefined;
+      const radiusAngle = asNumber(raw.radiusAngle) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        cx,
+        cy,
+        r: Math.max(1, Math.abs(r)),
+        ...(label ? { label } : {}),
+        ...(showCenter != null ? { showCenter } : {}),
+        ...(showRadius != null ? { showRadius } : {}),
+        ...(radiusAngle != null ? { radiusAngle } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // triangle_with_angles: pass through with validation
+    if (type === 'triangle_with_angles') {
+      const rawVerts = Array.isArray(raw.vertices) ? raw.vertices : null;
+      if (!rawVerts || rawVerts.length !== 3) {
+        warnings.push(`TriangleWithAngles ${id} needs exactly 3 vertices`);
+        continue;
+      }
+      const vertices: Array<{ x: number; y: number; label?: string }> = [];
+      let verticesValid = true;
+      for (const rv of rawVerts) {
+        const rec = asRecord(rv);
+        if (!rec) { verticesValid = false; break; }
+        const vx = asNumber(rec.x);
+        const vy = asNumber(rec.y);
+        if (vx == null || vy == null) { verticesValid = false; break; }
+        const vLabel = asString(rec.label) ?? undefined;
+        vertices.push({ x: vx, y: vy, ...(vLabel ? { label: vLabel } : {}) });
+      }
+      if (!verticesValid || vertices.length !== 3) {
+        warnings.push(`TriangleWithAngles ${id} has invalid vertex coordinates`);
+        continue;
+      }
+      const showAngles = typeof raw.showAngles === 'boolean' ? raw.showAngles : undefined;
+      const showSides = typeof raw.showSides === 'boolean' ? raw.showSides : undefined;
+      const rawSideLabels = Array.isArray(raw.sideLabels) ? raw.sideLabels : undefined;
+      const rawAngleLabels = Array.isArray(raw.angleLabels) ? raw.angleLabels : undefined;
+      const sideLabels = rawSideLabels ? [asString(rawSideLabels[0]) ?? undefined, asString(rawSideLabels[1]) ?? undefined, asString(rawSideLabels[2]) ?? undefined] as [string?, string?, string?] : undefined;
+      const angleLabels = rawAngleLabels ? [asString(rawAngleLabels[0]) ?? undefined, asString(rawAngleLabels[1]) ?? undefined, asString(rawAngleLabels[2]) ?? undefined] as [string?, string?, string?] : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        vertices: vertices as [typeof vertices[0], typeof vertices[1], typeof vertices[2]],
+        ...(showAngles != null ? { showAngles } : {}),
+        ...(showSides != null ? { showSides } : {}),
+        ...(sideLabels ? { sideLabels } : {}),
+        ...(angleLabels ? { angleLabels } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     warnings.push(`Unsupported element type at ${idx}`);
   }
 
@@ -785,7 +888,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'angle_arc', 'integral_region'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption'] as const;
 

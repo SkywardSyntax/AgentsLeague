@@ -196,6 +196,34 @@ export interface IntegralRegionElement extends BaseDrawElement {
   style?: StylePreset;
 }
 
+export interface CircleWithRadiusElement extends BaseDrawElement {
+  type: 'circle_with_radius';
+  cx: number;
+  cy: number;
+  r: number;
+  label?: string;
+  showCenter?: boolean;
+  showRadius?: boolean;
+  radiusAngle?: number;
+  style?: StylePreset;
+  color?: string;
+}
+
+export interface TriangleWithAnglesElement extends BaseDrawElement {
+  type: 'triangle_with_angles';
+  vertices: [
+    { x: number; y: number; label?: string },
+    { x: number; y: number; label?: string },
+    { x: number; y: number; label?: string },
+  ];
+  showAngles?: boolean;
+  showSides?: boolean;
+  sideLabels?: [string?, string?, string?];
+  angleLabels?: [string?, string?, string?];
+  style?: StylePreset;
+  color?: string;
+}
+
 export type DrawElement =
   | RectElement
   | EllipseElement
@@ -210,7 +238,9 @@ export type DrawElement =
   | FunctionCurveElement
   | MatrixBracketElement
   | AngleArcElement
-  | IntegralRegionElement;
+  | IntegralRegionElement
+  | CircleWithRadiusElement
+  | TriangleWithAnglesElement;
 
 /**
  * Exhaustive-check helper for the DrawElement discriminated union.
