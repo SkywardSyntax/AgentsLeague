@@ -56,6 +56,7 @@ export interface ArrowElement extends BaseDrawElement {
   type: 'arrow';
   from: Point;
   to: Point;
+  label?: string;
 }
 
 export interface TextElement extends BaseDrawElement {
@@ -64,6 +65,7 @@ export interface TextElement extends BaseDrawElement {
   y: number;
   text: string;
   size?: number;
+  align?: 'left' | 'center' | 'right';
 }
 
 export interface LatexElement extends BaseDrawElement {
@@ -131,11 +133,33 @@ export interface MatrixBracketElement extends BaseDrawElement {
   type: 'matrix_bracket';
   x: number;
   y: number;
-  /** Cell content (LaTeX or text), indexed as rows[row][col] */
-  rows: string[][];
+  /** Cell content — 2-D array or semicolon-separated string ("1 0; 0 1") */
+  rows: string[][] | string;
   bracketStyle: '[]' | '()' | '||' | '{}';
   cellWidth?: number;
   cellHeight?: number;
+  /** Column index where an augmented-matrix divider is drawn (e.g. 2 for [A|b]) */
+  augmentedAt?: number;
+  style?: StylePreset;
+}
+
+export interface LinearTransformElement extends BaseDrawElement {
+  type: 'linear_transform';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** 2×2 transformation matrix [[a,b],[c,d]] */
+  matrix: [[number, number], [number, number]];
+  /** Extra vectors to show transformed (in math coords) */
+  vectors?: Array<{ x: number; y: number; label?: string; color?: string }>;
+  /** Show original & transformed basis vectors (default true) */
+  showBasisVectors?: boolean;
+  /** Show original grid (default true) */
+  showOriginalGrid?: boolean;
+  /** Grid range in math units (default 3 → shows -3 to 3) */
+  gridRange?: number;
+  label?: string;
   style?: StylePreset;
 }
 
@@ -232,15 +256,66 @@ export interface IntegralRegionElement extends BaseDrawElement {
   xRange: [number, number];
   /** Y-axis scaling range */
   yRange: [number, number];
-  /** Pre-sampled boundary points (top curve) */
-  topPoints: Array<{ x: number; y: number }>;
+  /** Pre-sampled boundary points (top curve) — optional when expression is provided */
+  topPoints?: Array<{ x: number; y: number }>;
   /** Bottom curve points; if absent, y=0 baseline is used */
   bottomPoints?: Array<{ x: number; y: number }>;
+  /** Safe math expression for the top boundary, e.g. "x^2" */
+  expression?: string;
   fillColor?: string;
+  /** Opacity for the shaded fill region (0–1, default 0.3) */
+  fillOpacity?: number;
   strokeColor?: string;
   /** Label text, e.g. "∫f(x)dx" */
   label?: string;
+  /** Labels for the bounds; defaults to "a" / "b" */
+  aLabel?: string;
+  bLabel?: string;
   style?: StylePreset;
+}
+
+export interface RiemannSumElement extends BaseDrawElement {
+  type: 'riemann_sum';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  xRange: [number, number];
+  yRange: [number, number];
+  /** f(x) expression, e.g. "x^2" */
+  expression: string;
+  /** Number of rectangles (default 5) */
+  n?: number;
+  /** Sampling method (default 'left') */
+  method?: 'left' | 'right' | 'midpoint';
+  /** Also draw f(x) curve on top (default true) */
+  showFunction?: boolean;
+  /** Draw cartesian axes (default true) */
+  showAxes?: boolean;
+  style?: StylePreset;
+  color?: string;
+}
+
+export interface TangentLineElement extends BaseDrawElement {
+  type: 'tangent_line';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  xRange: [number, number];
+  yRange: [number, number];
+  /** f(x) expression, e.g. "x^2" */
+  expression: string;
+  /** x value where the tangent is drawn */
+  atX: number;
+  /** Visible length of tangent in math units (default 2) */
+  length?: number;
+  /** Show the point of tangency (default true) */
+  showPoint?: boolean;
+  /** Label, e.g. "f'(2) = 4" */
+  label?: string;
+  style?: StylePreset;
+  color?: string;
 }
 
 export interface CircleWithRadiusElement extends BaseDrawElement {
@@ -271,6 +346,87 @@ export interface TriangleWithAnglesElement extends BaseDrawElement {
   color?: string;
 }
 
+export interface HistogramElement extends BaseDrawElement {
+  type: 'histogram';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  bins: Array<{ label: string; value: number; color?: string }>;
+  showValues?: boolean;
+  showAxes?: boolean;
+  yMax?: number;
+  xLabel?: string;
+  yLabel?: string;
+  style?: StylePreset;
+  color?: string;
+}
+
+export interface NormalDistributionCurveElement extends BaseDrawElement {
+  type: 'normal_distribution';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  mu: number;
+  sigma: number;
+  shadeFrom?: number;
+  shadeTo?: number;
+  shadeColor?: string;
+  showMeanLine?: boolean;
+  showSigmaLines?: boolean;
+  showLabels?: boolean;
+  style?: StylePreset;
+  color?: string;
+}
+
+export interface HistogramElement extends BaseDrawElement {
+  type: 'histogram';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  bins: Array<{ label: string; value: number; color?: string }>;
+  /** Maximum y-axis value; defaults to 1.2× the largest bin value */
+  yMax?: number;
+  /** Show value labels above each bar (default true) */
+  showValues?: boolean;
+  /** Show x/y axes (default true) */
+  showAxes?: boolean;
+  /** X-axis label */
+  xLabel?: string;
+  /** Y-axis label */
+  yLabel?: string;
+  label?: string;
+  style?: StylePreset;
+}
+
+export interface NormalDistributionCurveElement extends BaseDrawElement {
+  type: 'normal_distribution';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Mean (μ) */
+  mu: number;
+  /** Standard deviation (σ) */
+  sigma: number;
+  /** Shade the area under the curve from this x value */
+  shadeFrom?: number;
+  /** Shade the area under the curve to this x value */
+  shadeTo?: number;
+  /** Color for the shaded region */
+  shadeColor?: string;
+  /** Show the vertical mean line (default true) */
+  showMeanLine?: boolean;
+  /** Show vertical σ lines at ±1σ, ±2σ */
+  showSigmaLines?: boolean;
+  /** Show μ and σ labels on the x-axis */
+  showLabels?: boolean;
+  label?: string;
+  style?: StylePreset;
+}
+
 export type DrawElement =
   | RectElement
   | EllipseElement
@@ -284,12 +440,17 @@ export type DrawElement =
   | VectorArrowElement
   | FunctionCurveElement
   | MatrixBracketElement
+  | LinearTransformElement
   | AngleArcElement
   | IntegralRegionElement
   | CircleWithRadiusElement
   | TriangleWithAnglesElement
   | ParametricCurveElement
-  | PolarPlotElement;
+  | PolarPlotElement
+  | RiemannSumElement
+  | TangentLineElement
+  | HistogramElement
+  | NormalDistributionCurveElement;
 
 /**
  * Exhaustive-check helper for the DrawElement discriminated union.
@@ -316,7 +477,8 @@ export type SemanticTemplate =
   | 'equation_derivation_vertical'
   | 'jacobian_mapping_2panel'
   | 'freeform_semantic'
-  | 'graph_diagram';
+  | 'graph_diagram'
+  | 'probability_tree';
 
 export type RegionHint = 'left' | 'right' | 'center' | 'bottom' | 'auto';
 
@@ -404,13 +566,30 @@ export interface SemanticGraphEdgeBlock {
   color?: string;
 }
 
+export interface SemanticProbabilityTreeRootBlock {
+  id: string;
+  kind: 'root';
+  label: string;
+}
+
+export interface SemanticProbabilityTreeBranchBlock {
+  id: string;
+  kind: 'branch';
+  from: string;
+  to: string;
+  label?: string;
+  probability?: number;
+}
+
 export type SemanticBlock =
   | SemanticEquationStackBlock
   | SemanticDiagramPanelBlock
   | SemanticCaptionBlock
   | SemanticAnnotationBlock
   | SemanticGraphNodeBlock
-  | SemanticGraphEdgeBlock;
+  | SemanticGraphEdgeBlock
+  | SemanticProbabilityTreeRootBlock
+  | SemanticProbabilityTreeBranchBlock;
 
 export interface SemanticRelation {
   id: string;

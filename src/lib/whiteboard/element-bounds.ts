@@ -123,15 +123,23 @@ export function computeElementBounds(
   // matrix_bracket: compute bounds from grid dimensions and bracket insets
   if (el.type === 'matrix_bracket') {
     if (!allFinite(el.x, el.y)) return null;
-    const numRows = el.rows.length;
-    const numCols = Math.max(...el.rows.map((r) => r.length));
+    const parsedRows: string[][] = typeof el.rows === 'string'
+      ? el.rows.split(';').map((r: string) => r.trim()).filter((r: string) => r.length > 0).map((r: string) => r.split(/\s+/))
+      : el.rows;
+    const numRows = parsedRows.length;
+    const numCols = Math.max(...parsedRows.map((r: string[]) => r.length));
     const cw = el.cellWidth ?? 60;
     const ch = el.cellHeight ?? 32;
     const bracketInset = 12;
     const padX = 8;
     const totalW = bracketInset + padX + numCols * cw + padX + bracketInset;
-    const totalH = numRows * ch + 8; // +8 for top/bottom bracket padding
     return { minX: el.x, minY: el.y - 4, maxX: el.x + totalW, maxY: el.y + numRows * ch + 4 };
+  }
+
+  // linear_transform: bounding box is the canvas rect
+  if (el.type === 'linear_transform') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
   }
 
   // angle_arc: bounding box around the vertex ± arc radius (+ label margin)
@@ -226,6 +234,18 @@ export function computeElementBounds(
       maxX: Math.max(...xs),
       maxY: Math.max(...ys),
     };
+  }
+
+  // histogram: bounding box is the plot area
+  if (el.type === 'histogram') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
+  }
+
+  // normal_distribution: bounding box is the plot area
+  if (el.type === 'normal_distribution') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
   }
 
   return null;

@@ -115,10 +115,37 @@ const MatrixBracketSchema = BaseElementSchema.extend({
   type: z.literal('matrix_bracket'),
   x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
   y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
-  rows: z.array(z.array(z.string().max(200)).min(1).max(20)).min(1).max(20),
+  rows: z.union([
+    z.array(z.array(z.string().max(200)).min(1).max(20)).min(1).max(20),
+    z.string().max(2000),
+  ]),
   bracketStyle: z.enum(['[]', '()', '||', '{}']),
   cellWidth: z.number().positive().max(COORD_MAX).optional(),
   cellHeight: z.number().positive().max(COORD_MAX).optional(),
+  augmentedAt: z.number().int().min(1).max(19).optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const LinearTransformSchema = BaseElementSchema.extend({
+  type: z.literal('linear_transform'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX),
+  height: z.number().positive().max(COORD_MAX),
+  matrix: z.tuple([
+    z.tuple([z.number().finite(), z.number().finite()]),
+    z.tuple([z.number().finite(), z.number().finite()]),
+  ]),
+  vectors: z.array(z.object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    label: z.string().max(100).optional(),
+    color: z.string().max(30).regex(COLOR_REGEX).optional(),
+  })).max(20).optional(),
+  showBasisVectors: z.boolean().optional(),
+  showOriginalGrid: z.boolean().optional(),
+  gridRange: z.number().positive().max(20).optional(),
+  label: z.string().max(200).optional(),
   style: StylePresetSchema.optional(),
 });
 
@@ -179,6 +206,44 @@ const TriangleWithAnglesSchema = BaseElementSchema.extend({
   style: StylePresetSchema.optional(),
 });
 
+const HistogramBinSchema = z.object({
+  label: z.string().max(100),
+  value: z.number().finite(),
+  color: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+});
+
+const HistogramSchema = BaseElementSchema.extend({
+  type: z.literal('histogram'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX),
+  height: z.number().positive().max(COORD_MAX),
+  bins: z.array(HistogramBinSchema).min(1).max(100),
+  showValues: z.boolean().optional(),
+  showAxes: z.boolean().optional(),
+  yMax: z.number().finite().positive().optional(),
+  xLabel: z.string().max(200).optional(),
+  yLabel: z.string().max(200).optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const NormalDistributionSchema = BaseElementSchema.extend({
+  type: z.literal('normal_distribution'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX),
+  height: z.number().positive().max(COORD_MAX),
+  mu: z.number().finite(),
+  sigma: z.number().finite().positive(),
+  shadeFrom: z.number().finite().optional(),
+  shadeTo: z.number().finite().optional(),
+  shadeColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  showMeanLine: z.boolean().optional(),
+  showSigmaLines: z.boolean().optional(),
+  showLabels: z.boolean().optional(),
+  style: StylePresetSchema.optional(),
+});
+
 export const DrawElementSchema = z.discriminatedUnion('type', [
   RectSchema,
   EllipseSchema,
@@ -191,10 +256,13 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
   NumberLineSchema,
   VectorArrowSchema,
   MatrixBracketSchema,
+  LinearTransformSchema,
   AngleArcSchema,
   IntegralRegionSchema,
   CircleWithRadiusSchema,
   TriangleWithAnglesSchema,
+  HistogramSchema,
+  NormalDistributionSchema,
 ]);
 
 const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optional();
@@ -380,7 +448,7 @@ const SemanticRelationSchema = z.object({
 export const SemanticBatchSchema = z.object({
   batch_id: z.string().min(1).max(64),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical']).optional(),
-  template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic']),
+  template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic', 'probability_tree']),
   blocks: z.array(SemanticBlockSchema).min(1).max(50),
   relations: z.array(SemanticRelationSchema).max(100).optional(),
   intent: z.enum(['teach', 'derive', 'compare', 'summarize']).optional(),
@@ -422,6 +490,7 @@ const SEMANTIC_TEMPLATES = [
   'equation_derivation_vertical',
   'jacobian_mapping_2panel',
   'freeform_semantic',
+  'probability_tree',
 ] as const;
 
 const SemanticBatchRefSchema = z.object({
@@ -511,7 +580,7 @@ import { clamp } from '@/lib/whiteboard/geometry';
 
 export const STYLE_PRESETS = ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical'] as const;
 export const LINE_STYLES = ['solid', 'dashed', 'dotted'] as const;
-export const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic'] as const;
+export const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic', 'probability_tree'] as const;
 export const INTENTS = ['teach', 'derive', 'compare', 'summarize'] as const;
 export const EQUATION_ROLES = ['step', 'result', 'note'] as const;
 export const EQUATION_ALIGN = ['left', 'center'] as const;
@@ -947,6 +1016,192 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // riemann_sum: pass through with validation
+    if (type === 'riemann_sum') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      const expression = asString(raw.expression);
+      if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange || !expression) {
+        warnings.push(`RiemannSum ${id} has invalid coordinates, ranges, or expression`);
+        continue;
+      }
+      const xr0 = asNumber(rawXRange[0]);
+      const xr1 = asNumber(rawXRange[1]);
+      const yr0 = asNumber(rawYRange[0]);
+      const yr1 = asNumber(rawYRange[1]);
+      if (xr0 == null || xr1 == null || yr0 == null || yr1 == null) {
+        warnings.push(`RiemannSum ${id} has invalid range values`);
+        continue;
+      }
+      const n = asNumber(raw.n) ?? undefined;
+      const method = (raw.method === 'left' || raw.method === 'right' || raw.method === 'midpoint') ? raw.method : undefined;
+      const showFunction = typeof raw.showFunction === 'boolean' ? raw.showFunction : undefined;
+      const showAxes = typeof raw.showAxes === 'boolean' ? raw.showAxes : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        xRange: [xr0, xr1] as [number, number],
+        yRange: [yr0, yr1] as [number, number],
+        expression,
+        ...(n != null ? { n } : {}),
+        ...(method ? { method } : {}),
+        ...(showFunction != null ? { showFunction } : {}),
+        ...(showAxes != null ? { showAxes } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // tangent_line: pass through with validation
+    if (type === 'tangent_line') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      const expression = asString(raw.expression);
+      const atX = asNumber(raw.atX);
+      if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange || !expression || atX == null) {
+        warnings.push(`TangentLine ${id} has invalid coordinates, ranges, expression, or atX`);
+        continue;
+      }
+      const xr0 = asNumber(rawXRange[0]);
+      const xr1 = asNumber(rawXRange[1]);
+      const yr0 = asNumber(rawYRange[0]);
+      const yr1 = asNumber(rawYRange[1]);
+      if (xr0 == null || xr1 == null || yr0 == null || yr1 == null) {
+        warnings.push(`TangentLine ${id} has invalid range values`);
+        continue;
+      }
+      const length = asNumber(raw.length) ?? undefined;
+      const showPoint = typeof raw.showPoint === 'boolean' ? raw.showPoint : undefined;
+      const label = asString(raw.label) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        xRange: [xr0, xr1] as [number, number],
+        yRange: [yr0, yr1] as [number, number],
+        expression,
+        atX,
+        ...(length != null ? { length } : {}),
+        ...(showPoint != null ? { showPoint } : {}),
+        ...(label ? { label } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // histogram: pass through with validation (lowered later)
+    if (type === 'histogram') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      if (x == null || y == null || width == null || height == null) {
+        warnings.push(`Histogram ${id} has invalid coordinates`);
+        continue;
+      }
+      const rawBins = Array.isArray(raw.bins) ? raw.bins : null;
+      if (!rawBins || rawBins.length === 0) {
+        warnings.push(`Histogram ${id} needs at least 1 bin`);
+        continue;
+      }
+      const bins: Array<{ label: string; value: number; color?: string }> = [];
+      for (const rb of rawBins) {
+        const rec2 = asRecord(rb);
+        if (!rec2) continue;
+        const label2 = asString(rec2.label);
+        const value = asNumber(rec2.value);
+        if (!label2 || value == null) continue;
+        const binColor = asString(rec2.color) ?? undefined;
+        bins.push({ label: label2, value, ...(binColor ? { color: binColor } : {}) });
+      }
+      if (bins.length === 0) {
+        warnings.push(`Histogram ${id} has no valid bins`);
+        continue;
+      }
+      const showValues = typeof raw.showValues === 'boolean' ? raw.showValues : undefined;
+      const showAxes = typeof raw.showAxes === 'boolean' ? raw.showAxes : undefined;
+      const yMax = asNumber(raw.yMax) ?? undefined;
+      const xLabel = asString(raw.xLabel) ?? undefined;
+      const yLabel = asString(raw.yLabel) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        bins,
+        ...(showValues != null ? { showValues } : {}),
+        ...(showAxes != null ? { showAxes } : {}),
+        ...(yMax != null ? { yMax } : {}),
+        ...(xLabel ? { xLabel } : {}),
+        ...(yLabel ? { yLabel } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // normal_distribution: pass through with validation (lowered later)
+    if (type === 'normal_distribution') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const mu = asNumber(raw.mu);
+      const sigma = asNumber(raw.sigma);
+      if (x == null || y == null || width == null || height == null || mu == null || sigma == null || sigma <= 0) {
+        warnings.push(`NormalDistribution ${id} has invalid coordinates or parameters`);
+        continue;
+      }
+      const shadeFrom = asNumber(raw.shadeFrom) ?? undefined;
+      const shadeTo = asNumber(raw.shadeTo) ?? undefined;
+      const shadeColor = asString(raw.shadeColor) ?? undefined;
+      const showMeanLine = typeof raw.showMeanLine === 'boolean' ? raw.showMeanLine : undefined;
+      const showSigmaLines = typeof raw.showSigmaLines === 'boolean' ? raw.showSigmaLines : undefined;
+      const showLabels = typeof raw.showLabels === 'boolean' ? raw.showLabels : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        mu,
+        sigma,
+        ...(shadeFrom != null ? { shadeFrom } : {}),
+        ...(shadeTo != null ? { shadeTo } : {}),
+        ...(shadeColor ? { shadeColor } : {}),
+        ...(showMeanLine != null ? { showMeanLine } : {}),
+        ...(showSigmaLines != null ? { showSigmaLines } : {}),
+        ...(showLabels != null ? { showLabels } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     warnings.push(`Unsupported element type at ${idx}`);
   }
 
@@ -970,9 +1225,9 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'histogram', 'normal_distribution'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
-export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption'] as const;
+export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch'] as const;
 
 export function isEnumMember<T extends readonly string[]>(allowed: T, value: string): value is T[number] {
   return (allowed as readonly string[]).includes(value);

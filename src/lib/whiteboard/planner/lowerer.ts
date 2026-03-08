@@ -11,6 +11,12 @@ import type {
   IntegralRegionElement,
   CircleWithRadiusElement,
   TriangleWithAnglesElement,
+  MatrixBracketElement,
+  LinearTransformElement,
+  HistogramElement,
+  NormalDistributionCurveElement,
+  RiemannSumElement,
+  TangentLineElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -62,10 +68,15 @@ function drawOrderPriority(el: DrawElement): number {
     case 'angle_arc':
     case 'integral_region':
     case 'matrix_bracket':
+    case 'linear_transform':
     case 'circle_with_radius':
     case 'triangle_with_angles':
     case 'parametric_curve':
     case 'polar_plot':
+    case 'histogram':
+    case 'normal_distribution':
+    case 'riemann_sum':
+    case 'tangent_line':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -126,36 +137,89 @@ function expandAngleArc(el: AngleArcElement): DrawElement[] {
 function expandIntegralRegion(el: IntegralRegionElement): DrawElement[] {
   const result: DrawElement[] = [];
   const strokeColor = el.strokeColor ?? el.color ?? '#1f2a44';
-  const fillColor = el.fillColor ?? 'rgba(100,149,237,0.18)';
+  const fillColor = el.fillColor ?? 'rgba(100,149,237,0.3)';
+  const fillOpacity = el.fillOpacity ?? 0.3;
 
-  // Map logical points → canvas coordinates
-  const { toCanvasX, toCanvasY } = makeCoordMapper(
+  const [a, b] = el.xRange;
+  const [yMin, yMax] = el.yRange;
+
+  const mapper = makeCoordMapper(
     { x: el.x, y: el.y, width: el.width, height: el.height },
-    { xMin: el.xRange[0], xMax: el.xRange[1], yMin: el.yRange[0], yMax: el.yRange[1] },
+    { xMin: a, xMax: b, yMin, yMax },
   );
+  const { toCanvasX, toCanvasY } = mapper;
 
-  const topCanvas = el.topPoints.map((p) => ({ x: toCanvasX(p.x), y: toCanvasY(p.y) }));
-  const bottomCanvas = el.bottomPoints
-    ? el.bottomPoints.map((p) => ({ x: toCanvasX(p.x), y: toCanvasY(p.y) }))
-    : el.topPoints.map((p) => ({ x: toCanvasX(p.x), y: toCanvasY(0) }));
+  // ---------------------------------------------------------------------------
+  // Build top-boundary points from expression, provided points, or topPoints
+  // ---------------------------------------------------------------------------
+  let topPoints: Array<{ x: number; y: number }> = [];
+  if (el.expression) {
+    const parsedFn = parseMathExpression(el.expression);
+    if (parsedFn) {
+      const steps = 80;
+      const dx = (b - a) / (steps - 1);
+      for (let i = 0; i < steps; i++) {
+        const mx = a + i * dx;
+        try { topPoints.push({ x: mx, y: parsedFn(mx) }); } catch { topPoints.push({ x: mx, y: 0 }); }
+      }
+    }
+  }
+  if (topPoints.length === 0 && el.topPoints && el.topPoints.length > 0) {
+    topPoints = el.topPoints;
+  }
+  if (topPoints.length === 0) return result;
 
-  // Filled polygon: top curve → reversed bottom curve → close
-  // Emit as a closed polyline of line segments with fill color
-  const polygon = [...topCanvas, ...bottomCanvas.slice().reverse()];
-  for (let i = 0; i < polygon.length; i++) {
-    const from = polygon[i]!;
-    const to = polygon[(i + 1) % polygon.length]!;
+  const bottomY = 0;
+  const canvasBaseY = toCanvasY(bottomY);
+
+  // ---------------------------------------------------------------------------
+  // 1. Many short vertical fill lines (shaded region)
+  // ---------------------------------------------------------------------------
+  const FILL_DENSITY = 2;
+  const canvasA = toCanvasX(a);
+  const canvasB = toCanvasX(b);
+  const fillSteps = Math.min(100, Math.max(1, Math.ceil(Math.abs(canvasB - canvasA) / FILL_DENSITY)));
+
+  function interpolateTop(mx: number): number {
+    if (topPoints.length === 0) return 0;
+    if (mx <= topPoints[0]!.x) return topPoints[0]!.y;
+    if (mx >= topPoints[topPoints.length - 1]!.x) return topPoints[topPoints.length - 1]!.y;
+    for (let j = 0; j < topPoints.length - 1; j++) {
+      const p0 = topPoints[j]!;
+      const p1 = topPoints[j + 1]!;
+      if (mx >= p0.x && mx <= p1.x) {
+        const t = (mx - p0.x) / (p1.x - p0.x || 1);
+        return p0.y + t * (p1.y - p0.y);
+      }
+    }
+    return 0;
+  }
+
+  const opaqueColor = fillColor.startsWith('rgba')
+    ? fillColor
+    : fillColor.startsWith('#')
+      ? `rgba(${parseInt(fillColor.slice(1, 3), 16)},${parseInt(fillColor.slice(3, 5), 16)},${parseInt(fillColor.slice(5, 7), 16)},${fillOpacity})`
+      : `rgba(100,149,237,${fillOpacity})`;
+
+  for (let i = 0; i <= fillSteps; i++) {
+    const cx = canvasA + (canvasB - canvasA) * i / fillSteps;
+    const mx = a + (b - a) * i / fillSteps;
+    const my = interpolateTop(mx);
+    const cy = toCanvasY(my);
     result.push({
       id: `${el.id}-fill-${i}`,
       type: 'line',
-      from,
-      to,
-      color: fillColor,
-      stroke_width: (el.stroke_width ?? 1) * 0.5,
+      from: { x: cx, y: canvasBaseY },
+      to: { x: cx, y: cy },
+      color: opaqueColor,
+      stroke_width: FILL_DENSITY,
     });
   }
 
-  // Top boundary stroke
+  // ---------------------------------------------------------------------------
+  // 2. Top boundary curve (the function) drawn on top of the fill
+  // ---------------------------------------------------------------------------
+  const topCanvas = topPoints.map((p) => ({ x: toCanvasX(p.x), y: toCanvasY(p.y) }));
   for (let i = 0; i < topCanvas.length - 1; i++) {
     result.push({
       id: `${el.id}-top-${i}`,
@@ -163,43 +227,90 @@ function expandIntegralRegion(el: IntegralRegionElement): DrawElement[] {
       from: topCanvas[i]!,
       to: topCanvas[i + 1]!,
       color: strokeColor,
-      stroke_width: el.stroke_width,
+      stroke_width: el.stroke_width ?? 1.8,
     });
   }
 
-  // Bottom boundary stroke
-  for (let i = 0; i < bottomCanvas.length - 1; i++) {
-    result.push({
-      id: `${el.id}-bot-${i}`,
-      type: 'line',
-      from: bottomCanvas[i]!,
-      to: bottomCanvas[i + 1]!,
-      color: strokeColor,
-      stroke_width: el.stroke_width,
-    });
-  }
+  // ---------------------------------------------------------------------------
+  // 3. Left vertical line at x = a
+  // ---------------------------------------------------------------------------
+  result.push({
+    id: `${el.id}-left-edge`,
+    type: 'line',
+    from: { x: toCanvasX(a), y: toCanvasY(interpolateTop(a)) },
+    to: { x: toCanvasX(a), y: canvasBaseY },
+    color: strokeColor,
+    stroke_width: el.stroke_width,
+  });
 
-  // Vertical closing edges at integration bounds
-  if (topCanvas.length > 0 && bottomCanvas.length > 0) {
-    result.push({
-      id: `${el.id}-left-edge`,
-      type: 'line',
-      from: topCanvas[0]!,
-      to: bottomCanvas[0]!,
-      color: strokeColor,
-      stroke_width: el.stroke_width,
-    });
-    result.push({
-      id: `${el.id}-right-edge`,
-      type: 'line',
-      from: topCanvas[topCanvas.length - 1]!,
-      to: bottomCanvas[bottomCanvas.length - 1]!,
-      color: strokeColor,
-      stroke_width: el.stroke_width,
-    });
-  }
+  // ---------------------------------------------------------------------------
+  // 4. Right vertical line at x = b
+  // ---------------------------------------------------------------------------
+  result.push({
+    id: `${el.id}-right-edge`,
+    type: 'line',
+    from: { x: toCanvasX(b), y: toCanvasY(interpolateTop(b)) },
+    to: { x: toCanvasX(b), y: canvasBaseY },
+    color: strokeColor,
+    stroke_width: el.stroke_width,
+  });
 
-  // Label
+  // ---------------------------------------------------------------------------
+  // 5. Bottom line along x-axis from a to b
+  // ---------------------------------------------------------------------------
+  result.push({
+    id: `${el.id}-bottom`,
+    type: 'line',
+    from: { x: toCanvasX(a), y: canvasBaseY },
+    to: { x: toCanvasX(b), y: canvasBaseY },
+    color: strokeColor,
+    stroke_width: el.stroke_width,
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6 & 7. Tick marks and labels at a and b
+  // ---------------------------------------------------------------------------
+  const TICK_HALF = 5;
+  const aLabel = el.aLabel ?? 'a';
+  const bLabel = el.bLabel ?? 'b';
+
+  result.push({
+    id: `${el.id}-tick-a`,
+    type: 'line',
+    from: { x: toCanvasX(a), y: canvasBaseY - TICK_HALF },
+    to: { x: toCanvasX(a), y: canvasBaseY + TICK_HALF },
+    color: strokeColor,
+    stroke_width: el.stroke_width,
+  });
+  result.push({
+    id: `${el.id}-label-a`,
+    type: 'text',
+    x: toCanvasX(a),
+    y: canvasBaseY + TICK_HALF + 14,
+    text: aLabel,
+    size: 14,
+    color: strokeColor,
+  });
+
+  result.push({
+    id: `${el.id}-tick-b`,
+    type: 'line',
+    from: { x: toCanvasX(b), y: canvasBaseY - TICK_HALF },
+    to: { x: toCanvasX(b), y: canvasBaseY + TICK_HALF },
+    color: strokeColor,
+    stroke_width: el.stroke_width,
+  });
+  result.push({
+    id: `${el.id}-label-b`,
+    type: 'text',
+    x: toCanvasX(b),
+    y: canvasBaseY + TICK_HALF + 14,
+    text: bLabel,
+    size: 14,
+    color: strokeColor,
+  });
+
+  // Optional centered label
   if (el.label) {
     const cx = el.x + el.width / 2;
     const cy = el.y + el.height / 2;
@@ -1122,14 +1233,660 @@ function expandTriangleWithAngles(el: TriangleWithAnglesElement): DrawElement[] 
   return result;
 }
 
-/**
- * Expand composite math primitives into basic DrawElements.
- * angle_arc, integral_region, function_curve, cartesian_axes,
- * number_line, vector_arrow, circle_with_radius, triangle_with_angles,
- * parametric_curve, and polar_plot
- * are decomposed into line + arrow + text + ellipse
- * elements so the rest of the pipeline can handle them uniformly.
- */
+// ---------------------------------------------------------------------------
+// Riemann sum expansion
+// ---------------------------------------------------------------------------
+
+function expandRiemannSum(el: RiemannSumElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const color = el.color ?? '#1f2a44';
+  const [xMin, xMax] = el.xRange;
+  const [yMin, yMax] = el.yRange;
+  const n = el.n ?? 5;
+  const method = el.method ?? 'left';
+  const showFunction = el.showFunction !== false;
+  const showAxes = el.showAxes !== false;
+
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
+
+  const parsedFn = parseMathExpression(el.expression);
+  if (!parsedFn) return result;
+
+  // Optionally draw axes first (underneath)
+  if (showAxes) {
+    result.push(...expandCartesianAxes({
+      id: `${el.id}-axes`,
+      type: 'cartesian_axes',
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      height: el.height,
+      xRange: el.xRange,
+      yRange: el.yRange,
+      style: el.style,
+    }));
+  }
+
+  const canvasBaseY = toCanvasY(0);
+  const dx = (xMax - xMin) / n;
+
+  // Draw rectangles
+  for (let i = 0; i < n; i++) {
+    const xLeft = xMin + i * dx;
+    const xRight = xLeft + dx;
+
+    let sampleX: number;
+    if (method === 'right') {
+      sampleX = xRight;
+    } else if (method === 'midpoint') {
+      sampleX = (xLeft + xRight) / 2;
+    } else {
+      sampleX = xLeft;
+    }
+
+    let fVal: number;
+    try { fVal = parsedFn(sampleX); } catch { fVal = 0; }
+    if (!Number.isFinite(fVal)) fVal = 0;
+
+    const cx1 = toCanvasX(xLeft);
+    const cx2 = toCanvasX(xRight);
+    const cy0 = canvasBaseY;
+    const cyTop = toCanvasY(fVal);
+
+    const rectX = Math.min(cx1, cx2);
+    const rectY = Math.min(cy0, cyTop);
+    const rectW = Math.abs(cx2 - cx1);
+    const rectH = Math.abs(cyTop - cy0);
+
+    if (rectW > 0 && rectH > 0) {
+      result.push({
+        id: `${el.id}-rect-${i}`,
+        type: 'rect',
+        x: rectX,
+        y: rectY,
+        w: rectW,
+        h: rectH,
+        color,
+        stroke_width: 1,
+      });
+    }
+  }
+
+  // Optionally draw f(x) curve on top
+  if (showFunction) {
+    result.push(...expandFunctionCurve({
+      id: `${el.id}-curve`,
+      type: 'function_curve',
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      height: el.height,
+      xRange: el.xRange,
+      yRange: el.yRange,
+      expression: el.expression,
+      style: el.style,
+      color,
+    }));
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Tangent line expansion
+// ---------------------------------------------------------------------------
+
+function expandTangentLine(el: TangentLineElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const color = el.color ?? '#1f2a44';
+  const [xMin, xMax] = el.xRange;
+  const [yMin, yMax] = el.yRange;
+  const atX = el.atX;
+  const tangentLength = el.length ?? 2;
+  const showPoint = el.showPoint !== false;
+
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
+
+  const parsedFn = parseMathExpression(el.expression);
+  if (!parsedFn) return result;
+
+  let fAtX: number;
+  try { fAtX = parsedFn(atX); } catch { return result; }
+  if (!Number.isFinite(fAtX)) return result;
+
+  // Numerically approximate f'(atX) using central difference
+  const h = 1e-5;
+  let fPlus: number, fMinus: number;
+  try { fPlus = parsedFn(atX + h); } catch { fPlus = fAtX; }
+  try { fMinus = parsedFn(atX - h); } catch { fMinus = fAtX; }
+  const slope = (fPlus - fMinus) / (2 * h);
+
+  // Tangent line endpoints in math coordinates
+  const halfLen = tangentLength / 2;
+  const x1 = atX - halfLen;
+  const y1 = fAtX - slope * halfLen;
+  const x2 = atX + halfLen;
+  const y2 = fAtX + slope * halfLen;
+
+  result.push({
+    id: `${el.id}-tangent`,
+    type: 'line',
+    from: { x: toCanvasX(x1), y: toCanvasY(y1) },
+    to: { x: toCanvasX(x2), y: toCanvasY(y2) },
+    color,
+    stroke_width: el.stroke_width ?? 1.8,
+  });
+
+  if (showPoint) {
+    result.push({
+      id: `${el.id}-point`,
+      type: 'ellipse',
+      cx: toCanvasX(atX),
+      cy: toCanvasY(fAtX),
+      rx: 4,
+      ry: 4,
+      color,
+      stroke_width: 1.5,
+    });
+  }
+
+  if (el.label) {
+    result.push({
+      id: `${el.id}-label`,
+      type: 'text',
+      x: toCanvasX(atX) + 10,
+      y: toCanvasY(fAtX) - 12,
+      text: el.label,
+      size: 14,
+      color,
+    });
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Histogram expansion
+// ---------------------------------------------------------------------------
+
+function expandHistogram(el: HistogramElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const bins = el.bins;
+  if (bins.length === 0) return result;
+
+  const showValues = el.showValues !== false;
+  const showAxes = el.showAxes !== false;
+  const defaultColor = el.color ?? '#4a90d9';
+
+  const maxVal = el.yMax ?? Math.max(...bins.map((b) => b.value)) * 1.2;
+  const barGap = 2;
+  const barWidth = (el.width - barGap * (bins.length - 1)) / bins.length;
+
+  for (let i = 0; i < bins.length; i++) {
+    const bin = bins[i]!;
+    const barColor = bin.color ?? defaultColor;
+    const barHeight = maxVal > 0 ? (bin.value / maxVal) * el.height : 0;
+    const bx = el.x + i * (barWidth + barGap);
+    const by = el.y + el.height - barHeight;
+
+    result.push({
+      id: `${el.id}-bar-${i}`,
+      type: 'rect',
+      x: bx,
+      y: by,
+      w: Math.max(1, barWidth),
+      h: Math.max(1, barHeight),
+      color: barColor,
+      stroke_width: el.stroke_width ?? 1,
+    });
+
+    if (showValues) {
+      result.push({
+        id: `${el.id}-val-${i}`,
+        type: 'text',
+        x: bx + barWidth / 2,
+        y: by - 6,
+        text: String(bin.value),
+        size: 12,
+        color: el.color ?? '#333',
+      });
+    }
+
+    // Bin label below x-axis
+    result.push({
+      id: `${el.id}-lbl-${i}`,
+      type: 'text',
+      x: bx + barWidth / 2,
+      y: el.y + el.height + 16,
+      text: bin.label,
+      size: 12,
+      color: el.color ?? '#333',
+    });
+  }
+
+  if (showAxes) {
+    // Y-axis
+    result.push({
+      id: `${el.id}-y-axis`,
+      type: 'line',
+      from: { x: el.x, y: el.y },
+      to: { x: el.x, y: el.y + el.height },
+      color: '#333',
+      stroke_width: 1.5,
+    });
+    // X-axis
+    result.push({
+      id: `${el.id}-x-axis`,
+      type: 'line',
+      from: { x: el.x, y: el.y + el.height },
+      to: { x: el.x + el.width, y: el.y + el.height },
+      color: '#333',
+      stroke_width: 1.5,
+    });
+    // Y-axis tick marks (5 ticks)
+    const tickCount = 5;
+    for (let t = 0; t <= tickCount; t++) {
+      const tickVal = (maxVal / tickCount) * t;
+      const tickY = el.y + el.height - (tickVal / maxVal) * el.height;
+      result.push({
+        id: `${el.id}-ytick-${t}`,
+        type: 'line',
+        from: { x: el.x - 4, y: tickY },
+        to: { x: el.x, y: tickY },
+        color: '#333',
+        stroke_width: 1,
+      });
+      result.push({
+        id: `${el.id}-ytick-lbl-${t}`,
+        type: 'text',
+        x: el.x - 10,
+        y: tickY,
+        text: tickVal % 1 === 0 ? String(tickVal) : tickVal.toFixed(1),
+        size: 10,
+        color: '#666',
+      });
+    }
+  }
+
+  if (el.xLabel) {
+    result.push({
+      id: `${el.id}-xlabel`,
+      type: 'text',
+      x: el.x + el.width / 2,
+      y: el.y + el.height + 34,
+      text: el.xLabel,
+      size: 14,
+      color: '#333',
+    });
+  }
+
+  if (el.yLabel) {
+    result.push({
+      id: `${el.id}-ylabel`,
+      type: 'text',
+      x: el.x - 30,
+      y: el.y + el.height / 2,
+      text: el.yLabel,
+      size: 14,
+      color: '#333',
+    });
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Normal distribution curve expansion
+// ---------------------------------------------------------------------------
+
+function expandNormalDistribution(el: NormalDistributionCurveElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const { mu, sigma } = el;
+  const curveColor = el.color ?? '#1f2a44';
+
+  const xMin = mu - 4 * sigma;
+  const xMax = mu + 4 * sigma;
+  const peak = 1 / (sigma * Math.sqrt(2 * Math.PI));
+  const yMin = 0;
+  const yMax = peak * 1.2;
+
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
+
+  // Gaussian PDF
+  const phi = (x: number) => (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-((x - mu) ** 2) / (2 * sigma ** 2));
+
+  // Sample the curve
+  const steps = 160;
+  const dx = (xMax - xMin) / (steps - 1);
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < steps; i++) {
+    const xVal = xMin + i * dx;
+    points.push({ x: xVal, y: phi(xVal) });
+  }
+
+  // Draw shaded region if specified
+  if (el.shadeFrom != null && el.shadeTo != null) {
+    const shadeColor = el.shadeColor ?? 'rgba(100,149,237,0.25)';
+    const from = Math.max(el.shadeFrom, xMin);
+    const to = Math.min(el.shadeTo, xMax);
+    const shadeSteps = 80;
+    const shadeDx = (to - from) / (shadeSteps - 1);
+
+    const topCanvas: Array<{ x: number; y: number }> = [];
+    const bottomCanvas: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < shadeSteps; i++) {
+      const sx = from + i * shadeDx;
+      topCanvas.push({ x: toCanvasX(sx), y: toCanvasY(phi(sx)) });
+      bottomCanvas.push({ x: toCanvasX(sx), y: toCanvasY(0) });
+    }
+
+    const polygon = [...topCanvas, ...bottomCanvas.slice().reverse()];
+    for (let i = 0; i < polygon.length; i++) {
+      const p0 = polygon[i]!;
+      const p1 = polygon[(i + 1) % polygon.length]!;
+      result.push({
+        id: `${el.id}-shade-${i}`,
+        type: 'line',
+        from: p0,
+        to: p1,
+        color: shadeColor,
+        stroke_width: 0.5,
+      });
+    }
+  }
+
+  // Draw the curve as line segments
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i]!;
+    const p1 = points[i + 1]!;
+    result.push({
+      id: `${el.id}-curve-${i}`,
+      type: 'line',
+      from: { x: toCanvasX(p0.x), y: toCanvasY(p0.y) },
+      to: { x: toCanvasX(p1.x), y: toCanvasY(p1.y) },
+      color: curveColor,
+      stroke_width: el.stroke_width ?? 2,
+    });
+  }
+
+  // Mean line
+  if (el.showMeanLine !== false) {
+    result.push({
+      id: `${el.id}-mean`,
+      type: 'line',
+      from: { x: toCanvasX(mu), y: toCanvasY(0) },
+      to: { x: toCanvasX(mu), y: toCanvasY(peak) },
+      color: curveColor,
+      stroke_width: 1,
+      lineStyle: 'dashed',
+    });
+  }
+
+  // Sigma lines
+  if (el.showSigmaLines) {
+    for (const k of [-2, -1, 1, 2]) {
+      const sx = mu + k * sigma;
+      result.push({
+        id: `${el.id}-sigma-${k}`,
+        type: 'line',
+        from: { x: toCanvasX(sx), y: toCanvasY(0) },
+        to: { x: toCanvasX(sx), y: toCanvasY(phi(sx)) },
+        color: '#999',
+        stroke_width: 1,
+        lineStyle: 'dashed',
+      });
+    }
+  }
+
+  // Labels
+  if (el.showLabels) {
+    result.push({
+      id: `${el.id}-mu-label`,
+      type: 'text',
+      x: toCanvasX(mu),
+      y: toCanvasY(0) + 16,
+      text: 'μ',
+      size: 14,
+      color: curveColor,
+    });
+    for (const k of [-2, -1, 1, 2]) {
+      const sx = mu + k * sigma;
+      const sign = k > 0 ? '+' : '';
+      result.push({
+        id: `${el.id}-sigma-label-${k}`,
+        type: 'text',
+        x: toCanvasX(sx),
+        y: toCanvasY(0) + 16,
+        text: `μ${sign}${k}σ`,
+        size: 11,
+        color: '#666',
+      });
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Matrix bracket expansion
+// ---------------------------------------------------------------------------
+
+/** Parse a semicolon-separated string like "1 0; 0 1" into string[][]. */
+export function parseMatrixRows(input: string[][] | string): string[][] {
+  if (Array.isArray(input)) return input;
+  return input
+    .split(';')
+    .map((r) => r.trim())
+    .filter((r) => r.length > 0)
+    .map((r) => r.split(/\s+/));
+}
+
+/** Compute per-column widths and per-row heights for a matrix grid. */
+export function computeMatrixCellSizes(
+  rows: string[][],
+  fontSize: number,
+  explicitCW?: number,
+  explicitCH?: number,
+): { colWidths: number[]; rowHeights: number[] } {
+  const numCols = Math.max(...rows.map((r) => r.length));
+  const charW = fontSize * 0.6;
+  const pad = fontSize * 0.8;
+  const colWidths: number[] = [];
+  for (let c = 0; c < numCols; c++) {
+    if (explicitCW) { colWidths.push(explicitCW); continue; }
+    let maxW = 0;
+    for (const row of rows) {
+      const cell = row[c] ?? '';
+      const w = cell.length * charW + pad;
+      if (w > maxW) maxW = w;
+    }
+    colWidths.push(Math.max(maxW, fontSize * 1.5));
+  }
+  const rowHeights = rows.map(() => explicitCH ?? fontSize * 2);
+  return { colWidths, rowHeights };
+}
+
+function cumulativeOffsets(sizes: number[]): number[] {
+  const out: number[] = [0];
+  for (let i = 0; i < sizes.length; i++) out.push(out[i] + sizes[i]);
+  return out;
+}
+
+function expandMatrixBracket(el: MatrixBracketElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const rows = parseMatrixRows(el.rows);
+  if (rows.length === 0) return result;
+
+  const fontSize = 16;
+  const { colWidths, rowHeights } = computeMatrixCellSizes(rows, fontSize, el.cellWidth, el.cellHeight);
+  const colOffsets = cumulativeOffsets(colWidths);
+  const rowOffsets = cumulativeOffsets(rowHeights);
+  const gridW = colOffsets[colOffsets.length - 1];
+  const gridH = rowOffsets[rowOffsets.length - 1];
+  const bracketInset = 12;
+  const padX = 8;
+
+  const contentX = el.x + bracketInset + padX;
+  const contentY = el.y;
+
+  // Cell text / LaTeX
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < rows[r].length; c++) {
+      const cx = contentX + colOffsets[c] + colWidths[c] / 2;
+      const cy = contentY + rowOffsets[r] + rowHeights[r] / 2;
+      const cell = rows[r][c];
+      const isLatex = cell.includes('\\') || cell.includes('^') || cell.includes('_');
+      if (isLatex) {
+        result.push({ id: `${el.id}-cell-${r}-${c}`, type: 'latex', x: cx, y: cy, tex: cell, displayMode: false, fontSize });
+      } else {
+        result.push({ id: `${el.id}-cell-${r}-${c}`, type: 'text', x: cx, y: cy, text: cell, size: fontSize, align: 'center' });
+      }
+    }
+  }
+
+  // Bracket lines
+  const bTop = contentY - 4;
+  const bBot = contentY + gridH + 4;
+  const bracketStubLen = Math.max(4, gridH * 0.15);
+  const leftX = el.x + bracketInset;
+  const rightX = el.x + bracketInset + padX * 2 + gridW;
+
+  // Left bracket
+  result.push({ id: `${el.id}-bl-v`, type: 'line', from: { x: leftX, y: bTop }, to: { x: leftX, y: bBot } });
+  result.push({ id: `${el.id}-bl-t`, type: 'line', from: { x: leftX, y: bTop }, to: { x: leftX + bracketStubLen, y: bTop } });
+  result.push({ id: `${el.id}-bl-b`, type: 'line', from: { x: leftX, y: bBot }, to: { x: leftX + bracketStubLen, y: bBot } });
+
+  // Right bracket
+  result.push({ id: `${el.id}-br-v`, type: 'line', from: { x: rightX, y: bTop }, to: { x: rightX, y: bBot } });
+  result.push({ id: `${el.id}-br-t`, type: 'line', from: { x: rightX, y: bTop }, to: { x: rightX - bracketStubLen, y: bTop } });
+  result.push({ id: `${el.id}-br-b`, type: 'line', from: { x: rightX, y: bBot }, to: { x: rightX - bracketStubLen, y: bBot } });
+
+  // Augmented divider
+  if (el.augmentedAt != null && el.augmentedAt > 0 && el.augmentedAt < colOffsets.length - 1) {
+    const divX = contentX + colOffsets[el.augmentedAt];
+    result.push({
+      id: `${el.id}-aug-div`,
+      type: 'line',
+      from: { x: divX, y: bTop },
+      to: { x: divX, y: bBot },
+      color: '#6b7280',
+    });
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Linear transform expansion
+// ---------------------------------------------------------------------------
+
+function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const range = el.gridRange ?? 3;
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin: -range, xMax: range, yMin: -range, yMax: range },
+  );
+
+  const [[a, b], [c, d]] = el.matrix;
+  const transform = (vx: number, vy: number): [number, number] => [a * vx + b * vy, c * vx + d * vy];
+
+  const showGrid = el.showOriginalGrid !== false;
+  const showBasis = el.showBasisVectors !== false;
+
+  // Original grid (dashed gray)
+  if (showGrid) {
+    for (let i = -range; i <= range; i++) {
+      // Vertical grid line
+      result.push({
+        id: `${el.id}-ogv-${i}`,
+        type: 'line',
+        from: { x: toCanvasX(i), y: toCanvasY(-range) },
+        to: { x: toCanvasX(i), y: toCanvasY(range) },
+        color: '#d1d5db',
+      });
+      // Horizontal grid line
+      result.push({
+        id: `${el.id}-ogh-${i}`,
+        type: 'line',
+        from: { x: toCanvasX(-range), y: toCanvasY(i) },
+        to: { x: toCanvasX(range), y: toCanvasY(i) },
+        color: '#d1d5db',
+      });
+    }
+  }
+
+  // Transformed grid (solid colored)
+  for (let i = -range; i <= range; i++) {
+    // Transformed vertical line: column x=i goes from (i,-range) to (i,range)
+    const [tvx1, tvy1] = transform(i, -range);
+    const [tvx2, tvy2] = transform(i, range);
+    result.push({
+      id: `${el.id}-tgv-${i}`,
+      type: 'line',
+      from: { x: toCanvasX(tvx1), y: toCanvasY(tvy1) },
+      to: { x: toCanvasX(tvx2), y: toCanvasY(tvy2) },
+      color: '#93c5fd',
+    });
+    // Transformed horizontal line: row y=i goes from (-range,i) to (range,i)
+    const [thx1, thy1] = transform(-range, i);
+    const [thx2, thy2] = transform(range, i);
+    result.push({
+      id: `${el.id}-tgh-${i}`,
+      type: 'line',
+      from: { x: toCanvasX(thx1), y: toCanvasY(thy1) },
+      to: { x: toCanvasX(thx2), y: toCanvasY(thy2) },
+      color: '#93c5fd',
+    });
+  }
+
+  // Basis vectors
+  if (showBasis) {
+    const ox = toCanvasX(0);
+    const oy = toCanvasY(0);
+
+    // Original basis (gray)
+    result.push({ id: `${el.id}-oi`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(1), y: toCanvasY(0) }, color: '#9ca3af' });
+    result.push({ id: `${el.id}-oj`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(0), y: toCanvasY(1) }, color: '#9ca3af' });
+
+    // Transformed basis
+    const [ix, iy] = transform(1, 0);
+    const [jx, jy] = transform(0, 1);
+    result.push({ id: `${el.id}-ti`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(ix), y: toCanvasY(iy) }, color: '#ef4444', label: 'î\'' });
+    result.push({ id: `${el.id}-tj`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(jx), y: toCanvasY(jy) }, color: '#22c55e', label: 'ĵ\'' });
+  }
+
+  // Additional vectors
+  if (el.vectors) {
+    for (let vi = 0; vi < el.vectors.length; vi++) {
+      const v = el.vectors[vi];
+      const ox = toCanvasX(0);
+      const oy = toCanvasY(0);
+      const col = v.color ?? '#6366f1';
+      // Original (dashed placeholder — shown as lighter)
+      result.push({ id: `${el.id}-vo-${vi}`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(v.x), y: toCanvasY(v.y) }, color: '#d1d5db' });
+      // Transformed
+      const [tx, ty] = transform(v.x, v.y);
+      result.push({ id: `${el.id}-vt-${vi}`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(tx), y: toCanvasY(ty) }, color: col, label: v.label });
+    }
+  }
+
+  // Label
+  if (el.label) {
+    result.push({ id: `${el.id}-lbl`, type: 'text', x: el.x + el.width / 2, y: el.y - 12, text: el.label, size: 14, align: 'center' });
+  }
+
+  return result;
+}
 function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
   const result: DrawElement[] = [];
   for (const el of elements) {
@@ -1153,6 +1910,18 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
       result.push(...expandParametricCurve(el));
     } else if (el.type === 'polar_plot') {
       result.push(...expandPolarPlot(el));
+    } else if (el.type === 'riemann_sum') {
+      result.push(...expandRiemannSum(el));
+    } else if (el.type === 'tangent_line') {
+      result.push(...expandTangentLine(el));
+    } else if (el.type === 'matrix_bracket') {
+      result.push(...expandMatrixBracket(el));
+    } else if (el.type === 'linear_transform') {
+      result.push(...expandLinearTransform(el));
+    } else if (el.type === 'histogram') {
+      result.push(...expandHistogram(el));
+    } else if (el.type === 'normal_distribution') {
+      result.push(...expandNormalDistribution(el));
     } else {
       result.push(el);
     }
@@ -1166,7 +1935,7 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement,
 ): DrawElement[] {
   switch (el.type) {
     case 'cartesian_axes':
@@ -1189,6 +1958,18 @@ export function lowerMathPrimitive(
       return expandParametricCurve(el);
     case 'polar_plot':
       return expandPolarPlot(el);
+    case 'riemann_sum':
+      return expandRiemannSum(el);
+    case 'tangent_line':
+      return expandTangentLine(el);
+    case 'matrix_bracket':
+      return expandMatrixBracket(el);
+    case 'linear_transform':
+      return expandLinearTransform(el);
+    case 'histogram':
+      return expandHistogram(el);
+    case 'normal_distribution':
+      return expandNormalDistribution(el);
   }
 }
 

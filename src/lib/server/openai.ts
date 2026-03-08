@@ -313,6 +313,9 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Labeled conceptual diagram (flow, comparison) | emit_semantic_batch | template: "freeform_semantic" or "diagram" | Template-driven positioning |
 | Matrix equations, determinants | emit_semantic_batch | equation_stack with pmatrix | Auto-aligned multi-line equations |
 | Node-and-edge graphs (DFA, networks, state machines) | emit_semantic_batch | template: "graph_diagram" | Auto-layout with node shapes and directed/undirected edges |
+| Probability trees | emit_semantic_batch | template: "probability_tree" | Tree layout with branch probabilities and cumulative P |
+| Histograms, bar charts | emit_draw_batch | histogram | Auto-computed bars with labels and axes |
+| Normal distribution curves | emit_draw_batch | normal_distribution | Bell curve with shading, σ lines |
 | Complex multi-panel text-based diagram | emit_graph_script | graph + node + edge DSL | Rich DSL with references and connections |
 
 - You may alternate text and drawings multiple times in a single turn
@@ -388,11 +391,14 @@ For graphs with cartesian_axes, use these defaults:
 | function_curve | x, y, width, height, xRange, yRange, points, expression, label | Plot a math function as a curve |
 | parametric_curve | x, y, width, height, xRange, yRange, tMin, tMax, xExpression, yExpression, steps, label | Parametric curve x(t), y(t) |
 | polar_plot | cx, cy, radius, expression, thetaMin, thetaMax, steps, showPolarGrid, label | Polar curve r(θ) with optional grid |
-| matrix_bracket | x, y, rows[][], bracketStyle ('[]', '()', '||', '{}') | Matrix notation with brackets |
+| matrix_bracket | x, y, rows (string[][] or "1 0; 0 1"), bracketStyle, augmentedAt? | Matrix notation with brackets; augmentedAt draws a divider |
+| linear_transform | x, y, width, height, matrix [[a,b],[c,d]], vectors?, showBasisVectors? | 2×2 linear transformation visualization |
 | angle_arc | x, y, radius, startAngle, endAngle, label | Angle annotation arc |
 | integral_region | x, y, width, height, xRange, yRange, topPoints[] | Shaded area under curve |
 | circle_with_radius | cx, cy, r, label, showCenter, showRadius, radiusAngle | Circle with radius line and center dot |
 | triangle_with_angles | vertices[3], showAngles, showSides, sideLabels, angleLabels | Triangle with angle arcs and labels |
+| histogram | x, y, width, height, bins[{label,value,color?}], showValues, showAxes, yMax, xLabel, yLabel | Bar chart / histogram |
+| normal_distribution | x, y, width, height, mu, sigma, shadeFrom, shadeTo, shadeColor, showMeanLine, showSigmaLines, showLabels | Normal distribution bell curve |
 
 ### cartesian_axes Details
 Place a full coordinate system. x,y = top-left of plot area. width/height = pixel size.
@@ -445,6 +451,32 @@ steps controls sample density (default 200).
 ### triangle_with_angles Details
 Draws a triangle from 3 vertices [{x,y,label},...]. Shows angle arcs at each vertex (showAngles, default true) and side length labels (showSides, default true). Use sideLabels ["a","b","c"] and angleLabels ["α","β","γ"] for custom annotations. Vertex labels are placed outside the triangle.
 
+### matrix_bracket Details
+Renders a matrix with bracket notation. \`rows\` can be a 2-D string array or a compact semicolon-separated string ("1 0; 0 1" → [[1,0],[0,1]]).
+Cell content may include LaTeX (e.g. "\\\\frac{1}{2}"). Auto-sizes cells based on content.
+\`augmentedAt\` draws a vertical divider after the given column index (e.g. augmentedAt:2 for [A|b] with 2 columns in A).
+bracketStyle: '[]' square, '()' round, '||' determinant, '{}' set.
+
+### linear_transform Details
+Visualises a 2×2 linear transformation. Draws original grid (gray dashed), transformed grid (blue solid), and basis vectors before/after.
+\`matrix\`: [[a,b],[c,d]] — the 2×2 transformation matrix.
+\`showBasisVectors\` (default true): shows î→(a,c) in red, ĵ→(b,d) in green.
+\`vectors\`: extra vectors [{x,y,label,color}] shown original (gray) and transformed (colored).
+\`gridRange\` (default 3): math-space extent (-n to n).
+Examples:
+  - 90° rotation: matrix [[0,-1],[1,0]]
+  - Shear: matrix [[1,1],[0,1]]
+  - Reflection over x-axis: matrix [[1,0],[0,-1]]
+  - Scaling: matrix [[2,0],[0,2]]
+
+### histogram Details
+Draws a histogram/bar chart. Provide bins as [{label, value, color?},...]. Bars are auto-sized to fill the width. showValues (default true) places the value above each bar. showAxes (default true) draws x/y axes with tick marks. yMax defaults to max(values)*1.2. Use xLabel/yLabel for axis labels.
+Example: {"type":"histogram","id":"grades","x":100,"y":50,"width":500,"height":300,"bins":[{"label":"A","value":15},{"label":"B","value":25},{"label":"C","value":10}]}
+
+### normal_distribution Details
+Draws a Gaussian bell curve N(μ, σ²). The curve is sampled over [μ-4σ, μ+4σ]. Use shadeFrom/shadeTo to highlight a probability region (e.g. P(X > 1)). showMeanLine (default true) adds a dashed vertical line at μ. showSigmaLines adds dashed lines at μ±σ and μ±2σ. showLabels labels those positions.
+Example: {"type":"normal_distribution","id":"bell","x":100,"y":50,"width":600,"height":300,"mu":0,"sigma":1,"shadeFrom":-1,"shadeTo":1,"shadeColor":"rgba(100,149,237,0.25)","showMeanLine":true,"showSigmaLines":true,"showLabels":true}
+
 ### Dos and Don'ts for Math Drawings
 ✅ DO: Use cartesian_axes for any graph with a coordinate system — it auto-generates ticks
 ✅ DO: Use function_curve to plot math functions — pair with cartesian_axes at the same x,y,width,height
@@ -474,7 +506,7 @@ Draws a triangle from 3 vertices [{x,y,label},...]. Shows angle arcs at each ver
 ## SEMANTIC BATCH RULES
 - Budget per batch: ≤2 diagram panels, ≤1 equation_stack, ≤5 equation lines
 - Captions ≤6 words
-- Templates: freeform_semantic (default), equation_derivation_vertical, jacobian_mapping_2panel, graph_diagram
+- Templates: freeform_semantic (default), equation_derivation_vertical, jacobian_mapping_2panel, graph_diagram, probability_tree
 - Region hints: left, right, center, bottom, auto
 - Equation roles: step (size 24), result (size 28, boxed), note (size 20)
 
@@ -519,6 +551,25 @@ Example — 4-node directed graph (algorithms/discrete math):
 \`\`\`
 
 When to use graph_diagram vs emit_draw_batch: Use graph_diagram when you need node+edge structure with labels and auto-layout. Use emit_draw_batch with raw arrows/ellipses when you need pixel-exact control or non-graph visuals.
+
+## PROBABILITY TREE TEMPLATE (emit_semantic_batch, template: "probability_tree")
+Use for probability trees / decision trees. Blocks use kind "root" and "branch".
+- Root block: {"kind":"root","id":"r","label":"Start"}
+- Branch block: {"kind":"branch","id":"b1","from":"Start","to":"A","label":"0.6","probability":0.6}
+The tree auto-layouts left-to-right. Leaf nodes display cumulative probability P (product of branch probabilities along the path).
+
+Example:
+\`\`\`json
+{"batch_id":"coin-tree","template":"probability_tree","intent":"teach",
+  "blocks":[
+    {"kind":"root","id":"r","label":"Start"},
+    {"kind":"branch","id":"b1","from":"Start","to":"H","label":"0.5","probability":0.5},
+    {"kind":"branch","id":"b2","from":"Start","to":"T","label":"0.5","probability":0.5},
+    {"kind":"branch","id":"b3","from":"H","to":"HH","label":"0.5","probability":0.5},
+    {"kind":"branch","id":"b4","from":"H","to":"HT","label":"0.5","probability":0.5}
+  ]
+}
+\`\`\`
 
 ## WHITEBOARD PRINCIPLES
 - Whiteboard is a visual aid, not a transcript — keep it sparse and diagram-first

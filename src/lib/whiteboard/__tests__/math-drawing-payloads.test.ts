@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import type { DrawElement, ArrowElement, LineElement, TextElement } from '@/types/agent';
+import type { DrawElement, ArrowElement, LineElement, TextElement, MatrixBracketElement, LinearTransformElement } from '@/types/agent';
 import type { PlannedSemanticLayout } from '../planner/types';
 import {
   lowerPlannedLayoutToDrawBatch,
   lowerMathPrimitive,
+  parseMatrixRows,
+  computeMatrixCellSizes,
 } from '../planner/lowerer';
+import { DrawElementSchema } from '@/lib/schema';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -513,17 +516,19 @@ describe('expandIntegralRegion', () => {
     topPoints: topPts,
   };
 
-  it('produces fill lines, top boundary, bottom boundary, and vertical edges', () => {
-    const batch = lowerSingle(baseIntegral, 200);
+  it('produces fill lines, top boundary, bottom line, and vertical edges', () => {
+    const batch = lowerSingle(baseIntegral, 500);
     const allLines = lines(batch.elements);
     expect(allLines.length).toBeGreaterThan(0);
     // Check for boundary segments
-    const topSegs = allLines.filter((e) => e.id.includes('top'));
-    const botSegs = allLines.filter((e) => e.id.includes('bot'));
+    const topSegs = allLines.filter((e) => e.id.includes('-top-'));
+    const bottomLine = allLines.filter((e) => e.id.endsWith('-bottom'));
     const edges = allLines.filter((e) => e.id.includes('edge'));
-    expect(topSegs.length).toBe(9); // 10 points → 9 segments
-    expect(botSegs.length).toBe(9);
+    const fillLines = allLines.filter((e) => e.id.includes('-fill-'));
+    expect(topSegs.length).toBe(9); // 10 topPoints → 9 segments
+    expect(bottomLine.length).toBe(1); // single baseline
     expect(edges.length).toBe(2); // left + right edge
+    expect(fillLines.length).toBeGreaterThan(0); // many vertical fill lines
   });
 
   it('label appears when specified', () => {
@@ -532,28 +537,27 @@ describe('expandIntegralRegion', () => {
       id: 'integ-lbl',
       label: '∫₀¹ x² dx',
     } as DrawElement;
-    const batch = lowerSingle(withLabel, 200);
+    const batch = lowerSingle(withLabel, 500);
     const lbl = texts(batch.elements).find((e) => e.id === 'integ-lbl-label')!;
     expect(lbl).toBeDefined();
     expect(lbl.text).toBe('∫₀¹ x² dx');
   });
 
   it('uses y=0 baseline when bottomPoints is absent', () => {
-    const batch = lowerSingle(baseIntegral, 200);
-    const botSegs = lines(batch.elements).filter((e) => e.id.includes('bot'));
-    // All bottom boundary segments should be at toCanvasY(0) = y + height = 400
-    for (const seg of botSegs) {
-      expect(seg.from.y).toBeCloseTo(400);
-      expect(seg.to.y).toBeCloseTo(400);
-    }
+    const batch = lowerSingle(baseIntegral, 500);
+    const bottomLine = lines(batch.elements).find((e) => e.id.endsWith('-bottom'))!;
+    // Bottom baseline should be at toCanvasY(0) = y + height = 400
+    expect(bottomLine).toBeDefined();
+    expect(bottomLine.from.y).toBeCloseTo(400);
+    expect(bottomLine.to.y).toBeCloseTo(400);
   });
 });
 
 // ===========================================================================
-// 7. matrix_bracket (passed through, not expanded by lowerer)
+// 7. matrix_bracket (expanded by lowerer into text/latex + bracket lines)
 // ===========================================================================
-describe('matrix_bracket passthrough', () => {
-  it('matrix_bracket elements pass through the lowerer unchanged', () => {
+describe('expandMatrixBracket', () => {
+  it('expands a 2×2 identity matrix into cell text + bracket lines', () => {
     const matrix: DrawElement = {
       id: 'mat-1',
       type: 'matrix_bracket',
@@ -566,8 +570,159 @@ describe('matrix_bracket passthrough', () => {
       bracketStyle: '[]',
     };
     const batch = lowerSingle(matrix);
-    expect(batch.elements.length).toBe(1);
-    expect(batch.elements[0].type).toBe('matrix_bracket');
+    // 4 cell texts + 6 bracket lines = 10
+    expect(batch.elements.length).toBe(10);
+    const textEls = batch.elements.filter((e) => e.type === 'text' || e.type === 'latex');
+    expect(textEls.length).toBe(4);
+    const lineEls = batch.elements.filter((e) => e.type === 'line');
+    expect(lineEls.length).toBe(6); // 3 left bracket + 3 right bracket
+  });
+
+  it('augmentedAt draws a vertical divider line', () => {
+    const matrix: DrawElement = {
+      id: 'mat-aug',
+      type: 'matrix_bracket',
+      x: 100,
+      y: 100,
+      rows: [
+        ['1', '0', '3'],
+        ['0', '1', '5'],
+      ],
+      bracketStyle: '[]',
+      augmentedAt: 2,
+    };
+    const batch = lowerSingle(matrix);
+    const augLine = batch.elements.find((e) => e.id === 'mat-aug-aug-div');
+    expect(augLine).toBeDefined();
+    expect(augLine!.type).toBe('line');
+  });
+
+  it('parses semicolon-separated string rows', () => {
+    const parsed = parseMatrixRows('1 0; 0 1');
+    expect(parsed).toEqual([['1', '0'], ['0', '1']]);
+  });
+
+  it('handles string rows in expansion', () => {
+    const matrix: DrawElement = {
+      id: 'mat-str',
+      type: 'matrix_bracket',
+      x: 100,
+      y: 100,
+      rows: '1 2; 3 4',
+      bracketStyle: '()',
+    };
+    const batch = lowerSingle(matrix);
+    const textEls = batch.elements.filter((e) => e.type === 'text' || e.type === 'latex');
+    expect(textEls.length).toBe(4);
+  });
+
+  it('bracket stub length is ~15% of grid height', () => {
+    const matrix: DrawElement = {
+      id: 'mat-stub',
+      type: 'matrix_bracket',
+      x: 0,
+      y: 0,
+      rows: [['a', 'b'], ['c', 'd'], ['e', 'f']],
+      bracketStyle: '[]',
+      cellHeight: 40,
+    };
+    const batch = lowerSingle(matrix);
+    const topStub = batch.elements.find((e) => e.id === 'mat-stub-bl-t') as LineElement;
+    expect(topStub).toBeDefined();
+    const stubLen = Math.abs((topStub as any).to.x - (topStub as any).from.x);
+    const gridH = 3 * 40; // 3 rows × 40px
+    expect(stubLen).toBeCloseTo(Math.max(4, gridH * 0.15), 0);
+  });
+
+  it('schema validates string rows', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'ms-1',
+      type: 'matrix_bracket',
+      x: 0, y: 0,
+      rows: '1 0; 0 1',
+      bracketStyle: '[]',
+    });
+    expect(valid.success).toBe(true);
+  });
+
+  it('schema validates augmentedAt', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'ms-2',
+      type: 'matrix_bracket',
+      x: 0, y: 0,
+      rows: [['1', '0', '3'], ['0', '1', '5']],
+      bracketStyle: '[]',
+      augmentedAt: 2,
+    });
+    expect(valid.success).toBe(true);
+  });
+});
+
+// ===========================================================================
+// 7b. linear_transform
+// ===========================================================================
+describe('expandLinearTransform', () => {
+  it('produces grid lines and basis vector arrows for a rotation', () => {
+    const lt: DrawElement = {
+      id: 'lt-1',
+      type: 'linear_transform',
+      x: 100, y: 100, width: 400, height: 400,
+      matrix: [[0, -1], [1, 0]] as [[number, number], [number, number]],
+    };
+    const batch = lowerSingle(lt);
+    const arrows = batch.elements.filter((e) => e.type === 'arrow');
+    // 2 original basis + 2 transformed basis = 4
+    expect(arrows.length).toBeGreaterThanOrEqual(4);
+    const lines = batch.elements.filter((e) => e.type === 'line');
+    expect(lines.length).toBeGreaterThan(10); // grid lines
+  });
+
+  it('showBasisVectors=false omits basis arrows', () => {
+    const lt: DrawElement = {
+      id: 'lt-nb',
+      type: 'linear_transform',
+      x: 100, y: 100, width: 400, height: 400,
+      matrix: [[1, 0], [0, 1]] as [[number, number], [number, number]],
+      showBasisVectors: false,
+    };
+    const batch = lowerSingle(lt);
+    const arrows = batch.elements.filter((e) => e.type === 'arrow');
+    expect(arrows.length).toBe(0);
+  });
+
+  it('transforms additional vectors', () => {
+    const lt: DrawElement = {
+      id: 'lt-v',
+      type: 'linear_transform',
+      x: 100, y: 100, width: 400, height: 400,
+      matrix: [[2, 0], [0, 2]] as [[number, number], [number, number]],
+      vectors: [{ x: 1, y: 0, label: 'v' }],
+    };
+    const batch = lowerSingle(lt);
+    const vOriginal = batch.elements.find((e) => e.id === 'lt-v-vo-0');
+    const vTransformed = batch.elements.find((e) => e.id === 'lt-v-vt-0');
+    expect(vOriginal).toBeDefined();
+    expect(vTransformed).toBeDefined();
+  });
+
+  it('schema validates linear_transform', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'lt-s',
+      type: 'linear_transform',
+      x: 0, y: 0, width: 400, height: 400,
+      matrix: [[1, 0], [0, 1]],
+    });
+    expect(valid.success).toBe(true);
+  });
+
+  it('schema rejects invalid matrix dimensions', () => {
+    const invalid = DrawElementSchema.safeParse({
+      id: 'lt-bad',
+      type: 'linear_transform',
+      x: 0, y: 0, width: 400, height: 400,
+      matrix: [[1, 0, 0], [0, 1, 0]],
+    });
+    expect(invalid.success).toBe(false);
   });
 });
 
@@ -674,7 +829,7 @@ describe('full pipeline integration', () => {
     expect(batch.elements.length).toBeGreaterThan(5);
     // All lowered elements should be basic primitives (no composite types remain)
     for (const el of batch.elements) {
-      expect(['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'matrix_bracket']).toContain(el.type);
+      expect(['rect', 'ellipse', 'line', 'arrow', 'text', 'latex']).toContain(el.type);
     }
   });
 
