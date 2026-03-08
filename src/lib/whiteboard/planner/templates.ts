@@ -10,6 +10,8 @@ import type {
   SemanticEquationStackBlock,
   SemanticGraphNodeBlock,
   SemanticGraphEdgeBlock,
+  SemanticProbabilityTreeRootBlock,
+  SemanticProbabilityTreeBranchBlock,
   StructuredWhiteboardContext,
   StylePreset,
 } from '@/types/agent';
@@ -249,6 +251,7 @@ export function measureBlock(
   if (block.kind === 'diagram_panel') return measureDiagramPanel(block, regionWidth);
   if (block.kind === 'annotation') return measureAnnotationBlock(block, regionWidth);
   if (block.kind === 'node' || block.kind === 'edge') return { width: DEFAULT_NODE_SIZE, height: DEFAULT_NODE_SIZE };
+  if (block.kind === 'root' || block.kind === 'branch') return { width: DEFAULT_NODE_SIZE, height: DEFAULT_NODE_SIZE };
   return measureCaptionBlock(block, regionWidth);
 }
 
@@ -647,6 +650,12 @@ function compactSemanticBatchForLegibility(
       continue;
     }
 
+    // Pass through probability_tree blocks (root/branch) without text compaction
+    if (block.kind === 'root' || block.kind === 'branch') {
+      compactedBlocks.push({ ...block });
+      continue;
+    }
+
     const text = compactText(block.text, 74);
     if (!text) continue;
     compactedBlocks.push({
@@ -854,7 +863,7 @@ function buildAdaptiveLayout(
   const annotationBlocks = semanticBatch.blocks
     .filter((block): block is SemanticAnnotationBlock => block.kind === 'annotation');
   const textBlocks = semanticBatch.blocks.filter(
-    (block) => block.kind !== 'diagram_panel' && block.kind !== 'annotation' && block.kind !== 'node' && block.kind !== 'edge',
+    (block) => block.kind !== 'diagram_panel' && block.kind !== 'annotation' && block.kind !== 'node' && block.kind !== 'edge' && block.kind !== 'root' && block.kind !== 'branch',
   );
 
   const panelPlacements = new Map<string, PanelPlacement>();
@@ -916,7 +925,7 @@ function buildAdaptiveLayout(
     if (block.kind === 'equation_stack') {
       lane.cursorY = placeEquationStack(block, lane.region, state, lane.cursorY);
       lane.cursorY += 14;
-    } else {
+    } else if (block.kind === 'caption') {
       lane.cursorY = placeCaptionBlock(block, lane.region, state, lane.cursorY);
     }
     contentHeights[lane.name] = (contentHeights[lane.name] ?? 0) + (lane.cursorY - startY);
@@ -1313,6 +1322,159 @@ export function buildGraphDiagramLayout(
   }
 }
 
+// ---------------------------------------------------------------------------
+// probability_tree template — probability tree diagrams
+// ---------------------------------------------------------------------------
+
+interface TreeNode {
+  label: string;
+  x: number;
+  y: number;
+  children: Array<{ node: TreeNode; probability?: number; edgeLabel?: string }>;
+  cumulativeP: number;
+}
+
+function buildProbabilityTreeLayout(batch: SemanticBatch, state: BuildState): void {
+  const blocks = batch.blocks;
+  const rootBlocks = blocks.filter((b): b is SemanticProbabilityTreeRootBlock => b.kind === 'root');
+  const branchBlocks = blocks.filter((b): b is SemanticProbabilityTreeBranchBlock => b.kind === 'branch');
+
+  if (rootBlocks.length === 0) {
+    state.warnings.push('probability_tree: no root block found');
+    return;
+  }
+
+  const rootLabel = rootBlocks[0]!.label;
+  const nodeRadius = 22;
+  const canvasW = 1200;
+  const canvasH = 700;
+  const leftMargin = 80;
+  const rightMargin = 80;
+
+  // Build adjacency list
+  const childrenMap = new Map<string, Array<{ to: string; label?: string; probability?: number }>>();
+  for (const b of branchBlocks) {
+    if (!childrenMap.has(b.from)) childrenMap.set(b.from, []);
+    childrenMap.get(b.from)!.push({ to: b.to, label: b.label, probability: b.probability });
+  }
+
+  // Compute tree depth
+  function getDepth(label: string, visited: Set<string>): number {
+    if (visited.has(label)) return 0;
+    visited.add(label);
+    const children = childrenMap.get(label);
+    if (!children || children.length === 0) return 0;
+    return 1 + Math.max(...children.map((c) => getDepth(c.to, visited)));
+  }
+  const maxDepth = Math.max(1, getDepth(rootLabel, new Set()));
+  const levelSpacing = (canvasW - leftMargin - rightMargin) / maxDepth;
+
+  // Build tree structure with positions
+  function buildTree(label: string, depth: number, yCenter: number, ySpan: number, cumP: number, visited: Set<string>): TreeNode {
+    const node: TreeNode = {
+      label,
+      x: leftMargin + depth * levelSpacing,
+      y: yCenter,
+      children: [],
+      cumulativeP: cumP,
+    };
+    if (visited.has(label)) return node;
+    visited.add(label);
+
+    const children = childrenMap.get(label);
+    if (!children || children.length === 0) return node;
+
+    const childSpan = ySpan / children.length;
+    const startY = yCenter - ySpan / 2 + childSpan / 2;
+
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i]!;
+      const childY = startY + i * childSpan;
+      const childP = child.probability ?? 1;
+      const childNode = buildTree(child.to, depth + 1, childY, childSpan * 0.8, cumP * childP, new Set(visited));
+      node.children.push({ node: childNode, probability: child.probability, edgeLabel: child.label });
+    }
+
+    return node;
+  }
+
+  const tree = buildTree(rootLabel, 0, canvasH / 2, canvasH - 100, 1, new Set());
+
+  // Render tree
+  let elemIdx = 0;
+  function renderNode(tn: TreeNode, isLeaf: boolean): void {
+    // Node circle
+    pushElement(state, {
+      id: `prob-tree-node-${elemIdx}`,
+      type: 'ellipse',
+      cx: tn.x,
+      cy: tn.y,
+      rx: nodeRadius,
+      ry: nodeRadius,
+      color: '#1f2a44',
+      stroke_width: 2,
+    });
+    // Node label
+    pushElement(state, {
+      id: `prob-tree-nlbl-${elemIdx}`,
+      type: 'text',
+      x: tn.x,
+      y: tn.y,
+      text: tn.label,
+      size: 13,
+      color: '#1f2a44',
+    });
+
+    // Leaf: show cumulative probability
+    if (isLeaf && tn.cumulativeP < 1) {
+      pushElement(state, {
+        id: `prob-tree-cum-${elemIdx}`,
+        type: 'text',
+        x: tn.x + nodeRadius + 8,
+        y: tn.y,
+        text: `P=${tn.cumulativeP.toFixed(3)}`,
+        size: 11,
+        color: '#666',
+      });
+    }
+
+    elemIdx++;
+
+    for (const child of tn.children) {
+      // Branch line
+      pushElement(state, {
+        id: `prob-tree-edge-${elemIdx}`,
+        type: 'line',
+        from: { x: tn.x + nodeRadius, y: tn.y },
+        to: { x: child.node.x - nodeRadius, y: child.node.y },
+        color: '#555',
+        stroke_width: 1.5,
+      });
+
+      // Edge label at midpoint
+      if (child.edgeLabel) {
+        const mx = (tn.x + nodeRadius + child.node.x - nodeRadius) / 2;
+        const my = (tn.y + child.node.y) / 2 - 10;
+        pushElement(state, {
+          id: `prob-tree-elbl-${elemIdx}`,
+          type: 'text',
+          x: mx,
+          y: my,
+          text: child.edgeLabel,
+          size: 12,
+          color: '#333',
+        });
+      }
+
+      elemIdx++;
+      const childIsLeaf = child.node.children.length === 0;
+      renderNode(child.node, childIsLeaf);
+    }
+  }
+
+  renderNode(tree, tree.children.length === 0);
+}
+
 export function planSemanticBatch(
   semanticBatch: SemanticBatch,
   context?: StructuredWhiteboardContext,
@@ -1339,6 +1501,12 @@ export function planSemanticBatch(
       trace.span('template', 'buildGraphDiagramLayout', () => { buildGraphDiagramLayout(normalizedSemantic, state); return undefined; });
     } else {
       buildGraphDiagramLayout(normalizedSemantic, state);
+    }
+  } else if (normalizedSemantic.template === 'probability_tree') {
+    if (trace) {
+      trace.span('template', 'buildProbabilityTreeLayout', () => { buildProbabilityTreeLayout(normalizedSemantic, state); return undefined; });
+    } else {
+      buildProbabilityTreeLayout(normalizedSemantic, state);
     }
   } else if (trace) {
     trace.span('template', 'buildAdaptiveLayout', () => { buildAdaptiveLayout(normalizedSemantic, regions, state); return undefined; });

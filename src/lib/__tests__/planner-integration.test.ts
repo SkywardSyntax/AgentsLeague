@@ -71,7 +71,7 @@ describe('planner integration: constraints → lowerer pipeline', () => {
   });
 
   it('element count capped after constraints with insertion-order truncation', () => {
-    const elements: DrawElement[] = Array.from({ length: 70 }, (_, i) => ({
+    const elements: DrawElement[] = Array.from({ length: 520 }, (_, i) => ({
       id: `t${i}`,
       type: 'text' as const,
       x: 40,
@@ -86,8 +86,8 @@ describe('planner integration: constraints → lowerer pipeline', () => {
     const layout = makeLayout(constrained.batch.elements);
     const draw = lowerPlannedLayoutToDrawBatch(layout);
 
-    // Default cap is 60
-    expect(draw.elements.length).toBeLessThanOrEqual(60);
+    // Default cap is DEFAULT_MAX_LOWERED_ELEMENTS (500)
+    expect(draw.elements.length).toBeLessThanOrEqual(500);
     expect(layout.warnings).toContain('element_count_capped');
   });
 

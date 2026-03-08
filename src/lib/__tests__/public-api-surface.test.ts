@@ -85,6 +85,7 @@ describe('Public API surface — geometry + stroke-scheduler', () => {
         "easeInOutQuad",
         "easeOutCubic",
         "easeOutQuart",
+        "inferDrawingSpeed",
         "prefersReducedMotion",
         "staggeredStartTimes",
         "strokeDurationMs",

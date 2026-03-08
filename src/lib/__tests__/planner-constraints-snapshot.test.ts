@@ -33,7 +33,7 @@ describe('enforceDrawBatchConstraints snapshot', () => {
           "text": "Second overlapping label",
           "type": "text",
           "x": 100,
-          "y": 139.2,
+          "y": 137.4,
         },
         {
           "displayMode": true,
@@ -41,14 +41,14 @@ describe('enforceDrawBatchConstraints snapshot', () => {
           "tex": "\\frac{a}{b}",
           "type": "latex",
           "x": 100,
-          "y": 182.6,
+          "y": 179.00000000000006,
         },
         {
           "id": "t3",
           "text": "Third stacked label",
           "type": "text",
           "x": 100,
-          "y": 273.24999999999994,
+          "y": 269.65000000000003,
         },
         {
           "displayMode": false,
@@ -56,7 +56,7 @@ describe('enforceDrawBatchConstraints snapshot', () => {
           "tex": "x^2+1",
           "type": "latex",
           "x": 100,
-          "y": 316.6499999999999,
+          "y": 311.2500000000001,
         },
         {
           "from": {

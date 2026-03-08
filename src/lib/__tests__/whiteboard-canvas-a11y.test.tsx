@@ -43,10 +43,10 @@ describe('WhiteboardCanvas accessibility', () => {
   it('all 4 control buttons have accessible names via aria-label', () => {
     render(<WhiteboardCanvas batches={[]} onWarning={vi.fn()} />);
 
-    expect(screen.getByRole('button', { name: 'Reset view' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Fit to content' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Clear canvas' })).toBeTruthy();
   });
 
   it('zoom display has aria-live="polite" region', () => {
@@ -61,9 +61,9 @@ describe('WhiteboardCanvas accessibility', () => {
   it('canvas container has accessible role and label', () => {
     render(<WhiteboardCanvas batches={[]} onWarning={vi.fn()} />);
 
-    const whiteboard = screen.getByRole('application');
+    const whiteboard = screen.getByRole('img');
     expect(whiteboard).toBeTruthy();
-    expect(whiteboard.getAttribute('aria-label')).toBe('Whiteboard');
+    expect(whiteboard.getAttribute('aria-label')).toBe('Whiteboard drawing canvas');
   });
 
   it('all control buttons have focus-visible ring styles', () => {

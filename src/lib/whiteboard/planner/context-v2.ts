@@ -138,6 +138,24 @@ function recentBlocksFromSemanticBatch(batch: SemanticBatch): StructuredWhiteboa
         };
       }
 
+      if (block.kind === 'root') {
+        return {
+          id: `${batch.batch_id}:${block.id}`,
+          kind: block.kind,
+          region: 'auto',
+          text_preview: block.label?.slice(0, 80),
+        };
+      }
+
+      if (block.kind === 'branch') {
+        return {
+          id: `${batch.batch_id}:${block.id}`,
+          kind: block.kind,
+          region: 'auto',
+          text_preview: block.label?.slice(0, 80) ?? `${block.from}→${block.to}`,
+        };
+      }
+
       return {
         id: `${batch.batch_id}:${block.id}`,
         kind: block.kind,

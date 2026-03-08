@@ -1,19 +1,21 @@
-import { DrawBatchSchema } from '@/lib/schema';
+import { DrawBatchSchema, DRAW_ELEMENT_TYPES } from '@/lib/schema';
 import type { DrawBatch } from '@/types/agent';
 
 const CURRENT_SCHEMA_VERSION = 1;
 
-const KNOWN_ELEMENT_TYPES = new Set([
-  'rect',
-  'ellipse',
-  'line',
-  'arrow',
-  'text',
-  'latex',
-  'clear',
-  'cartesian_axes',
-  'number_line',
-  'vector_arrow',
+/**
+ * All element types recognised by the pipeline.  Includes both schema-native
+ * types (in the Zod discriminated union) and types handled exclusively by the
+ * normaliser / lowerer (function_curve, parametric_curve, polar_plot,
+ * riemann_sum, tangent_line).  Elements whose type is NOT in this set are
+ * stripped during migration — so it must stay in sync with the canonical list
+ * exported from `schema.ts` plus any normaliser-only types.
+ */
+const KNOWN_ELEMENT_TYPES = new Set<string>([
+  ...DRAW_ELEMENT_TYPES,
+  // Normaliser-only types (not in the Zod union but valid in the pipeline)
+  'riemann_sum',
+  'tangent_line',
 ]);
 
 /**

@@ -64,7 +64,7 @@ describe('planner lowerer', () => {
   });
 
   it('caps elements at configurable limit and adds element_count_capped warning', () => {
-    const elements: DrawElement[] = Array.from({ length: 80 }, (_, i) => ({
+    const elements: DrawElement[] = Array.from({ length: DEFAULT_MAX_LOWERED_ELEMENTS + 20 }, (_, i) => ({
       id: `t${i}`,
       type: 'text' as const,
       x: 10,
