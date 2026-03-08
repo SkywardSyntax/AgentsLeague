@@ -24,9 +24,13 @@ export function inferDrawingSpeed(
   length: number,
   batchSource?: string,
 ): DrawingSpeed {
+  // Explicit per-stroke hint takes precedence
   if (stroke.drawingSpeed) return stroke.drawingSpeed;
 
-  if (batchSource === 'injection') return 'instant';
+  // Injected batches animate (not instant) — speed derived from stroke role
+  if (batchSource === 'injection') {
+    return inferInjectionSpeed(stroke, length);
+  }
 
   if (length < 20) return 'fast';
 
@@ -40,6 +44,40 @@ export function inferDrawingSpeed(
     if (sharpCorners <= 1) return 'slow';
   }
 
+  return 'natural';
+}
+
+/** Injection-specific speed: use stroke ID naming conventions to pick
+ *  an appropriate animation speed so math diagrams look beautiful. */
+function inferInjectionSpeed(stroke: StrokeTrajectory, length: number): DrawingSpeed {
+  const id = stroke.id.toLowerCase();
+
+  // Priority 0 — background: grid lines, fill regions → fast
+  if (id.includes('grid') || id.includes('fill') || id.includes('region') || id.includes('tick')) {
+    return 'fast';
+  }
+
+  // Priority 1 — structural: axes, outlines → natural
+  if (id.includes('axis') || id.includes('axes') || id.includes('outline') || id.includes('arrow')) {
+    return 'natural';
+  }
+
+  // Priority 3 — labels, text → fast (appear quickly after curves)
+  if (id.includes('label') || id.includes('text') || id.includes('latex')) {
+    return 'fast';
+  }
+
+  // Priority 2 — curves, main shapes → slow (traced for effect)
+  if (id.includes('curve') || id.includes('func') || id.includes('arc')) {
+    return 'slow';
+  }
+
+  // Fallback: use length heuristics
+  if (length < 20) return 'fast';
+  if (length > 200 && stroke.points.length >= 6) {
+    const sharpCorners = countSharpCorners(stroke.points);
+    if (sharpCorners <= 1) return 'slow';
+  }
   return 'natural';
 }
 

@@ -3,7 +3,7 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { ActiveStroke, DrawBatch, DrawElement, LineStyle, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
-import { createActiveBatch, easeOutCubic, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, easeInOutCubic, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import type { BatchCompleteCallback } from '@/lib/whiteboard/stroke-scheduler';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
@@ -119,6 +119,13 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
   const gridColorsRef = useRef({ bg: '#f7f9fc', stroke: 'rgba(77, 93, 118, 0.16)' });
 
   const gridDirtyRef = useRef(false);
+
+  // Animated camera transition state
+  const cameraAnimRef = useRef<number | null>(null);
+
+  // Drawing progress tracking for progress bar
+  const batchTotalStrokesRef = useRef<Map<string, number>>(new Map());
+  const progressElRef = useRef<HTMLDivElement>(null);
 
   // clearCanvas and fitToContent refs — assigned after definition,
   // referenced by useImperativeHandle (moved after fitToContent).
@@ -391,10 +398,12 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
             committedDirtyRef.current = true;
             onBatchAnimationCompleteRef.current?.(batch.batch_id);
           } else {
+            // Injection batches use staggered animation for sequential draw order
+            const isInjection = batch.source === 'injection';
             const active = createActiveBatch(
               compiled.strokes,
               performance.now(),
-              false,
+              isInjection,
               false,
               batch.source,
             );
@@ -423,6 +432,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
                 batch.batch_id,
                 (pendingBatchStrokesRef.current.get(batch.batch_id) ?? 0) + animatedStrokes.length,
               );
+              // Track total for progress bar
+              const totalAnimated = instantStrokes.length + animatedStrokes.length;
+              batchTotalStrokesRef.current.set(batch.batch_id, totalAnimated);
               // Tag each stroke with its batchId for completion tracking
               for (const s of animatedStrokes) {
                 (s as ActiveStroke & { _batchId?: string })._batchId = batch.batch_id;
@@ -430,6 +442,36 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
             } else {
               // All strokes were instant — batch is already complete
               onBatchAnimationCompleteRef.current?.(batch.batch_id);
+            }
+
+            // Injection batches: auto-pan if content is mostly off-screen
+            if (isInjection && compiled.strokes.length > 0) {
+              const allStrokesBounds = compiled.strokes.reduce(
+                (acc, s) => {
+                  if (!s.bounds) return acc;
+                  return {
+                    minX: Math.min(acc.minX, s.bounds.minX),
+                    minY: Math.min(acc.minY, s.bounds.minY),
+                    maxX: Math.max(acc.maxX, s.bounds.maxX),
+                    maxY: Math.max(acc.maxY, s.bounds.maxY),
+                  };
+                },
+                { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+              );
+              if (isFinite(allStrokesBounds.minX)) {
+                const cam = cameraRef.current;
+                const vpMinX = -cam.x / cam.zoom;
+                const vpMinY = -cam.y / cam.zoom;
+                const vpMaxX = vpMinX + sizeRef.current.width / cam.zoom;
+                const vpMaxY = vpMinY + sizeRef.current.height / cam.zoom;
+                // Check if content center is outside viewport
+                const cx = (allStrokesBounds.minX + allStrokesBounds.maxX) / 2;
+                const cy = (allStrokesBounds.minY + allStrokesBounds.maxY) / 2;
+                const isOffScreen = cx < vpMinX || cx > vpMaxX || cy < vpMinY || cy > vpMaxY;
+                if (isOffScreen) {
+                  animateCameraToContent(allStrokesBounds);
+                }
+              }
             }
           }
         }
@@ -669,10 +711,35 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
             const remaining = (batchCounters.get(batchId) ?? 1) - 1;
             if (remaining <= 0) {
               batchCounters.delete(batchId);
+              batchTotalStrokesRef.current.delete(batchId);
               onBatchAnimationCompleteRef.current?.(batchId);
             } else {
               batchCounters.set(batchId, remaining);
             }
+          }
+        }
+
+        // Update progress bar: compute aggregate progress across all animating batches
+        if (batchTotalStrokesRef.current.size > 0) {
+          let totalAll = 0;
+          let remainingAll = 0;
+          for (const [bid, total] of batchTotalStrokesRef.current) {
+            totalAll += total;
+            remainingAll += batchCounters.get(bid) ?? 0;
+          }
+          const progress = totalAll > 0 ? (totalAll - remainingAll) / totalAll : 1;
+          const el = progressElRef.current;
+          if (el) {
+            el.style.setProperty('--progress', String(progress));
+            el.style.opacity = '1';
+          }
+        }
+        // Fade out progress bar when no batches are animating
+        if (batchCounters.size === 0 && batchTotalStrokesRef.current.size === 0) {
+          const el = progressElRef.current;
+          if (el) {
+            el.style.setProperty('--progress', '1');
+            el.style.opacity = '0';
           }
         }
       }
@@ -756,6 +823,63 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
     committedDirtyRef.current = true;
   }, []);
 
+  /** Smoothly animate the camera to show the given bounding box.
+   *  Prefers panning to zooming — only zooms out if content doesn't fit. */
+  const animateCameraToContent = useCallback((
+    contentBounds: { minX: number; minY: number; maxX: number; maxY: number },
+  ) => {
+    // Cancel any in-progress camera animation
+    if (cameraAnimRef.current !== null) {
+      cancelAnimationFrame(cameraAnimRef.current);
+      cameraAnimRef.current = null;
+    }
+
+    const { width, height } = sizeRef.current;
+    const target = computeFitCamera(contentBounds, width, height, MIN_ZOOM, MAX_ZOOM);
+    if (!target) return;
+
+    // Prefer panning: if current zoom can show the content, keep it
+    const current = cameraRef.current;
+    const contentW = contentBounds.maxX - contentBounds.minX;
+    const contentH = contentBounds.maxY - contentBounds.minY;
+    const padding = 40;
+    const fitsAtCurrentZoom =
+      contentW * current.zoom + padding * 2 <= width &&
+      contentH * current.zoom + padding * 2 <= height;
+
+    const targetCamera = fitsAtCurrentZoom
+      ? {
+          x: width / 2 - (contentBounds.minX + contentW / 2) * current.zoom,
+          y: height / 2 - (contentBounds.minY + contentH / 2) * current.zoom,
+          zoom: current.zoom,
+        }
+      : target;
+
+    const startCamera = { ...current };
+    const duration = 400; // ms
+    const startTime = performance.now();
+
+    const animate = () => {
+      const elapsed = performance.now() - startTime;
+      const t = easeInOutCubic(Math.min(1, elapsed / duration));
+
+      cameraRef.current = {
+        x: startCamera.x + (targetCamera.x - startCamera.x) * t,
+        y: startCamera.y + (targetCamera.y - startCamera.y) * t,
+        zoom: startCamera.zoom + (targetCamera.zoom - startCamera.zoom) * t,
+      };
+      committedDirtyRef.current = true;
+
+      if (t < 1) {
+        cameraAnimRef.current = requestAnimationFrame(animate);
+      } else {
+        cameraAnimRef.current = null;
+      }
+    };
+
+    cameraAnimRef.current = requestAnimationFrame(animate);
+  }, []);
+
   const clearCanvas = useCallback(() => {
     committedStrokesRef.current = [];
     activeStrokesRef.current = [];
@@ -763,6 +887,11 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
     clearGenerationRef.current += 1;
     committedDirtyRef.current = true;
     cameraRef.current = { x: 40, y: 40, zoom: 1 };
+    batchTotalStrokesRef.current.clear();
+    if (cameraAnimRef.current !== null) {
+      cancelAnimationFrame(cameraAnimRef.current);
+      cameraAnimRef.current = null;
+    }
   }, []);
 
   // Keep refs in sync for useImperativeHandle
@@ -1037,6 +1166,24 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         <canvas ref={bgRef} className="absolute inset-0" />
         <canvas ref={committedRef} className="absolute inset-0" />
         <canvas ref={activeRef} className="absolute inset-0" />
+      </div>
+
+      {/* Drawing-in-progress progress bar */}
+      <div
+        ref={progressElRef}
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2px] transition-opacity duration-500 ease-out"
+        style={
+          {
+            '--progress': '0',
+            opacity: 0,
+          } as React.CSSProperties
+        }
+        aria-hidden="true"
+      >
+        <div
+          className="h-full bg-[var(--color-accent,#6366f1)] transition-[width] duration-100 ease-out"
+          style={{ width: 'calc(var(--progress, 0) * 100%)' }}
+        />
       </div>
 
       <div id="whiteboard-drawing-description" className="sr-only">

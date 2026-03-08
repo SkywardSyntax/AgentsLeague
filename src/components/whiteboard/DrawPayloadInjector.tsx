@@ -1,17 +1,20 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { DrawBatchSchema } from '@/lib/schema';
 import { useDrawInjector } from '@/hooks/useDrawInjector';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import type { DrawBatch, DrawElement } from '@/types/agent';
 import { PillButton } from '@/components/ui/PillButton';
+import { MiniPreviewCanvas } from './MiniPreviewCanvas';
+import { DrawingPayloadDocs } from './DrawingPayloadDocs';
 
 // ---------------------------------------------------------------------------
 // Template categories & types
 // ---------------------------------------------------------------------------
 
-const TEMPLATE_CATEGORIES = ['All', 'Basic', 'Algebra', 'Calculus', 'Geometry', 'Linear Algebra'] as const;
+const TEMPLATE_CATEGORIES = ['All', 'Basic', 'Algebra', 'Calculus', 'Geometry', 'Linear Algebra', 'Examples'] as const;
 type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
 
 interface MathTemplate {
@@ -378,9 +381,300 @@ const TEMPLATES: Record<string, MathTemplate> = {
       return { batch_id: batchId('integral'), style_preset: 'clean_pen_sketch' as const, elements };
     },
   },
+
+  /* ── Example Payloads ─── */
+
+  /* 11 ── Full Math Suite (cartesian_axes + function_curve + number_line + text + latex) */
+  full_math_suite: {
+    label: 'Full Math Suite',
+    category: 'Examples',
+    description: 'Axes, function curve, number line, text & LaTeX',
+    build: () => {
+      const elements: DrawElement[] = [
+        {
+          id: uid('fms-axes'), type: 'cartesian_axes',
+          x: 80, y: 50, width: 600, height: 400,
+          xRange: [-5, 5], yRange: [-2, 10],
+          xLabel: 'x', yLabel: 'y', gridlines: true,
+        },
+        {
+          id: uid('fms-curve'), type: 'function_curve',
+          x: 80, y: 50, width: 600, height: 400,
+          xRange: [-5, 5], yRange: [-2, 10],
+          expression: 'x*x', label: 'f(x) = x²', color: '#2563eb',
+        },
+        {
+          id: uid('fms-nl'), type: 'number_line',
+          x: 80, y: 520, length: 600, min: -5, max: 5, label: 'ℝ',
+          highlights: [{ value: 0, label: 'origin' }, { value: 3, label: 'a' }],
+        },
+        { id: uid('fms-t1'), type: 'text', x: 750, y: 80, text: 'Parabola plot', size: 16, color: '#1e40af' },
+        { id: uid('fms-t2'), type: 'text', x: 750, y: 110, text: 'vertex at (0,0)', size: 12, color: '#64748b' },
+        { id: uid('fms-eq'), type: 'latex', x: 750, y: 160, tex: 'f(x) = x^2', displayMode: true, fontSize: 22 },
+        { id: uid('fms-eq2'), type: 'latex', x: 750, y: 230, tex: "f'(x) = 2x", displayMode: true, fontSize: 18 },
+      ];
+      return { batch_id: batchId('full-math'), style_preset: 'blueprint_neat' as const, elements };
+    },
+  },
+
+  /* 12 ── Geometry Showcase (triangle, angle_arc, vector_arrow, ellipse) */
+  geometry_showcase: {
+    label: 'Geometry Showcase',
+    category: 'Examples',
+    description: 'Triangle, angle arcs, vectors & circle',
+    build: () => {
+      const elements: DrawElement[] = [];
+      const A = { x: 400, y: 120 };
+      const B = { x: 250, y: 450 };
+      const C = { x: 650, y: 450 };
+      elements.push(
+        { id: uid('gs-ab'), type: 'line', from: A, to: B, color: '#111827', stroke_width: 2 },
+        { id: uid('gs-bc'), type: 'line', from: B, to: C, color: '#111827', stroke_width: 2 },
+        { id: uid('gs-ca'), type: 'line', from: C, to: A, color: '#111827', stroke_width: 2 },
+      );
+      elements.push(
+        { id: uid('gs-la'), type: 'text', x: A.x - 4, y: A.y - 14, text: 'A', size: 14, color: '#1e40af' },
+        { id: uid('gs-lb'), type: 'text', x: B.x - 18, y: B.y + 8, text: 'B', size: 14, color: '#1e40af' },
+        { id: uid('gs-lc'), type: 'text', x: C.x + 8, y: C.y + 8, text: 'C', size: 14, color: '#1e40af' },
+      );
+      elements.push(
+        { id: uid('gs-angA'), type: 'angle_arc', x: A.x, y: A.y, radius: 30, startAngle: 245, endAngle: 295, label: 'α' },
+        { id: uid('gs-angB'), type: 'angle_arc', x: B.x, y: B.y, radius: 30, startAngle: -25, endAngle: 65, label: 'β' },
+        { id: uid('gs-angC'), type: 'angle_arc', x: C.x, y: C.y, radius: 30, startAngle: 115, endAngle: 205, label: 'γ' },
+      );
+      const midBC = { x: (B.x + C.x) / 2, y: (B.y + C.y) / 2 };
+      elements.push(
+        { id: uid('gs-med'), type: 'vector_arrow', x: A.x, y: A.y, dx: midBC.x - A.x, dy: midBC.y - A.y, label: 'median', color: '#c61f1f' },
+      );
+      elements.push(
+        { id: uid('gs-circ'), type: 'ellipse', cx: 435, cy: 310, rx: 200, ry: 200, color: '#2563eb', stroke_width: 1 },
+      );
+      elements.push(
+        { id: uid('gs-sum'), type: 'latex', x: 750, y: 250, tex: '\\alpha + \\beta + \\gamma = 180°', fontSize: 16, displayMode: false },
+      );
+      return { batch_id: batchId('geo-showcase'), style_preset: 'clean_pen_sketch' as const, elements };
+    },
+  },
+
+  /* 13 ── Linear Algebra (matrix_bracket + vector_arrow + latex) */
+  linear_algebra: {
+    label: 'Linear Algebra',
+    category: 'Examples',
+    description: 'Matrix, vectors & transformation equations',
+    build: () => {
+      const elements: DrawElement[] = [
+        {
+          id: uid('la-mat'), type: 'matrix_bracket',
+          x: 120, y: 150, rows: [['2', '-1'], ['0', '3']], bracketStyle: '[]',
+          cellWidth: 40, cellHeight: 32,
+        },
+        { id: uid('la-mlbl'), type: 'latex', x: 120, y: 120, tex: 'A =', fontSize: 20, displayMode: false },
+        { id: uid('la-v1'), type: 'vector_arrow', x: 350, y: 400, dx: 150, dy: -100, label: 'v⃗', color: '#2563eb' },
+        { id: uid('la-v2'), type: 'vector_arrow', x: 350, y: 400, dx: 200, dy: -250, label: 'Av⃗', color: '#c61f1f' },
+        { id: uid('la-dot'), type: 'ellipse', cx: 350, cy: 400, rx: 4, ry: 4, color: '#111827', stroke_width: 2 },
+        { id: uid('la-xa'), type: 'arrow', from: { x: 300, y: 400 }, to: { x: 650, y: 400 }, color: '#666666', stroke_width: 1 },
+        { id: uid('la-ya'), type: 'arrow', from: { x: 350, y: 450 }, to: { x: 350, y: 100 }, color: '#666666', stroke_width: 1 },
+        { id: uid('la-eq1'), type: 'latex', x: 700, y: 150, tex: 'A\\vec{v} = \\begin{bmatrix} 2 & -1 \\\\ 0 & 3 \\end{bmatrix} \\vec{v}', displayMode: true, fontSize: 18 },
+        { id: uid('la-eq2'), type: 'latex', x: 700, y: 260, tex: '\\det(A) = 6', displayMode: true, fontSize: 16 },
+        { id: uid('la-eq3'), type: 'latex', x: 700, y: 330, tex: '\\lambda_1 = 2, \\; \\lambda_2 = 3', displayMode: true, fontSize: 16 },
+        { id: uid('la-title'), type: 'text', x: 120, y: 80, text: 'Linear Transformation', size: 18, color: '#1e40af' },
+      ];
+      return { batch_id: batchId('linalg'), style_preset: 'blueprint_neat' as const, elements };
+    },
+  },
 };
 
-type TabId = 'json' | 'templates';
+// ---------------------------------------------------------------------------
+// Payload history (localStorage)
+// ---------------------------------------------------------------------------
+
+const HISTORY_KEY = 'draw-injector-history';
+const MAX_HISTORY = 5;
+
+interface HistoryEntry {
+  timestamp: number;
+  elementCount: number;
+  firstType: string;
+  json: string;
+}
+
+function loadHistory(): HistoryEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveToHistory(json: string, elementCount: number, firstType: string) {
+  const entries = loadHistory();
+  entries.unshift({ timestamp: Date.now(), json, elementCount, firstType });
+  if (entries.length > MAX_HISTORY) entries.length = MAX_HISTORY;
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries));
+  } catch { /* quota exceeded — silently ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Quick-inject element types & form configs
+// ---------------------------------------------------------------------------
+
+const QUICK_ELEMENT_TYPES = [
+  'rect', 'ellipse', 'line', 'arrow', 'text',
+  'cartesian_axes', 'number_line', 'function_curve',
+] as const;
+type QuickElementType = (typeof QUICK_ELEMENT_TYPES)[number];
+
+const QUICK_ELEMENT_LABELS: Record<QuickElementType, string> = {
+  rect: 'Rectangle',
+  ellipse: 'Ellipse',
+  line: 'Line',
+  arrow: 'Arrow',
+  text: 'Text',
+  cartesian_axes: 'Cartesian Axes',
+  number_line: 'Number Line',
+  function_curve: 'Function Curve',
+};
+
+function buildQuickBatch(type: QuickElementType, fields: Record<string, string>): DrawBatch {
+  const color = fields.color || '#0a84ff';
+  const id = `qi-${type}-${Date.now().toString(36)}`;
+  let element: DrawElement;
+
+  switch (type) {
+    case 'rect':
+      element = { id, type: 'rect', x: num(fields.x, 100), y: num(fields.y, 100), w: num(fields.w, 200), h: num(fields.h, 150), color };
+      break;
+    case 'ellipse':
+      element = { id, type: 'ellipse', cx: num(fields.cx, 300), cy: num(fields.cy, 300), rx: num(fields.rx, 100), ry: num(fields.ry, 80), color };
+      break;
+    case 'line':
+      element = { id, type: 'line', from: { x: num(fields.x1, 100), y: num(fields.y1, 100) }, to: { x: num(fields.x2, 400), y: num(fields.y2, 300) }, color, stroke_width: num(fields.sw, 2) };
+      break;
+    case 'arrow':
+      element = { id, type: 'arrow', from: { x: num(fields.x1, 100), y: num(fields.y1, 300) }, to: { x: num(fields.x2, 400), y: num(fields.y2, 100) }, color, stroke_width: num(fields.sw, 2) };
+      break;
+    case 'text':
+      element = { id, type: 'text', x: num(fields.x, 200), y: num(fields.y, 200), text: fields.content || 'Hello', size: num(fields.size, 18), color };
+      break;
+    case 'cartesian_axes':
+      element = {
+        id, type: 'cartesian_axes', x: 100, y: 60, width: 800, height: 600,
+        xRange: [num(fields.xMin, -5), num(fields.xMax, 5)],
+        yRange: [num(fields.yMin, -5), num(fields.yMax, 5)],
+        xLabel: fields.xLabel || 'x', yLabel: fields.yLabel || 'y', gridlines: true,
+      };
+      break;
+    case 'number_line':
+      element = {
+        id, type: 'number_line', x: 100, y: 350, length: num(fields.length, 800),
+        min: num(fields.min, -5), max: num(fields.max, 5), label: fields.label || 'ℝ',
+      };
+      break;
+    case 'function_curve':
+      element = {
+        id, type: 'function_curve', x: 100, y: 60, width: 800, height: 600,
+        expression: fields.expression || 'sin(x)',
+        xRange: [num(fields.xMin, -6.28), num(fields.xMax, 6.28)],
+        yRange: [num(fields.yMin, -2), num(fields.yMax, 2)],
+        label: fields.label || '', color,
+      };
+      break;
+    default:
+      element = { id, type: 'rect', x: 100, y: 100, w: 200, h: 150 };
+  }
+
+  return {
+    batch_id: `quick-${Date.now().toString(36)}`,
+    style_preset: 'clean_pen_sketch',
+    elements: [element],
+  };
+}
+
+function num(v: string | undefined, fallback: number): number {
+  if (v === undefined || v === '') return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// ---------------------------------------------------------------------------
+// Quick-inject form field configs per element type
+// ---------------------------------------------------------------------------
+
+interface FieldDef { key: string; label: string; defaultValue: string; type?: 'text' | 'number' | 'color'; }
+
+const QUICK_FIELDS: Record<QuickElementType, FieldDef[]> = {
+  rect: [
+    { key: 'x', label: 'X', defaultValue: '100', type: 'number' },
+    { key: 'y', label: 'Y', defaultValue: '100', type: 'number' },
+    { key: 'w', label: 'Width', defaultValue: '200', type: 'number' },
+    { key: 'h', label: 'Height', defaultValue: '150', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#0a84ff', type: 'color' },
+  ],
+  ellipse: [
+    { key: 'cx', label: 'Center X', defaultValue: '300', type: 'number' },
+    { key: 'cy', label: 'Center Y', defaultValue: '300', type: 'number' },
+    { key: 'rx', label: 'Radius X', defaultValue: '100', type: 'number' },
+    { key: 'ry', label: 'Radius Y', defaultValue: '80', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#0a84ff', type: 'color' },
+  ],
+  line: [
+    { key: 'x1', label: 'From X', defaultValue: '100', type: 'number' },
+    { key: 'y1', label: 'From Y', defaultValue: '100', type: 'number' },
+    { key: 'x2', label: 'To X', defaultValue: '400', type: 'number' },
+    { key: 'y2', label: 'To Y', defaultValue: '300', type: 'number' },
+    { key: 'sw', label: 'Stroke', defaultValue: '2', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
+  ],
+  arrow: [
+    { key: 'x1', label: 'From X', defaultValue: '100', type: 'number' },
+    { key: 'y1', label: 'From Y', defaultValue: '300', type: 'number' },
+    { key: 'x2', label: 'To X', defaultValue: '400', type: 'number' },
+    { key: 'y2', label: 'To Y', defaultValue: '100', type: 'number' },
+    { key: 'sw', label: 'Stroke', defaultValue: '2', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
+  ],
+  text: [
+    { key: 'x', label: 'X', defaultValue: '200', type: 'number' },
+    { key: 'y', label: 'Y', defaultValue: '200', type: 'number' },
+    { key: 'content', label: 'Text', defaultValue: 'Hello', type: 'text' },
+    { key: 'size', label: 'Font Size', defaultValue: '18', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
+  ],
+  cartesian_axes: [
+    { key: 'xMin', label: 'X Min', defaultValue: '-5', type: 'number' },
+    { key: 'xMax', label: 'X Max', defaultValue: '5', type: 'number' },
+    { key: 'yMin', label: 'Y Min', defaultValue: '-5', type: 'number' },
+    { key: 'yMax', label: 'Y Max', defaultValue: '5', type: 'number' },
+    { key: 'xLabel', label: 'X Label', defaultValue: 'x', type: 'text' },
+    { key: 'yLabel', label: 'Y Label', defaultValue: 'y', type: 'text' },
+  ],
+  number_line: [
+    { key: 'min', label: 'Min', defaultValue: '-5', type: 'number' },
+    { key: 'max', label: 'Max', defaultValue: '5', type: 'number' },
+    { key: 'length', label: 'Length', defaultValue: '800', type: 'number' },
+    { key: 'label', label: 'Label', defaultValue: 'ℝ', type: 'text' },
+  ],
+  function_curve: [
+    { key: 'expression', label: 'f(x)', defaultValue: 'sin(x)', type: 'text' },
+    { key: 'xMin', label: 'X From', defaultValue: '-6.28', type: 'number' },
+    { key: 'xMax', label: 'X To', defaultValue: '6.28', type: 'number' },
+    { key: 'yMin', label: 'Y From', defaultValue: '-2', type: 'number' },
+    { key: 'yMax', label: 'Y To', defaultValue: '2', type: 'number' },
+    { key: 'label', label: 'Label', defaultValue: '', type: 'text' },
+    { key: 'color', label: 'Color', defaultValue: '#0a84ff', type: 'color' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Bracket matching pairs
+// ---------------------------------------------------------------------------
+
+const BRACKET_PAIRS: Record<string, string> = { '{': '}', '[': ']', '"': '"' };
+
+type TabId = 'json' | 'templates' | 'history';
 
 const DEFAULT_JSON = JSON.stringify(
   {
@@ -426,11 +720,175 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
   const [copiedJson, setCopiedJson] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
 
+  // New state — format feedback
+  const [formatFeedback, setFormatFeedback] = useState(false);
+
+  // Docs panel toggle
+  const [showDocs, setShowDocs] = useState(false);
+
+  // First-time walkthrough
+  const [walkthroughStep, setWalkthroughStep] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isVisible && !localStorage.getItem('injector_used')) {
+      setWalkthroughStep(1);
+    }
+  }, [isVisible]);
+
+  const dismissWalkthrough = useCallback(() => {
+    setWalkthroughStep(null);
+    try { localStorage.setItem('injector_used', '1'); } catch { /* ignore */ }
+  }, []);
+
+  const advanceWalkthrough = useCallback(() => {
+    setWalkthroughStep((s) => {
+      if (s === null) return null;
+      if (s >= 3) {
+        try { localStorage.setItem('injector_used', '1'); } catch { /* ignore */ }
+        return null;
+      }
+      return s + 1;
+    });
+  }, []);
+
+  // New state — history
+  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
+
+  // New state — quick inject
+  const [quickType, setQuickType] = useState<QuickElementType | ''>('');
+  const [quickFields, setQuickFields] = useState<Record<string, string>>({});
+  const [quickSuccess, setQuickSuccess] = useState<string | null>(null);
+
+  // Textarea ref for programmatic cursor manipulation
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Debounced preview: update the preview batch 300ms after the user stops typing
+  const [previewBatch, setPreviewBatch] = useState<DrawBatch | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const parsed = JSON.parse(jsonText);
+        const result = DrawBatchSchema.safeParse(parsed);
+        if (result.success) {
+          setPreviewBatch(result.data as DrawBatch);
+        } else {
+          setPreviewBatch(null);
+        }
+      } catch {
+        setPreviewBatch(null);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [jsonText]);
+
   const filteredTemplates = useMemo(() => {
     return Object.entries(TEMPLATES).filter(
       ([, tpl]) => activeCategory === 'All' || tpl.category === activeCategory,
     );
   }, [activeCategory]);
+
+  // ------- Format JSON handler -------
+  const handleFormatJson = useCallback(() => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      setJsonText(JSON.stringify(parsed, null, 2));
+      setFormatFeedback(true);
+      setTimeout(() => setFormatFeedback(false), 1500);
+    } catch {
+      // Can't format invalid JSON — silently ignore
+    }
+  }, [jsonText]);
+
+  // ------- Keyboard shortcut: Ctrl/Cmd+Shift+F to format -------
+  useEffect(() => {
+    function handleGlobalKey(e: globalThis.KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        handleFormatJson();
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, [handleFormatJson]);
+
+  // ------- Textarea key handler: Tab, bracket auto-close, Ctrl+A -------
+  const handleTextareaKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    const ta = e.currentTarget;
+
+    // Tab inserts 2 spaces
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const val = ta.value;
+      const updated = val.substring(0, start) + '  ' + val.substring(end);
+      setJsonText(updated);
+      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 2; });
+      return;
+    }
+
+    // Ctrl+A selects only textarea content
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      e.preventDefault();
+      e.stopPropagation();
+      ta.select();
+      return;
+    }
+
+    // Auto-close brackets and quotes
+    const closing = BRACKET_PAIRS[e.key];
+    if (closing) {
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const val = ta.value;
+      // For quotes, skip if char after cursor is already a quote
+      if (e.key === '"' && val[start] === '"') {
+        e.preventDefault();
+        requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
+        return;
+      }
+      e.preventDefault();
+      const selected = val.substring(start, end);
+      const updated = val.substring(0, start) + e.key + selected + closing + val.substring(end);
+      setJsonText(updated);
+      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
+    }
+  }, []);
+
+  // ------- Paste handler: auto-format JSON -------
+  const handleTextareaPaste = useCallback((e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = e.clipboardData.getData('text/plain');
+    try {
+      const parsed = JSON.parse(pasted);
+      e.preventDefault();
+      setJsonText(JSON.stringify(parsed, null, 2));
+    } catch {
+      // Not valid JSON — let default paste behavior work
+    }
+  }, []);
+
+  // ------- Quick inject handler -------
+  const handleQuickInject = useCallback(async () => {
+    if (!quickType) return;
+    const batch = buildQuickBatch(quickType, quickFields);
+    clearError();
+    setQuickSuccess(null);
+
+    const result = await inject(batch);
+    if (result) {
+      onInject(result.batch);
+      setQuickSuccess(`Added ${QUICK_ELEMENT_LABELS[quickType]}`);
+      setTimeout(() => setQuickSuccess(null), 2000);
+    }
+  }, [quickType, quickFields, inject, onInject, clearError]);
+
+  // Reset quick-inject fields when type changes
+  useEffect(() => {
+    if (!quickType) { setQuickFields({}); return; }
+    const defaults: Record<string, string> = {};
+    for (const f of QUICK_FIELDS[quickType]) defaults[f.key] = f.defaultValue;
+    setQuickFields(defaults);
+  }, [quickType]);
 
   // Real-time Zod validation
   const parseResult = useMemo(() => {
@@ -501,6 +959,11 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     const result = await inject(parseResult.data);
     if (result) {
       onInject(result.batch);
+      // Save to history
+      const firstType = result.batch.elements[0]?.type ?? 'unknown';
+      saveToHistory(jsonText, result.diagnostics.elementCount, firstType);
+      setHistory(loadHistory());
+
       setSuccessMsg(`Injected ${result.diagnostics.elementCount} elements`);
       // Auto-close after brief success display (desktop only)
       if (!forceOpen) {
@@ -509,7 +972,7 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
         setTimeout(() => setSuccessMsg(null), 3000);
       }
     }
-  }, [parseResult, inject, onInject, clearError, forceOpen]);
+  }, [parseResult, inject, onInject, clearError, forceOpen, jsonText]);
 
     const handleTemplateClick = useCallback(
     (key: string) => {
@@ -548,34 +1011,104 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     <>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
-            Draw Injector
-          </span>
-          {parseResult.ok && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-accent)]">
-              {parseResult.elementCount} el{parseResult.elementCount !== 1 ? 's' : ''}
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
+              ⚡ Draw Injector
             </span>
-          )}
-          {parseResult.ok && !isInjecting && (
-            <span className="text-[10px] font-medium text-green-600 dark:text-green-400">Ready ✓</span>
-          )}
+            <span className="rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-accent)]">
+              v1
+            </span>
+            {parseResult.ok && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-accent)]">
+                {parseResult.elementCount} el{parseResult.elementCount !== 1 ? 's' : ''}
+              </span>
+            )}
+            {parseResult.ok && !isInjecting && (
+              <span className="text-[10px] font-medium text-green-600 dark:text-green-400">Ready ✓</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-[var(--color-text-muted)]">
+              Inject drawing payloads directly
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowDocs((v) => !v)}
+              className="text-[9px] font-medium text-[var(--color-accent)] transition-colors hover:underline"
+            >
+              {showDocs ? 'Hide Docs' : 'Docs'}
+            </button>
+          </div>
         </div>
-        {!forceOpen && (
+        <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setOpen(false)}
-            aria-label="Close injector"
-            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text-secondary)]"
+            onClick={() => setShowDocs((v) => !v)}
+            aria-label="Toggle documentation"
+            title="Documentation"
+            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent-faint)] hover:text-[var(--color-accent)]"
           >
-            ✕
+            ?
           </button>
-        )}
+          {!forceOpen && (
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close injector"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text-secondary)]"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Docs panel (collapsible) */}
+      {showDocs && (
+        <div className="border-b border-[var(--color-border)]">
+          <DrawingPayloadDocs onClose={() => setShowDocs(false)} />
+        </div>
+      )}
+
+      {/* First-time walkthrough tooltip */}
+      {walkthroughStep !== null && (
+        <div className="relative border-b border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)] px-3 py-2">
+          <div className="flex items-start gap-2">
+            <span className="shrink-0 text-sm">💡</span>
+            <div className="flex flex-1 flex-col gap-1">
+              <p className="text-[10px] font-semibold text-[var(--color-accent)]">
+                Getting Started — Step {walkthroughStep}/3
+              </p>
+              <p className="text-[10px] leading-relaxed text-[var(--color-text-secondary)]">
+                {walkthroughStep === 1 && 'Pick a template from the dropdown to get started quickly.'}
+                {walkthroughStep === 2 && 'Edit the JSON to customize, or inject the template directly.'}
+                {walkthroughStep === 3 && 'Click Inject to draw on the whiteboard — that\'s it!'}
+              </p>
+            </div>
+          </div>
+          <div className="mt-1.5 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={dismissWalkthrough}
+              className="rounded px-2 py-0.5 text-[9px] font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-secondary)]"
+            >
+              Skip
+            </button>
+            <button
+              type="button"
+              onClick={advanceWalkthrough}
+              className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-[9px] font-medium text-white transition-colors hover:opacity-90"
+            >
+              {walkthroughStep >= 3 ? 'Done' : 'Next →'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tab switcher */}
       <div className="flex gap-1 border-b border-[var(--color-border)] px-3 py-1.5" role="tablist">
-        {(['json', 'templates'] as const).map((t) => (
+        {(['json', 'templates', 'history'] as const).map((t) => (
           <PillButton
             key={t}
             role="tab"
@@ -584,7 +1117,7 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
             size="sm"
             onClick={() => setTab(t)}
           >
-            {t === 'json' ? 'JSON' : 'Templates'}
+            {t === 'json' ? 'JSON' : t === 'templates' ? 'Templates' : `History (${history.length})`}
           </PillButton>
         ))}
       </div>
@@ -595,6 +1128,14 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
           <div className="flex flex-col gap-2">
             {/* Toolbar */}
             <div className="flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={handleFormatJson}
+                title="Format JSON (Ctrl+Shift+F)"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface)]"
+              >
+                {formatFeedback ? 'Formatted ✓' : 'Format'}
+              </button>
               <button
                 type="button"
                 onClick={copyJsonToClipboard}
@@ -615,9 +1156,12 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
                 ))}
               </div>
               <textarea
+                ref={textareaRef}
                 aria-label="DrawBatch JSON"
                 value={jsonText}
                 onChange={(e) => setJsonText(e.target.value)}
+                onKeyDown={handleTextareaKeyDown}
+                onPaste={handleTextareaPaste}
                 spellCheck={false}
                 rows={isMobile ? 6 : 12}
                 className="w-full flex-1 resize-y bg-[var(--color-surface)] px-3 py-2.5 font-mono text-xs leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-muted)]"
@@ -705,6 +1249,23 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
               </div>
             )}
 
+            {/* Mini preview */}
+            {previewBatch ? (
+              <MiniPreviewCanvas drawBatch={previewBatch} width={isMobile ? 280 : 352} height={200} />
+            ) : validationErrors.length > 0 && jsonText.trim().length > 2 ? (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[11px] font-semibold tracking-wide text-[var(--color-text-secondary)] uppercase">
+                  Preview
+                </p>
+                <div
+                  className="flex items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)]"
+                  style={{ width: isMobile ? 280 : 352, height: 200 }}
+                >
+                  <span className="text-[11px] text-[var(--color-text-muted)]">Invalid JSON</span>
+                </div>
+              </div>
+            ) : null}
+
             <PillButton
               variant="accent"
               onClick={handleInject}
@@ -713,6 +1274,54 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
             >
               {isInjecting ? 'Injecting…' : 'Inject'}
             </PillButton>
+
+            {/* ── Quick Inject ── */}
+            <div className="mt-2 flex flex-col gap-2 border-t border-[var(--color-border)] pt-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Quick Inject
+              </span>
+              <select
+                value={quickType}
+                onChange={(e) => setQuickType(e.target.value as QuickElementType | '')}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+              >
+                <option value="">Add element type…</option>
+                {QUICK_ELEMENT_TYPES.map((t) => (
+                  <option key={t} value={t}>{QUICK_ELEMENT_LABELS[t]}</option>
+                ))}
+              </select>
+
+              {quickType && (
+                <>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {QUICK_FIELDS[quickType].map((f) => (
+                      <label key={f.key} className="flex flex-col gap-0.5">
+                        <span className="text-[9px] font-medium text-[var(--color-text-muted)]">{f.label}</span>
+                        <input
+                          type={f.type === 'color' ? 'color' : f.type === 'number' ? 'number' : 'text'}
+                          value={quickFields[f.key] ?? f.defaultValue}
+                          onChange={(e) => setQuickFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          className={`rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] ${f.type === 'color' ? 'h-7 w-full cursor-pointer p-0' : ''}`}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <PillButton
+                      variant="accent"
+                      size="sm"
+                      onClick={handleQuickInject}
+                      disabled={isInjecting}
+                    >
+                      {quickType === 'function_curve' ? 'Plot' : 'Add to canvas'}
+                    </PillButton>
+                    {quickSuccess && (
+                      <span className="text-[10px] font-medium text-green-600 dark:text-green-400">{quickSuccess} ✓</span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -755,6 +1364,45 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {tab === 'history' && (
+          <div className="flex flex-col gap-2">
+            {history.length === 0 ? (
+              <p className="py-4 text-center text-xs text-[var(--color-text-muted)]">
+                No injection history yet. Injected payloads will appear here.
+              </p>
+            ) : (
+              history.map((entry, i) => (
+                <button
+                  key={`${entry.timestamp}-${i}`}
+                  type="button"
+                  onClick={() => {
+                    setJsonText(entry.json);
+                    setTab('json');
+                  }}
+                  className="btn-press group flex flex-col gap-0.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2.5 text-left transition-all duration-150 hover:border-[var(--color-accent-soft)] hover:bg-[var(--color-accent-faint)] hover:shadow-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-medium text-[var(--color-text-muted)]">
+                      {new Date(entry.timestamp).toLocaleString(undefined, {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </span>
+                    <span className="rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-accent)]">
+                      {entry.elementCount} el{entry.elementCount !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold text-[var(--color-text-primary)] transition-colors group-hover:text-[var(--color-accent)]">
+                    {entry.firstType}
+                  </span>
+                  <span className="truncate font-mono text-[9px] text-[var(--color-text-muted)]">
+                    {entry.json.substring(0, 80)}…
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>

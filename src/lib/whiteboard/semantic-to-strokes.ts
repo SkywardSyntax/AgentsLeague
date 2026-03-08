@@ -1,6 +1,7 @@
 import type {
   DrawBatch,
   DrawElement,
+  DrawingSpeed,
   Point,
   StylePreset,
   StrokeTrajectory,
@@ -597,19 +598,125 @@ async function compileOneElement(
   return { strokes, warnings, clear: false };
 }
 
+/**
+ * Injection draw-order priority: determines the order elements are drawn
+ * so that background elements appear first, then structure, then curves, then labels.
+ *   0 = grid lines, fill regions (background)
+ *   1 = axes, outlines (structure)
+ *   2 = main curves, shapes (content)
+ *   3 = labels, text, latex (annotations)
+ */
+function injectionDrawPriority(el: DrawElement): number {
+  const id = el.id.toLowerCase();
+
+  if (id.includes('grid') || id.includes('fill') || id.includes('region')) return 0;
+  if (id.includes('axis') || id.includes('axes') || id.includes('tick') || id.includes('outline')) return 1;
+
+  switch (el.type) {
+    case 'text':
+    case 'latex':
+      return 3;
+    case 'rect':
+    case 'ellipse':
+      return id.includes('bg') || id.includes('background') ? 0 : 2;
+    case 'line':
+      return id.includes('arrow') ? 1 : 2;
+    case 'arrow':
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+/** Map injection draw priority → drawingSpeed hint for strokes. */
+function speedForInjectionPriority(priority: number): DrawingSpeed {
+  switch (priority) {
+    case 0: return 'fast';
+    case 1: return 'natural';
+    case 3: return 'fast';
+    default: return 'slow';  // priority 2 — main curves
+  }
+}
+
+/**
+ * Expand any math primitive elements to basic DrawElements, then sort
+ * by injection draw priority so background draws first.
+ * Returns elements with drawingSpeed hints attached via a side-map.
+ */
+function expandAndSortForInjection(
+  elements: DrawElement[],
+  isInjection: boolean,
+): { sorted: DrawElement[]; speedHints: Map<string, DrawingSpeed> } {
+  const speedHints = new Map<string, DrawingSpeed>();
+
+  // Expand math primitives at batch level
+  const expanded: DrawElement[] = [];
+  for (const el of elements) {
+    if (
+      el.type === 'function_curve' ||
+      el.type === 'angle_arc' ||
+      el.type === 'integral_region' ||
+      el.type === 'cartesian_axes' ||
+      el.type === 'number_line' ||
+      el.type === 'vector_arrow'
+    ) {
+      expanded.push(...lowerMathPrimitive(el));
+    } else {
+      expanded.push(el);
+    }
+  }
+
+  if (!isInjection) {
+    return { sorted: expanded, speedHints };
+  }
+
+  // Sort by injection priority
+  const sorted = [...expanded].sort(
+    (a, b) => injectionDrawPriority(a) - injectionDrawPriority(b),
+  );
+
+  // Assign speed hints by priority
+  for (const el of sorted) {
+    const priority = injectionDrawPriority(el);
+    speedHints.set(el.id, speedForInjectionPriority(priority));
+  }
+
+  return { sorted, speedHints };
+}
+
 export async function compileBatchToStrokes(
   batch: DrawBatch,
 ): Promise<{ strokes: StrokeTrajectory[]; warnings: string[]; clear: boolean }> {
   const preset = batch.style_preset ?? 'clean_pen_sketch';
+  const isInjection = batch.source === 'injection';
 
-  const results = await Promise.all(batch.elements.map((el) => compileOneElement(el, preset)));
+  // Pre-expand math primitives and sort by draw order for injections
+  const { sorted: elements, speedHints } = expandAndSortForInjection(
+    batch.elements,
+    isInjection,
+  );
+
+  const results = await Promise.all(elements.map((el) => compileOneElement(el, preset)));
 
   const strokes: StrokeTrajectory[] = [];
   const warnings: string[] = [];
   let clear = false;
 
-  for (const r of results) {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]!;
     if (r.clear) clear = true;
+    // Apply speed hints from injection priority to each stroke
+    if (isInjection) {
+      const el = elements[i]!;
+      const hint = speedHints.get(el.id);
+      if (hint) {
+        for (const stroke of r.strokes) {
+          if (!stroke.drawingSpeed) {
+            stroke.drawingSpeed = hint;
+          }
+        }
+      }
+    }
     strokes.push(...r.strokes);
     warnings.push(...r.warnings);
   }
