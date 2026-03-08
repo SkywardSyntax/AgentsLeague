@@ -29,6 +29,18 @@ import { parseMathExpression } from '../graph-script';
 export const DEFAULT_MAX_LOWERED_ELEMENTS = 500;
 
 // ---------------------------------------------------------------------------
+// Color utilities
+// ---------------------------------------------------------------------------
+
+/** Convert a hex color like "#4a90d9" to an 8-digit hex with the given alpha (0–1). */
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  if (h.length < 6) return hex;
+  const alphaHex = Math.round(alpha * 255).toString(16).padStart(2, '0');
+  return `#${h.substring(0, 6)}${alphaHex}`;
+}
+
+// ---------------------------------------------------------------------------
 // Shared coordinate mapping utilities
 // ---------------------------------------------------------------------------
 
@@ -1246,6 +1258,7 @@ function expandRiemannSum(el: RiemannSumElement): DrawElement[] {
   const method = el.method ?? 'left';
   const showFunction = el.showFunction !== false;
   const showAxes = el.showAxes !== false;
+  const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
 
   const { toCanvasX, toCanvasY } = makeCoordMapper(
     { x: el.x, y: el.y, width: el.width, height: el.height },
@@ -1272,6 +1285,8 @@ function expandRiemannSum(el: RiemannSumElement): DrawElement[] {
 
   const canvasBaseY = toCanvasY(0);
   const dx = (xMax - xMin) / n;
+  const rectStroke = el.stroke_width ?? (isMathStyle ? 1 : 1);
+  const MIN_RECT_H = 2;
 
   // Draw rectangles
   for (let i = 0; i < n; i++) {
@@ -1297,11 +1312,15 @@ function expandRiemannSum(el: RiemannSumElement): DrawElement[] {
     const cyTop = toCanvasY(fVal);
 
     const rectX = Math.min(cx1, cx2);
-    const rectY = Math.min(cy0, cyTop);
     const rectW = Math.abs(cx2 - cx1);
-    const rectH = Math.abs(cyTop - cy0);
+    const rawH = Math.abs(cyTop - cy0);
+    // Guard against zero-height rects: ensure minimum visible height
+    const rectH = rawH > 0 ? Math.max(rawH, MIN_RECT_H) : MIN_RECT_H;
+    const rectY = fVal >= 0
+      ? Math.min(cy0, cyTop)
+      : cy0;
 
-    if (rectW > 0 && rectH > 0) {
+    if (rectW > 0) {
       result.push({
         id: `${el.id}-rect-${i}`,
         type: 'rect',
@@ -1310,7 +1329,7 @@ function expandRiemannSum(el: RiemannSumElement): DrawElement[] {
         w: rectW,
         h: rectH,
         color,
-        stroke_width: 1,
+        stroke_width: rectStroke,
       });
     }
   }
@@ -1347,6 +1366,7 @@ function expandTangentLine(el: TangentLineElement): DrawElement[] {
   const atX = el.atX;
   const tangentLength = el.length ?? 2;
   const showPoint = el.showPoint !== false;
+  const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
 
   const { toCanvasX, toCanvasY } = makeCoordMapper(
     { x: el.x, y: el.y, width: el.width, height: el.height },
@@ -1374,13 +1394,15 @@ function expandTangentLine(el: TangentLineElement): DrawElement[] {
   const x2 = atX + halfLen;
   const y2 = fAtX + slope * halfLen;
 
+  const tangentWidth = el.stroke_width ?? (isMathStyle ? 1.5 : 1.8);
+
   result.push({
     id: `${el.id}-tangent`,
     type: 'line',
     from: { x: toCanvasX(x1), y: toCanvasY(y1) },
     to: { x: toCanvasX(x2), y: toCanvasY(y2) },
     color,
-    stroke_width: el.stroke_width ?? 1.8,
+    stroke_width: tangentWidth,
   });
 
   if (showPoint) {
@@ -1400,8 +1422,8 @@ function expandTangentLine(el: TangentLineElement): DrawElement[] {
     result.push({
       id: `${el.id}-label`,
       type: 'text',
-      x: toCanvasX(atX) + 10,
-      y: toCanvasY(fAtX) - 12,
+      x: toCanvasX(atX) + 12,
+      y: toCanvasY(fAtX) - 18,
       text: el.label,
       size: 14,
       color,
@@ -1428,9 +1450,17 @@ function expandHistogram(el: HistogramElement): DrawElement[] {
   const barGap = 2;
   const barWidth = (el.width - barGap * (bins.length - 1)) / bins.length;
 
+  // Pre-compute alpha variants when bins share the same default color
+  const alphaVariants = [1.0, 0.75, 0.55, 0.85, 0.65];
+
   for (let i = 0; i < bins.length; i++) {
     const bin = bins[i]!;
-    const barColor = bin.color ?? defaultColor;
+    let barColor = bin.color ?? defaultColor;
+    // Apply alternating alpha to default-colored bars for contrast
+    if (!bin.color) {
+      const alpha = alphaVariants[i % alphaVariants.length];
+      barColor = hexToRgba(defaultColor, alpha);
+    }
     const barHeight = maxVal > 0 ? (bin.value / maxVal) * el.height : 0;
     const bx = el.x + i * (barWidth + barGap);
     const by = el.y + el.height - barHeight;
@@ -1451,7 +1481,7 @@ function expandHistogram(el: HistogramElement): DrawElement[] {
         id: `${el.id}-val-${i}`,
         type: 'text',
         x: bx + barWidth / 2,
-        y: by - 6,
+        y: by - 8,
         text: String(bin.value),
         size: 12,
         color: el.color ?? '#333',
@@ -1478,7 +1508,7 @@ function expandHistogram(el: HistogramElement): DrawElement[] {
       from: { x: el.x, y: el.y },
       to: { x: el.x, y: el.y + el.height },
       color: '#333',
-      stroke_width: 1.5,
+      stroke_width: 2,
     });
     // X-axis
     result.push({
@@ -1487,7 +1517,7 @@ function expandHistogram(el: HistogramElement): DrawElement[] {
       from: { x: el.x, y: el.y + el.height },
       to: { x: el.x + el.width, y: el.y + el.height },
       color: '#333',
-      stroke_width: 1.5,
+      stroke_width: 2,
     });
     // Y-axis tick marks (5 ticks)
     const tickCount = 5;
@@ -1549,6 +1579,7 @@ function expandNormalDistribution(el: NormalDistributionCurveElement): DrawEleme
   const result: DrawElement[] = [];
   const { mu, sigma } = el;
   const curveColor = el.color ?? '#1f2a44';
+  const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
 
   const xMin = mu - 4 * sigma;
   const xMax = mu + 4 * sigma;
@@ -1605,6 +1636,7 @@ function expandNormalDistribution(el: NormalDistributionCurveElement): DrawEleme
   }
 
   // Draw the curve as line segments
+  const curveWidth = el.stroke_width ?? (isMathStyle ? 1.5 : 2);
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = points[i]!;
     const p1 = points[i + 1]!;
@@ -1614,7 +1646,7 @@ function expandNormalDistribution(el: NormalDistributionCurveElement): DrawEleme
       from: { x: toCanvasX(p0.x), y: toCanvasY(p0.y) },
       to: { x: toCanvasX(p1.x), y: toCanvasY(p1.y) },
       color: curveColor,
-      stroke_width: el.stroke_width ?? 2,
+      stroke_width: curveWidth,
     });
   }
 
@@ -1792,6 +1824,11 @@ function expandMatrixBracket(el: MatrixBracketElement): DrawElement[] {
 function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
   const result: DrawElement[] = [];
   const range = el.gridRange ?? 3;
+  const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
+  const gridStroke = isMathStyle ? 0.5 : 0.7;
+  const transformedGridStroke = isMathStyle ? 1 : 1.2;
+  const basisStroke = isMathStyle ? 1.5 : 2;
+
   const { toCanvasX, toCanvasY } = makeCoordMapper(
     { x: el.x, y: el.y, width: el.width, height: el.height },
     { xMin: -range, xMax: range, yMin: -range, yMax: range },
@@ -1813,6 +1850,7 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
         from: { x: toCanvasX(i), y: toCanvasY(-range) },
         to: { x: toCanvasX(i), y: toCanvasY(range) },
         color: '#d1d5db',
+        stroke_width: gridStroke,
       });
       // Horizontal grid line
       result.push({
@@ -1821,6 +1859,7 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
         from: { x: toCanvasX(-range), y: toCanvasY(i) },
         to: { x: toCanvasX(range), y: toCanvasY(i) },
         color: '#d1d5db',
+        stroke_width: gridStroke,
       });
     }
   }
@@ -1836,6 +1875,7 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
       from: { x: toCanvasX(tvx1), y: toCanvasY(tvy1) },
       to: { x: toCanvasX(tvx2), y: toCanvasY(tvy2) },
       color: '#93c5fd',
+      stroke_width: transformedGridStroke,
     });
     // Transformed horizontal line: row y=i goes from (-range,i) to (range,i)
     const [thx1, thy1] = transform(-range, i);
@@ -1846,6 +1886,7 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
       from: { x: toCanvasX(thx1), y: toCanvasY(thy1) },
       to: { x: toCanvasX(thx2), y: toCanvasY(thy2) },
       color: '#93c5fd',
+      stroke_width: transformedGridStroke,
     });
   }
 
@@ -1855,14 +1896,14 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
     const oy = toCanvasY(0);
 
     // Original basis (gray)
-    result.push({ id: `${el.id}-oi`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(1), y: toCanvasY(0) }, color: '#9ca3af' });
-    result.push({ id: `${el.id}-oj`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(0), y: toCanvasY(1) }, color: '#9ca3af' });
+    result.push({ id: `${el.id}-oi`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(1), y: toCanvasY(0) }, color: '#9ca3af', stroke_width: basisStroke });
+    result.push({ id: `${el.id}-oj`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(0), y: toCanvasY(1) }, color: '#9ca3af', stroke_width: basisStroke });
 
     // Transformed basis
     const [ix, iy] = transform(1, 0);
     const [jx, jy] = transform(0, 1);
-    result.push({ id: `${el.id}-ti`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(ix), y: toCanvasY(iy) }, color: '#ef4444', label: 'î\'' });
-    result.push({ id: `${el.id}-tj`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(jx), y: toCanvasY(jy) }, color: '#22c55e', label: 'ĵ\'' });
+    result.push({ id: `${el.id}-ti`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(ix), y: toCanvasY(iy) }, color: '#ef4444', stroke_width: basisStroke, label: 'î\'' });
+    result.push({ id: `${el.id}-tj`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(jx), y: toCanvasY(jy) }, color: '#22c55e', stroke_width: basisStroke, label: 'ĵ\'' });
   }
 
   // Additional vectors
@@ -1873,16 +1914,16 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
       const oy = toCanvasY(0);
       const col = v.color ?? '#6366f1';
       // Original (dashed placeholder — shown as lighter)
-      result.push({ id: `${el.id}-vo-${vi}`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(v.x), y: toCanvasY(v.y) }, color: '#d1d5db' });
+      result.push({ id: `${el.id}-vo-${vi}`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(v.x), y: toCanvasY(v.y) }, color: '#d1d5db', stroke_width: 1.5 });
       // Transformed
       const [tx, ty] = transform(v.x, v.y);
-      result.push({ id: `${el.id}-vt-${vi}`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(tx), y: toCanvasY(ty) }, color: col, label: v.label });
+      result.push({ id: `${el.id}-vt-${vi}`, type: 'arrow', from: { x: ox, y: oy }, to: { x: toCanvasX(tx), y: toCanvasY(ty) }, color: col, stroke_width: 1.5, label: v.label });
     }
   }
 
   // Label
   if (el.label) {
-    result.push({ id: `${el.id}-lbl`, type: 'text', x: el.x + el.width / 2, y: el.y - 12, text: el.label, size: 14, align: 'center' });
+    result.push({ id: `${el.id}-lbl`, type: 'text', x: el.x + el.width / 2, y: el.y - 16, text: el.label, size: 14, color: '#222', align: 'center' });
   }
 
   return result;
