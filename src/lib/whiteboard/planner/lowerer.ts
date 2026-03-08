@@ -24,6 +24,12 @@ import type {
   BezierCurveElement,
   ComplexPlaneElement,
   NumberTheoryGridElement,
+  AnnotationArrowElement,
+  FormulaBoxElement,
+  VennDiagramElement,
+  TruthTableElement,
+  SymbolGridElement,
+  EquationSystemElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -119,6 +125,12 @@ function drawOrderPriority(el: DrawElement): number {
     case 'bezier_curve':
     case 'complex_plane':
     case 'number_theory_grid':
+    case 'annotation_arrow':
+    case 'formula_box':
+    case 'venn_diagram':
+    case 'truth_table':
+    case 'symbol_grid':
+    case 'equation_system':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -532,14 +544,58 @@ function expandFunctionCurve(el: FunctionCurveElement, _theme?: ColorTheme): Dra
     });
   }
 
-  // Label
+  // Label — placed at the rightmost evaluated point, offset up/right.
+  // If that would go off-canvas, flip to the left side.
   if (el.label) {
+    // Find the rightmost finite point across all segments
+    let rightmostPt: { x: number; y: number } | null = null;
+    for (const seg of segments) {
+      for (const pt of seg) {
+        if (!Number.isFinite(pt.y)) continue;
+        if (!rightmostPt || pt.x > rightmostPt.x) {
+          rightmostPt = pt;
+        }
+      }
+    }
+
+    const LABEL_OFFSET_X = 8;
+    const LABEL_OFFSET_Y = -12;
+    const ESTIMATED_LABEL_WIDTH = 60; // approximate width of a label in canvas px
+
+    let labelX: number;
+    let labelY: number;
+
+    if (rightmostPt) {
+      const canvasX = toCanvasX(rightmostPt.x);
+      const canvasY = toCanvasY(rightmostPt.y);
+
+      // Check if label would go off the right edge of the plot region
+      const rightEdge = el.x + el.width;
+      if (canvasX + LABEL_OFFSET_X + ESTIMATED_LABEL_WIDTH > rightEdge) {
+        // Flip to left side of the rightmost point
+        labelX = canvasX - LABEL_OFFSET_X - ESTIMATED_LABEL_WIDTH;
+        // Clamp to left edge of plot
+        if (labelX < el.x) labelX = el.x + 4;
+      } else {
+        labelX = canvasX + LABEL_OFFSET_X;
+      }
+      labelY = canvasY + LABEL_OFFSET_Y;
+
+      // Clamp vertically within plot
+      if (labelY < el.y) labelY = el.y + 4;
+      if (labelY > el.y + el.height - 16) labelY = el.y + el.height - 16;
+    } else {
+      // Fallback: top-right corner of plot
+      labelX = el.x + el.width + LABEL_OFFSET_X;
+      labelY = el.y + 4;
+    }
+
     if (shouldUseLaTeX(el.label)) {
       result.push({
         id: `${el.id}-label`,
         type: 'latex' as const,
-        x: el.x + el.width + 8,
-        y: el.y + 4,
+        x: labelX,
+        y: labelY,
         tex: el.label,
         fontSize: 14,
         displayMode: false,
@@ -548,8 +604,8 @@ function expandFunctionCurve(el: FunctionCurveElement, _theme?: ColorTheme): Dra
       result.push({
         id: `${el.id}-label`,
         type: 'text',
-        x: el.x + el.width + 8,
-        y: el.y + 4,
+        x: labelX,
+        y: labelY,
         text: el.label,
         size: 14,
         color: curveColor,
@@ -1125,9 +1181,9 @@ function expandVectorArrow(el: VectorArrowElement): DrawElement[] {
     stroke_width: thickWidth,
   });
 
-  // Arrowhead via computeArrowHead
+  // Arrowhead via computeArrowHead — scale with line width
   const headLength = Math.min(14, len * 0.3);
-  const head = computeArrowHead(from, to, headLength);
+  const head = computeArrowHead(from, to, headLength, Math.PI / 6, thickWidth);
   result.push({
     id: `${el.id}-head-l`,
     type: 'line' as const,
@@ -2781,6 +2837,314 @@ function expandBezierCurve(el: BezierCurveElement): DrawElement[] {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Annotation arrow expansion
+// ---------------------------------------------------------------------------
+
+function expandAnnotationArrow(el: AnnotationArrowElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const strokeColor = el.strokeColor ?? el.color ?? '#333';
+  const fontSize = el.fontSize ?? 16;
+
+  // Compute bezier control point: midpoint offset perpendicular to the line by 20px
+  const mx = (el.labelX + el.targetX) / 2;
+  const my = (el.labelY + el.targetY) / 2;
+  const dx = el.targetX - el.labelX;
+  const dy = el.targetY - el.labelY;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  // Perpendicular offset direction
+  const px = -dy / len * 20;
+  const py = dx / len * 20;
+  const cpX = mx + px;
+  const cpY = my + py;
+
+  // Sample the quadratic bezier to produce line segments for the curved arrow
+  const STEPS = 20;
+  const pts: Point[] = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const u = 1 - t;
+    pts.push({
+      x: u * u * el.labelX + 2 * u * t * cpX + t * t * el.targetX,
+      y: u * u * el.labelY + 2 * u * t * cpY + t * t * el.targetY,
+    });
+  }
+
+  // Draw curve as line segments
+  for (let i = 0; i < pts.length - 1; i++) {
+    out.push({
+      id: `${id}-seg-${i}`,
+      type: 'line',
+      from: pts[i]!,
+      to: pts[i + 1]!,
+      color: strokeColor,
+    });
+  }
+
+  // Arrowhead at the target end
+  const lastSeg = pts[pts.length - 1]!;
+  const prevSeg = pts[pts.length - 2]!;
+  const arrowDx = lastSeg.x - prevSeg.x;
+  const arrowDy = lastSeg.y - prevSeg.y;
+  const arrowLen = Math.sqrt(arrowDx * arrowDx + arrowDy * arrowDy) || 1;
+  const headLen = 10;
+  const headAngle = Math.PI / 6;
+  const ux = arrowDx / arrowLen;
+  const uy = arrowDy / arrowLen;
+  const headBase = { x: lastSeg.x - headLen * ux, y: lastSeg.y - headLen * uy };
+  const nx = -uy;
+  const ny = ux;
+  const wing = headLen * Math.tan(headAngle);
+  out.push({
+    id: `${id}-head-l`,
+    type: 'line',
+    from: lastSeg,
+    to: { x: headBase.x + wing * nx, y: headBase.y + wing * ny },
+    color: strokeColor,
+  });
+  out.push({
+    id: `${id}-head-r`,
+    type: 'line',
+    from: lastSeg,
+    to: { x: headBase.x - wing * nx, y: headBase.y - wing * ny },
+    color: strokeColor,
+  });
+
+  // Text or LaTeX label at the label position
+  const useLatex = el.isLatex ?? shouldUseLaTeX(el.text);
+  if (useLatex) {
+    out.push({
+      id: `${id}-label`,
+      type: 'latex',
+      x: el.labelX,
+      y: el.labelY - fontSize,
+      tex: el.text,
+      fontSize,
+      color: strokeColor,
+    });
+  } else {
+    out.push({
+      id: `${id}-label`,
+      type: 'text',
+      x: el.labelX,
+      y: el.labelY - fontSize,
+      text: el.text,
+      size: fontSize,
+      color: strokeColor,
+    });
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Formula box expansion
+// ---------------------------------------------------------------------------
+
+function expandFormulaBox(el: FormulaBoxElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const padding = el.padding ?? 12;
+  const borderColor = el.borderColor ?? '#333';
+  const fillColor = el.fillColor ?? 'rgba(255,255,240,0.95)';
+  const formulaFontSize = 20;
+  const titleFontSize = 16;
+
+  // Compute auto-dimensions based on formula length
+  const autoWidth = el.width ?? Math.max(180, Math.min(800, el.formula.length * formulaFontSize * 0.5 + padding * 2));
+  const titleHeight = el.title ? titleFontSize * 1.5 : 0;
+  const autoHeight = el.height ?? (formulaFontSize * 2.2 + titleHeight + padding * 2);
+
+  // Rounded rect border box
+  out.push({
+    id: `${id}-box`,
+    type: 'rect',
+    x: el.x,
+    y: el.y,
+    w: autoWidth,
+    h: autoHeight,
+    color: borderColor,
+    fillColor,
+  });
+
+  // Optional title text above the formula
+  if (el.title) {
+    out.push({
+      id: `${id}-title`,
+      type: 'text',
+      x: el.x + padding,
+      y: el.y + padding + titleFontSize,
+      text: el.title,
+      size: titleFontSize,
+      color: borderColor,
+    });
+  }
+
+  // LaTeX formula centered inside the box
+  const formulaY = el.y + padding + titleHeight + formulaFontSize * 1.1;
+  out.push({
+    id: `${id}-formula`,
+    type: 'latex',
+    x: el.x + autoWidth / 2,
+    y: formulaY,
+    tex: el.formula,
+    fontSize: formulaFontSize,
+    displayMode: true,
+    align: 'center',
+  });
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Symbol grid expansion
+// ---------------------------------------------------------------------------
+
+function expandSymbolGrid(el: SymbolGridElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const symbols = el.symbols;
+  const n = symbols.length;
+  if (n === 0) return out;
+
+  const cols = el.columns ?? Math.max(1, Math.round(Math.sqrt(n)));
+  const rows = Math.ceil(n / cols);
+  const cellW = el.cellWidth ?? 60;
+  const cellH = el.cellHeight ?? 50;
+  const showNames = el.showNames ?? true;
+  const titleFontSize = 14;
+  const symbolFontSize = 24;
+  const nameFontSize = 10;
+
+  let yOffset = el.y;
+
+  // Optional title
+  if (el.title) {
+    out.push({
+      id: `${id}-title`,
+      type: 'text',
+      x: el.x + (cols * cellW) / 2,
+      y: yOffset + titleFontSize,
+      text: el.title,
+      size: titleFontSize,
+      color: '#333',
+    });
+    yOffset += titleFontSize * 1.8;
+  }
+
+  // Grid cells
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      if (idx >= n) break;
+      const sym = symbols[idx]!;
+      const cx = el.x + c * cellW;
+      const cy = yOffset + r * cellH;
+
+      // Cell border
+      out.push({
+        id: `${id}-cell-${idx}`,
+        type: 'rect',
+        x: cx,
+        y: cy,
+        w: cellW,
+        h: cellH,
+        color: '#ccc',
+      });
+
+      // LaTeX symbol centered in cell
+      out.push({
+        id: `${id}-sym-${idx}`,
+        type: 'latex',
+        x: cx + cellW / 2,
+        y: cy + (showNames ? cellH * 0.4 : cellH * 0.5),
+        tex: sym.latex,
+        fontSize: symbolFontSize,
+        displayMode: false,
+        align: 'center',
+      });
+
+      // Optional name label below the symbol
+      if (showNames && sym.name) {
+        out.push({
+          id: `${id}-name-${idx}`,
+          type: 'text',
+          x: cx + cellW / 2,
+          y: cy + cellH - nameFontSize * 0.4,
+          text: sym.name,
+          size: nameFontSize,
+          color: '#666',
+        });
+      }
+    }
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Equation system expansion
+// ---------------------------------------------------------------------------
+
+function expandEquationSystem(el: EquationSystemElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const equations = el.equations;
+  if (equations.length === 0) return out;
+
+  const showBrace = el.showBrace ?? true;
+  const lineSpacing = el.lineSpacing ?? 35;
+  const fontSize = el.fontSize ?? 16;
+  const titleFontSize = 14;
+
+  let yOffset = el.y;
+
+  // Optional title
+  if (el.title) {
+    out.push({
+      id: `${id}-title`,
+      type: 'text',
+      x: el.x,
+      y: yOffset + titleFontSize,
+      text: el.title,
+      size: titleFontSize,
+      color: '#333',
+    });
+    yOffset += titleFontSize * 1.8;
+  }
+
+  // Build a single LaTeX element using \left\{ \begin{array}
+  if (showBrace) {
+    const arrayRows = equations.map((eq) => eq).join(' \\\\ ');
+    const tex = `\\left\\{ \\begin{array}{l} ${arrayRows} \\end{array} \\right.`;
+    out.push({
+      id: `${id}-system`,
+      type: 'latex',
+      x: el.x,
+      y: yOffset + fontSize,
+      tex,
+      fontSize,
+      displayMode: true,
+    });
+  } else {
+    // No brace — just stack equations vertically as individual latex elements
+    for (let i = 0; i < equations.length; i++) {
+      out.push({
+        id: `${id}-eq-${i}`,
+        type: 'latex',
+        x: el.x,
+        y: yOffset + fontSize + i * lineSpacing,
+        tex: equations[i]!,
+        fontSize,
+        displayMode: true,
+      });
+    }
+  }
+
+  return out;
+}
+
 function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   let curveIndex = 0;
@@ -2837,6 +3201,14 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandComplexPlane(el, theme));
     } else if (el.type === 'number_theory_grid') {
       result.push(...expandNumberTheoryGrid(el));
+    } else if (el.type === 'annotation_arrow') {
+      result.push(...expandAnnotationArrow(el));
+    } else if (el.type === 'formula_box') {
+      result.push(...expandFormulaBox(el));
+    } else if (el.type === 'venn_diagram') {
+      result.push(...expandVennDiagram(el));
+    } else if (el.type === 'truth_table') {
+      result.push(...expandTruthTable(el));
     } else {
       result.push(el);
     }
@@ -3059,7 +3431,7 @@ function expandNumberTheoryGrid(el: NumberTheoryGridElement): DrawElement[] {
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement | ComplexPlaneElement | NumberTheoryGridElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement | ComplexPlaneElement | NumberTheoryGridElement | AnnotationArrowElement | FormulaBoxElement | VennDiagramElement | TruthTableElement,
   theme?: ColorTheme,
 ): DrawElement[] {
   switch (el.type) {
@@ -3109,6 +3481,14 @@ export function lowerMathPrimitive(
       return expandComplexPlane(el, theme);
     case 'number_theory_grid':
       return expandNumberTheoryGrid(el);
+    case 'annotation_arrow':
+      return expandAnnotationArrow(el);
+    case 'formula_box':
+      return expandFormulaBox(el);
+    case 'venn_diagram':
+      return expandVennDiagram(el);
+    case 'truth_table':
+      return expandTruthTable(el);
   }
 }
 

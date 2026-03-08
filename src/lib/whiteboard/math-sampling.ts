@@ -399,31 +399,57 @@ export function tickMarksForRange(
 // computeArrowHead
 // ---------------------------------------------------------------------------
 
+/** Style of arrowhead rendering. */
+export type ArrowHeadStyle = 'filled' | 'open';
+
+export interface ArrowHeadResult {
+  left: { x: number; y: number };
+  right: { x: number; y: number };
+  /** The style requested (default 'filled'). Renderers can use this to choose
+   *  between a filled triangle or two open wing lines. */
+  style: ArrowHeadStyle;
+}
+
 /**
  * Compute the two wing-tip points for an arrowhead at the tip of a vector
  * from `from` to `to`.
  *
+ * The arrowhead scales proportionally with `lineWidth` so that thicker
+ * strokes get proportionally larger heads.  The base head length is
+ * `headLength`; the effective length used is
+ *   `headLength * clamp(lineWidth / 1.5, 0.6, 3.0)`
+ * which keeps arrowheads visually balanced across a wide range of widths.
+ *
  * @param from       Tail of the vector.
  * @param to         Tip of the vector (where the arrowhead sits).
- * @param headLength Length of each arrowhead wing in world units.
+ * @param headLength Base length of each arrowhead wing in world units.
  * @param headAngle  Half-angle of the arrowhead opening (default π/6 = 30°).
+ * @param lineWidth  Stroke width of the line, used for proportional scaling (default 1.5).
+ * @param style      'filled' (solid triangle, default) or 'open' (two wing lines).
  */
 export function computeArrowHead(
   from: { x: number; y: number },
   to: { x: number; y: number },
   headLength: number,
   headAngle: number = Math.PI / 6,
-): { left: { x: number; y: number }; right: { x: number; y: number } } {
+  lineWidth: number = 1.5,
+  style: ArrowHeadStyle = 'filled',
+): ArrowHeadResult {
   const angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+  // Scale head proportionally with line width (reference width = 1.5)
+  const widthScale = Math.min(3.0, Math.max(0.6, lineWidth / 1.5));
+  const effectiveLen = headLength * widthScale;
 
   return {
     left: {
-      x: to.x - headLength * Math.cos(angle - headAngle),
-      y: to.y - headLength * Math.sin(angle - headAngle),
+      x: to.x - effectiveLen * Math.cos(angle - headAngle),
+      y: to.y - effectiveLen * Math.sin(angle - headAngle),
     },
     right: {
-      x: to.x - headLength * Math.cos(angle + headAngle),
-      y: to.y - headLength * Math.sin(angle + headAngle),
+      x: to.x - effectiveLen * Math.cos(angle + headAngle),
+      y: to.y - effectiveLen * Math.sin(angle + headAngle),
     },
+    style,
   };
 }

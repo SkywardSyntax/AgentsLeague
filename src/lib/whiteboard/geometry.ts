@@ -258,8 +258,41 @@ export function bezierChainLength(segs: BezierSegment[]): number {
   return total;
 }
 
+/**
+ * Determine whether the point spacing has high variance, which benefits from
+ * centripetal parameterization.  Returns true when the coefficient of variation
+ * (stddev / mean) of inter-point distances exceeds 0.4.
+ */
+function hasHighSpacingVariance(points: Point[]): boolean {
+  if (points.length < 3) return false;
+  const dists: number[] = [];
+  for (let i = 1; i < points.length; i++) {
+    dists.push(distance(points[i - 1]!, points[i]!));
+  }
+  const mean = dists.reduce((s, d) => s + d, 0) / dists.length;
+  if (mean < 1e-9) return false;
+  const variance = dists.reduce((s, d) => s + (d - mean) ** 2, 0) / dists.length;
+  return Math.sqrt(variance) / mean > 0.4;
+}
+
+/**
+ * Convert a Catmull-Rom spline to a sequence of cubic Bézier segments.
+ *
+ * Uses **centripetal parameterization** (alpha = 0.5) when inter-point spacing
+ * varies significantly — this avoids cusps and self-intersections that uniform
+ * parameterization produces for unevenly-spaced control points (common with
+ * math curves).  Falls back to uniform parameterization when spacing is even.
+ */
 export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegment[] {
   if (points.length < 2) return [];
+
+  const useCentripetal = hasHighSpacingVariance(points);
+
+  if (useCentripetal) {
+    return centripetalCatmullRomToBezier(points);
+  }
+
+  // --- Uniform parameterization (original path) ---
   const alpha = clamp(tension, 0.01, 1);
   const segs: BezierSegment[] = [];
 
@@ -276,6 +309,52 @@ export function catmullRomToBezier(points: Point[], tension = 0.5): BezierSegmen
     const cp2: Point = {
       x: p2.x - (p3.x - p1.x) * alpha / 6,
       y: p2.y - (p3.y - p1.y) * alpha / 6,
+    };
+
+    segs.push({ p0: p1, cp1, cp2, p3: p2 });
+  }
+
+  return segs;
+}
+
+/**
+ * Centripetal Catmull-Rom → cubic Bézier conversion.
+ *
+ * Parameter knots are computed as  t_i = t_{i-1} + |P_i - P_{i-1}|^0.5
+ * (alpha = 0.5).  This handles tightly-clustered points without cusps.
+ *
+ * See "Parameterization and Applications of Catmull-Rom Curves"
+ * (Yuksel, Schaefer, Keyser – 2011).
+ */
+function centripetalCatmullRomToBezier(points: Point[]): BezierSegment[] {
+  const segs: BezierSegment[] = [];
+  const n = points.length;
+
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = i > 0 ? points[i - 1]! : { x: 2 * points[0]!.x - points[1]!.x, y: 2 * points[0]!.y - points[1]!.y };
+    const p1 = points[i]!;
+    const p2 = points[i + 1]!;
+    const p3 = i + 2 < n ? points[i + 2]! : { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y };
+
+    // Centripetal knot values: t_i = t_{i-1} + |P_i - P_{i-1}|^alpha, alpha=0.5
+    const d01 = Math.sqrt(distance(p0, p1)) || 1e-6;
+    const d12 = Math.sqrt(distance(p1, p2)) || 1e-6;
+    const d23 = Math.sqrt(distance(p2, p3)) || 1e-6;
+
+    const t0 = 0;
+    const t1 = t0 + d01;
+    const t2 = t1 + d12;
+    const t3 = t2 + d23;
+
+    // Derive Bézier control points from the centripetal knots
+    const dt = t2 - t1;
+    const cp1: Point = {
+      x: p1.x + (p2.x - p0.x) * dt / (3 * (t2 - t0)),
+      y: p1.y + (p2.y - p0.y) * dt / (3 * (t2 - t0)),
+    };
+    const cp2: Point = {
+      x: p2.x - (p3.x - p1.x) * dt / (3 * (t3 - t1)),
+      y: p2.y - (p3.y - p1.y) * dt / (3 * (t3 - t1)),
     };
 
     segs.push({ p0: p1, cp1, cp2, p3: p2 });

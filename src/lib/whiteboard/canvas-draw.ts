@@ -12,6 +12,39 @@ function resetLineDash(ctx: CanvasRenderingContext2D): void {
   if (typeof ctx.setLineDash === 'function') ctx.setLineDash([]);
 }
 
+/**
+ * Enable high-quality image smoothing for thin-line anti-aliasing.
+ * For lines below 1.5 screen-px the default canvas AA can produce
+ * visibly jagged output; turning on imageSmoothingQuality='high'
+ * activates the browser's best resampling filter.
+ */
+function applyThinLineAA(ctx: CanvasRenderingContext2D, screenPx: number): void {
+  if (screenPx < 1.5) {
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) {
+      (ctx as CanvasRenderingContext2D).imageSmoothingQuality = 'high';
+    }
+  }
+}
+
+/**
+ * Round a world-coordinate to the nearest half-pixel in screen space for
+ * subpixel alignment of axis-aligned (horizontal / vertical) lines.
+ * This prevents blurry 1-px lines that straddle two device pixels.
+ */
+function snapToHalfPixel(worldCoord: number, cameraOffset: number, zoom: number, dpr: number): number {
+  const screen = worldCoord * zoom * dpr + cameraOffset * dpr;
+  const snapped = Math.round(screen) + 0.5;
+  return (snapped - cameraOffset * dpr) / (zoom * dpr);
+}
+
+/** Check if a line segment is approximately horizontal or vertical. */
+function isAxisAligned(a: Point, b: Point, tolerance = 1e-6): 'h' | 'v' | null {
+  if (Math.abs(a.y - b.y) < tolerance) return 'h';
+  if (Math.abs(a.x - b.x) < tolerance) return 'v';
+  return null;
+}
+
 /** Apply ctx.setLineDash based on lineStyle, scaled to world coords. */
 function applyLineDash(ctx: CanvasRenderingContext2D, lineStyle: LineStyle | undefined, zoom: number, dpr: number): void {
   if (typeof ctx.setLineDash !== 'function') return;
@@ -50,6 +83,7 @@ export function drawStroke(
 
   if (uniform) {
     const px = screenStrokePx(baseWidth, camera.zoom, dpr);
+    applyThinLineAA(ctx, px);
     const worldLineWidth = px / (camera.zoom * dpr);
     ctx.lineWidth = worldLineWidth;
     ctx.beginPath();
@@ -77,12 +111,25 @@ export function drawStroke(
     const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
     const worldWidth = baseWidth * widthMod;
     const px = screenStrokePx(worldWidth, camera.zoom, dpr);
+    applyThinLineAA(ctx, px);
     const worldLineWidth = px / (camera.zoom * dpr);
 
     ctx.lineWidth = worldLineWidth;
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
+
+    // Snap axis-aligned thin lines to half-pixel for crisp rendering
+    let ax = a.x, ay = a.y, bx = b.x, by = b.y;
+    if (px < 1.5) {
+      const axis = isAxisAligned(a, b);
+      if (axis === 'h') {
+        ay = by = snapToHalfPixel(a.y, camera.y, camera.zoom, dpr);
+      } else if (axis === 'v') {
+        ax = bx = snapToHalfPixel(a.x, camera.x, camera.zoom, dpr);
+      }
+    }
+
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
     ctx.stroke();
   }
   resetLineDash(ctx);
@@ -123,6 +170,7 @@ export function drawSmoothStroke(
   if (uniform || segs.length > SMOOTH_STROKE_MODULATION_LIMIT) {
     // Uniform-width single-path rendering (mathematical or fast-path)
     const px = screenStrokePx(baseWidth, camera.zoom, dpr);
+    applyThinLineAA(ctx, px);
     const worldLineWidth = px / (camera.zoom * dpr);
     ctx.lineWidth = worldLineWidth;
 
@@ -153,6 +201,7 @@ export function drawSmoothStroke(
     const t = n > 1 ? i / (n - 1) : 0;
     const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
     const px = screenStrokePx(baseWidth * widthMod, camera.zoom, dpr);
+    applyThinLineAA(ctx, px);
     const worldLineWidth = px / (camera.zoom * dpr);
 
     ctx.lineWidth = worldLineWidth;
