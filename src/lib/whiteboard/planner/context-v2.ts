@@ -1,6 +1,8 @@
 import type {
   DrawBatch,
   DrawElement,
+  DrawingStyle,
+  MathContext,
   SemanticBatch,
   StructuredWhiteboardContext,
   WhiteboardBounds,
@@ -24,11 +26,43 @@ function textPreview(el: DrawElement): string | undefined {
   return undefined;
 }
 
+function deriveMathContext(typeCounts: Partial<Record<DrawElement['type'], number>>): MathContext {
+  const hasFn = (typeCounts.function_curve ?? 0) > 0;
+  const hasAxes = (typeCounts.cartesian_axes ?? 0) > 0 || (typeCounts.number_line ?? 0) > 0;
+  const hasGeometry = (typeCounts.rect ?? 0) + (typeCounts.ellipse ?? 0)
+    + (typeCounts.line ?? 0) + (typeCounts.vector_arrow ?? 0) > 0;
+  const totalNonClear = Object.entries(typeCounts)
+    .filter(([k]) => k !== 'clear')
+    .reduce((sum, [, v]) => sum + (v ?? 0), 0);
+
+  if (totalNonClear === 0) return 'empty';
+  if (hasFn) return 'has_function';
+  if (hasAxes) return 'has_axes';
+  if (hasGeometry) return 'has_geometry';
+  return 'empty';
+}
+
+function deriveDrawingStyle(typeCounts: Partial<Record<DrawElement['type'], number>>): DrawingStyle {
+  const latexCount = typeCounts.latex ?? 0;
+  const textCount = typeCounts.text ?? 0;
+  const shapeCount = (typeCounts.rect ?? 0) + (typeCounts.ellipse ?? 0)
+    + (typeCounts.line ?? 0) + (typeCounts.arrow ?? 0);
+  const mathCount = (typeCounts.cartesian_axes ?? 0) + (typeCounts.function_curve ?? 0)
+    + (typeCounts.number_line ?? 0) + (typeCounts.vector_arrow ?? 0);
+
+  if (mathCount > 0 || latexCount > shapeCount) return 'formal';
+  if (shapeCount > latexCount + textCount) return 'sketch';
+  return 'clean';
+}
+
 function defaultStructuredContext(): StructuredWhiteboardContext {
   return {
     scene_summary: {
       element_count: 0,
       type_counts: {},
+      element_type_summary: {},
+      math_context: 'empty',
+      suggested_drawing_style: 'clean',
     },
     occupied_regions: [],
     anchors: [],
@@ -164,6 +198,9 @@ export function buildStructuredWhiteboardContext(
       element_count: elements.length,
       bounds: sceneBounds,
       type_counts: typeCounts,
+      element_type_summary: { ...typeCounts },
+      math_context: deriveMathContext(typeCounts),
+      suggested_drawing_style: deriveDrawingStyle(typeCounts),
     },
     occupied_regions: occupiedRegions.slice(-60),
     anchors: anchors.slice(-80),
@@ -186,6 +223,9 @@ export function extendStructuredWhiteboardContext(
           element_count: context.scene_summary.element_count,
           bounds: context.scene_summary.bounds ? { ...context.scene_summary.bounds } : undefined,
           type_counts: { ...context.scene_summary.type_counts },
+          element_type_summary: { ...context.scene_summary.type_counts },
+          math_context: context.scene_summary.math_context,
+          suggested_drawing_style: context.scene_summary.suggested_drawing_style,
         },
         occupied_regions: [...context.occupied_regions],
         anchors: [...context.anchors],
@@ -250,6 +290,9 @@ export function extendStructuredWhiteboardContext(
   }
 
   base.scene_summary.bounds = mergedBounds;
+  base.scene_summary.element_type_summary = { ...base.scene_summary.type_counts };
+  base.scene_summary.math_context = deriveMathContext(base.scene_summary.type_counts);
+  base.scene_summary.suggested_drawing_style = deriveDrawingStyle(base.scene_summary.type_counts);
   base.suggested_next_regions = deriveSuggestedRegions(mergedBounds);
   base.occupied_regions = base.occupied_regions.slice(-60);
   base.anchors = base.anchors.slice(-80);

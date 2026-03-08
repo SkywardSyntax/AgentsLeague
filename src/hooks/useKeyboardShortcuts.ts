@@ -8,11 +8,16 @@ interface ShortcutActions {
   nextChat: () => void;
   resetZoom: () => void;
   togglePanel?: () => void;
+  undo?: () => void;
+  redo?: () => void;
 }
 
 export function useKeyboardShortcuts(actions: ShortcutActions) {
   const actionsRef = useRef(actions);
-  actionsRef.current = actions;
+
+  useEffect(() => {
+    actionsRef.current = actions;
+  }, [actions]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -54,6 +59,22 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
       if (mod && e.key === ']') {
         e.preventDefault();
         a.nextChat();
+        return;
+      }
+
+      // Cmd/Ctrl+Z — undo, Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y — redo
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          a.redo?.();
+        } else {
+          a.undo?.();
+        }
+        return;
+      }
+      if (mod && e.key === 'y') {
+        e.preventDefault();
+        a.redo?.();
         return;
       }
 

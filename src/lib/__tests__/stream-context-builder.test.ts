@@ -68,6 +68,9 @@ describe('buildWhiteboardContextMessageV2', () => {
       element_count: 5,
       bounds: { minX: 0, minY: 0, maxX: 500, maxY: 500 },
       type_counts: { rect: 3, latex: 2 },
+      element_type_summary: { rect: 3, latex: 2 },
+      math_context: 'has_geometry',
+      suggested_drawing_style: 'formal',
     },
     occupied_regions: [
       { id: 'r1', x: 10, y: 10, w: 100, h: 50, semantic_kind: 'equation_stack', priority: 5 },

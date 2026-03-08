@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { createLogger } from '@/lib/server/logger';
 import type { z } from 'zod';
+import { validateTokenFormat, constantTimeCompare } from '@/lib/security/csrf-protection';
 
 export interface ApiErrorResponse {
   error: string;
@@ -238,6 +239,71 @@ export function withRateLimit(config: RateLimitConfig): Middleware {
 
     return handler(request, ctx);
   };
+}
+
+/**
+ * SEC-005: CSRF protection middleware for mutating (POST/PUT/DELETE) endpoints.
+ * Uses Origin/Referer validation plus optional double-submit cookie pattern.
+ * Fail-closed: requests without a valid Origin or Referer are rejected.
+ */
+export function withCsrfProtection(allowedOrigins?: string[]): Middleware {
+  return (handler: Handler) => async (request: Request, ctx: HandlerContext) => {
+    const method = request.method.toUpperCase();
+    // Only enforce on state-changing methods
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+      return handler(request, ctx);
+    }
+
+    const origin = request.headers.get('Origin');
+    const referer = request.headers.get('Referer');
+
+    // Derive allowed origins from request URL if not explicitly configured
+    const requestUrl = new URL(request.url);
+    const defaultAllowed = [requestUrl.origin];
+    const allowed = allowedOrigins && allowedOrigins.length > 0
+      ? allowedOrigins
+      : defaultAllowed;
+
+    let originValid = false;
+
+    if (origin) {
+      originValid = allowed.includes(origin);
+    } else if (referer) {
+      try {
+        const refererOrigin = new URL(referer).origin;
+        originValid = allowed.includes(refererOrigin);
+      } catch {
+        originValid = false;
+      }
+    }
+    // If neither Origin nor Referer is present, fail closed
+    if (!originValid) {
+      const log = createLogger({ requestId: ctx.requestId, route: new URL(request.url).pathname });
+      log.warn('csrf_origin_rejected', {
+        origin: origin ?? '(none)',
+        referer: referer ?? '(none)',
+      });
+      return apiError(403, 'CSRF_REJECTED', 'Cross-origin request blocked', ctx.requestId);
+    }
+
+    // Optional: double-submit cookie validation when csrf-token header is present
+    const csrfHeader = request.headers.get('X-CSRF-Token');
+    const csrfCookie = parseCookieValue(request.headers.get('Cookie'), 'csrf_token');
+    if (csrfHeader && csrfCookie) {
+      if (!validateTokenFormat(csrfHeader) || !constantTimeCompare(csrfHeader, csrfCookie)) {
+        return apiError(403, 'CSRF_TOKEN_INVALID', 'CSRF token mismatch', ctx.requestId);
+      }
+    }
+
+    return handler(request, ctx);
+  };
+}
+
+/** Parse a specific cookie value from a Cookie header string */
+function parseCookieValue(cookieHeader: string | null, name: string): string | null {
+  if (!cookieHeader) return null;
+  const match = cookieHeader.split(';').find((c) => c.trim().startsWith(`${name}=`));
+  return match ? match.split('=')[1]?.trim() ?? null : null;
 }
 
 /** Wraps a Next.js route handler with middleware, injecting context. */

@@ -5,6 +5,7 @@ import type {
   SemanticBatch,
   WhiteboardLayoutDiagnostics,
 } from '@/types/agent';
+import type { NotificationItem } from '@/components/app/WarningOverlay';
 import {
   removeStreamOverlayFromBatches,
   removeStreamOverlayFromScene,
@@ -24,7 +25,7 @@ export interface ChatSessionState {
   semanticScene: SemanticBatch[];
   plannerMeta: WhiteboardLayoutDiagnostics[];
   batches: DrawBatch[];
-  warnings: string[];
+  warnings: NotificationItem[];
 }
 
 export interface PendingDiagnosticsEntry {
@@ -138,7 +139,7 @@ export function createInitialTurn(): TurnState {
 
 export type ChatAction =
   | { type: 'RESTORE_SESSION'; chats: Record<string, ChatSessionState>; chatOrder: string[] }
-  | { type: 'PUSH_WARNING'; chatId: string; warning: string }
+  | { type: 'PUSH_WARNING'; chatId: string; warning: NotificationItem }
   | { type: 'APPEND_ASSISTANT_DELTA'; chatId: string; delta: string }
   | { type: 'FINALIZE_ASSISTANT_MESSAGE' }
   | { type: 'APPLY_WHITEBOARD_BATCH'; chatId: string; batch: DrawBatch }
@@ -163,7 +164,7 @@ export function chatSessionReducer(state: ChatStore, action: ChatAction): ChatSt
 
     case 'PUSH_WARNING': {
       return updateChat(state, action.chatId, (chat) => {
-        if (chat.warnings[chat.warnings.length - 1] === action.warning) return chat;
+        if (chat.warnings[chat.warnings.length - 1]?.message === action.warning.message) return chat;
         return {
           ...chat,
           updatedAt: Date.now(),

@@ -1,106 +1,83 @@
-// Geometry Computation Metrics — spatial computation observability
-export interface GeometryRecord {
-  operationType: string;
-  timeMs: number;
+interface OperationRecord {
+  name: string;
+  calcTime: number;
   vertexCount: number;
   edgeCount: number;
-  cached: boolean;
-  timestamp: number;
+  cacheHit: boolean;
 }
 
-export interface GeometryMetricsSnapshot {
+interface Snapshot {
   totalOperations: number;
   avgCalcTime: number;
   cacheHitRatio: number;
-  avgVertexCount: number;
-  avgEdgeCount: number;
-  complexityScore: number;
-  batchAvgTime: number;
 }
 
-export interface GeometryComputationMetrics {
-  recordOperation(operationType: string, timeMs: number, vertexCount: number, edgeCount: number, cached: boolean): void;
-  getAvgCalcTime(): number;
-  getCacheHitRatio(): number;
-  getAvgVertexCount(): number;
-  getAvgEdgeCount(): number;
-  getComplexityScore(): number;
-  getSpatialIndexPerformance(): { avgTime: number; count: number };
-  getBatchStats(lastN?: number): { count: number; avgTime: number };
-  snapshot(): GeometryMetricsSnapshot;
-  reset(): void;
-  getOperations(): readonly GeometryRecord[];
-}
-
-export function createGeometryComputationMetrics(): GeometryComputationMetrics {
-  let records: GeometryRecord[] = [];
+export function createGeometryComputationMetrics() {
+  let operations: OperationRecord[] = [];
 
   return {
-    recordOperation(operationType, timeMs, vertexCount, edgeCount, cached): void {
-      records.push({ operationType, timeMs, vertexCount, edgeCount, cached, timestamp: Date.now() });
+    recordOperation(name: string, calcTime: number, vertexCount: number, edgeCount: number, cacheHit: boolean) {
+      operations.push({ name, calcTime, vertexCount, edgeCount, cacheHit });
+    },
+
+    getOperations() {
+      return operations;
     },
 
     getAvgCalcTime(): number {
-      if (records.length === 0) return 0;
-      return records.reduce((s, r) => s + r.timeMs, 0) / records.length;
-    },
-
-    getCacheHitRatio(): number {
-      if (records.length === 0) return 0;
-      return records.filter(r => r.cached).length / records.length;
-    },
-
-    getAvgVertexCount(): number {
-      if (records.length === 0) return 0;
-      return records.reduce((s, r) => s + r.vertexCount, 0) / records.length;
-    },
-
-    getAvgEdgeCount(): number {
-      if (records.length === 0) return 0;
-      return records.reduce((s, r) => s + r.edgeCount, 0) / records.length;
+      if (operations.length === 0) return 0;
+      return operations.reduce((sum, op) => sum + op.calcTime, 0) / operations.length;
     },
 
     getComplexityScore(): number {
-      if (records.length === 0) return 0;
-      return records.reduce((s, r) => s + (r.vertexCount * r.edgeCount) / 1000, 0) / records.length;
+      if (operations.length === 0) return 0;
+      const last = operations[operations.length - 1]!;
+      return (last.vertexCount * last.edgeCount) / 1000;
     },
 
-    getSpatialIndexPerformance(): { avgTime: number; count: number } {
-      const spatial = records.filter(r => r.operationType === 'spatial_index');
-      if (spatial.length === 0) return { avgTime: 0, count: 0 };
+    getCacheHitRatio(): number {
+      if (operations.length === 0) return 0;
+      return operations.filter((op) => op.cacheHit).length / operations.length;
+    },
+
+    getAvgVertexCount(): number {
+      if (operations.length === 0) return 0;
+      return operations.reduce((sum, op) => sum + op.vertexCount, 0) / operations.length;
+    },
+
+    getAvgEdgeCount(): number {
+      if (operations.length === 0) return 0;
+      return operations.reduce((sum, op) => sum + op.edgeCount, 0) / operations.length;
+    },
+
+    getSpatialIndexPerformance(): { count: number; avgTime: number } {
+      const spatial = operations.filter((op) => op.name === 'spatial_index');
+      if (spatial.length === 0) return { count: 0, avgTime: 0 };
       return {
-        avgTime: spatial.reduce((s, r) => s + r.timeMs, 0) / spatial.length,
         count: spatial.length,
+        avgTime: spatial.reduce((sum, op) => sum + op.calcTime, 0) / spatial.length,
       };
     },
 
-    getBatchStats(lastN?: number) {
-      const batch = lastN ? records.slice(-lastN) : records;
+    getBatchStats(lastN: number): { count: number; avgTime: number } {
+      const batch = operations.slice(-lastN);
       if (batch.length === 0) return { count: 0, avgTime: 0 };
       return {
         count: batch.length,
-        avgTime: batch.reduce((s, r) => s + r.timeMs, 0) / batch.length,
+        avgTime: batch.reduce((sum, op) => sum + op.calcTime, 0) / batch.length,
       };
     },
 
-    snapshot(): GeometryMetricsSnapshot {
+    snapshot(): Snapshot {
       return {
-        totalOperations: records.length,
-        avgCalcTime: this.getAvgCalcTime(),
-        cacheHitRatio: this.getCacheHitRatio(),
-        avgVertexCount: this.getAvgVertexCount(),
-        avgEdgeCount: this.getAvgEdgeCount(),
-        complexityScore: this.getComplexityScore(),
-        batchAvgTime: this.getBatchStats().avgTime,
+        totalOperations: operations.length,
+        avgCalcTime: operations.length === 0 ? 0 : operations.reduce((sum, op) => sum + op.calcTime, 0) / operations.length,
+        cacheHitRatio: operations.length === 0 ? 0 : operations.filter((op) => op.cacheHit).length / operations.length,
       };
     },
 
-    reset(): void {
-      records = [];
-    },
-
-    getOperations(): readonly GeometryRecord[] {
-      return records;
+    reset() {
+      operations = [];
     },
   };
 }

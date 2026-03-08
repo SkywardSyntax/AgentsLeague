@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-type PanelType = 'whiteboard' | 'chat';
+type PanelType = 'whiteboard' | 'chat' | 'draw';
 
 interface MobilePanelSwitcherProps {
   activePanel: PanelType;
   onSwitch: (panel: PanelType) => void;
 }
 
-const PANELS: PanelType[] = ['whiteboard', 'chat'];
+const PANELS: PanelType[] = ['whiteboard', 'draw', 'chat'];
+
+const PANEL_LABELS: Record<PanelType, string> = {
+  whiteboard: 'Canvas',
+  draw: 'Draw',
+  chat: 'Chat',
+};
 
 export function MobilePanelSwitcher({ activePanel, onSwitch }: MobilePanelSwitcherProps) {
   const isInitialMount = useRef(true);
@@ -22,10 +28,12 @@ export function MobilePanelSwitcher({ activePanel, onSwitch }: MobilePanelSwitch
     prevPanelRef.current = activePanel;
 
     requestAnimationFrame(() => {
-      const selector =
-        activePanel === 'whiteboard'
-          ? '[data-testid="whiteboard-canvas"]'
-          : '[data-testid="chat-panel"]';
+      let selector: string;
+      if (activePanel === 'whiteboard' || activePanel === 'draw') {
+        selector = '[data-testid="whiteboard-canvas"]';
+      } else {
+        selector = '[data-testid="chat-panel"]';
+      }
       const target = document.querySelector<HTMLElement>(selector);
       target?.focus();
     });
@@ -63,36 +71,24 @@ export function MobilePanelSwitcher({ activePanel, onSwitch }: MobilePanelSwitch
 
   return (
     <div role="tablist" aria-label="Panel switcher" onKeyDown={handleKeyDown} className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-1 shadow-lg backdrop-blur md:hidden">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activePanel === 'whiteboard'}
-        aria-controls="panel-whiteboard"
-        tabIndex={activePanel === 'whiteboard' ? 0 : -1}
-        onClick={() => switchPanel('whiteboard')}
-        className={`btn-press rounded-full px-4 py-1.5 text-xs font-medium transition ${
-          activePanel === 'whiteboard'
-            ? 'bg-[var(--color-accent)] text-white'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]'
-        }`}
-      >
-        Canvas
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activePanel === 'chat'}
-        aria-controls="panel-chat"
-        tabIndex={activePanel === 'chat' ? 0 : -1}
-        onClick={() => switchPanel('chat')}
-        className={`btn-press rounded-full px-4 py-1.5 text-xs font-medium transition ${
-          activePanel === 'chat'
-            ? 'bg-[var(--color-accent)] text-white'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]'
-        }`}
-      >
-        Chat
-      </button>
+      {PANELS.map((panel) => (
+        <button
+          key={panel}
+          type="button"
+          role="tab"
+          aria-selected={activePanel === panel}
+          aria-controls={`panel-${panel}`}
+          tabIndex={activePanel === panel ? 0 : -1}
+          onClick={() => switchPanel(panel)}
+          className={`btn-press rounded-full px-4 py-1.5 text-xs font-medium transition ${
+            activePanel === panel
+              ? 'bg-[var(--color-accent)] text-white'
+              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]'
+          }`}
+        >
+          {PANEL_LABELS[panel]}
+        </button>
+      ))}
     </div>
   );
 }

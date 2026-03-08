@@ -1,5 +1,3 @@
-import type { Point } from '@/types/agent';
-
 export interface StrokeBounds {
   minX: number;
   minY: number;
@@ -8,81 +6,61 @@ export interface StrokeBounds {
 }
 
 export interface BezierSegment {
-  start: Point;
-  cp1: Point;
-  cp2: Point;
-  end: Point;
+  start: { x: number; y: number };
+  cp1: { x: number; y: number };
+  cp2: { x: number; y: number };
+  end: { x: number; y: number };
 }
 
 export function svgBounds(
   bounds: StrokeBounds,
-  opts?: { stroke?: string; fill?: string; label?: string },
+  options?: { stroke?: string; fill?: string; label?: string },
 ): string {
-  const x = bounds.minX;
-  const y = bounds.minY;
-  const width = bounds.maxX - bounds.minX;
-  const height = bounds.maxY - bounds.minY;
-  const stroke = opts?.stroke ?? 'red';
-  const fill = opts?.fill ?? 'none';
-  let svg = `<rect x="${x}" y="${y}" width="${width}" height="${height}" stroke="${stroke}" fill="${fill}" />`;
-  if (opts?.label) {
-    svg += `<text x="${x}" y="${y - 4}" font-size="12" fill="${stroke}">${opts.label}</text>`;
+  const w = bounds.maxX - bounds.minX;
+  const h = bounds.maxY - bounds.minY;
+  const stroke = options?.stroke ?? 'red';
+  const fill = options?.fill ?? 'none';
+  let svg = `<rect x="${bounds.minX}" y="${bounds.minY}" width="${w}" height="${h}" stroke="${stroke}" fill="${fill}" />`;
+  if (options?.label) {
+    svg += `<text x="${bounds.minX}" y="${bounds.minY}">${options.label}</text>`;
   }
   return svg;
 }
 
-export function svgControlPoints(
-  points: Point[],
-  opts?: { radius?: number; fill?: string },
-): string {
-  const r = opts?.radius ?? 3;
-  const fill = opts?.fill ?? 'blue';
-  return points
-    .map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" />`)
-    .join('');
+export function svgControlPoints(points: Array<{ x: number; y: number }>, radius = 3): string {
+  return points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${radius}" fill="blue" />`).join('');
 }
 
 export function svgBezierChain(
   segments: BezierSegment[],
-  opts?: { stroke?: string; showControlPoints?: boolean },
+  options?: { showControlPoints?: boolean },
 ): string {
   if (segments.length === 0) return '';
-  const stroke = opts?.stroke ?? 'green';
   const first = segments[0]!;
   let d = `M ${first.start.x} ${first.start.y}`;
   for (const seg of segments) {
-    d += ` C ${seg.cp1.x} ${seg.cp1.y}, ${seg.cp2.x} ${seg.cp2.y}, ${seg.end.x} ${seg.end.y}`;
+    d += ` C ${seg.cp1.x} ${seg.cp1.y} ${seg.cp2.x} ${seg.cp2.y} ${seg.end.x} ${seg.end.y}`;
   }
-  let svg = `<path d="${d}" stroke="${stroke}" fill="none" />`;
-  if (opts?.showControlPoints) {
-    const cpPoints = segments.flatMap((s) => [s.cp1, s.cp2]);
-    svg += svgControlPoints(cpPoints, { radius: 2, fill: 'orange' });
+  let svg = `<path d="${d}" fill="none" stroke="black" />`;
+  if (options?.showControlPoints) {
+    const allPoints = segments.flatMap((s) => [s.cp1, s.cp2]);
+    svg += svgControlPoints(allPoints);
   }
   return svg;
 }
 
-export function svgIntersection(
-  a: StrokeBounds,
-  b: StrokeBounds,
-  opts?: { fill?: string },
-): string | null {
+export function svgIntersection(a: StrokeBounds, b: StrokeBounds): string | null {
   const minX = Math.max(a.minX, b.minX);
   const minY = Math.max(a.minY, b.minY);
   const maxX = Math.min(a.maxX, b.maxX);
   const maxY = Math.min(a.maxY, b.maxY);
   if (minX >= maxX || minY >= maxY) return null;
-  const fill = opts?.fill ?? 'rgba(255,0,0,0.3)';
-  return `<rect x="${minX}" y="${minY}" width="${maxX - minX}" height="${maxY - minY}" fill="${fill}" />`;
+  return `<rect x="${minX}" y="${minY}" width="${maxX - minX}" height="${maxY - minY}" stroke="green" fill="rgba(0,255,0,0.2)" />`;
 }
 
-export function svgPolyline(
-  points: Point[],
-  opts?: { stroke?: string; strokeWidth?: number },
-): string {
-  const stroke = opts?.stroke ?? 'black';
-  const strokeWidth = opts?.strokeWidth ?? 1;
+export function svgPolyline(points: Array<{ x: number; y: number }>): string {
   const pts = points.map((p) => `${p.x},${p.y}`).join(' ');
-  return `<polyline points="${pts}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="none" />`;
+  return `<polyline points="${pts}" fill="none" stroke="black" />`;
 }
 
 export function svgDocument(

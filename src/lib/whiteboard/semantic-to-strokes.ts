@@ -5,6 +5,7 @@ import type {
   StylePreset,
   StrokeTrajectory,
 } from '@/types/agent';
+import { assertNeverDrawElement } from '@/types/agent';
 import { renderTexToSvg, extractSvgStrokes } from '@/lib/latex/mathjax-client';
 import { parseStreamingLatex } from '@/lib/latex/stream-tex-parser';
 import { resamplePolyline, strokesBoundingBox } from './geometry';
@@ -16,6 +17,7 @@ import {
   arrowHeadPoints,
 } from './shape-points';
 import { withJitter, withJitterAmount } from './stroke-jitter';
+import { lowerMathPrimitive } from './planner/lowerer';
 
 // Re-export for cross-lane backward compatibility
 export { rectPoints, ellipsePoints, linePoints, arrowHeadPoints } from './shape-points';
@@ -438,8 +440,151 @@ async function compileOneElement(
         warnings.push(`Fallback text failed for ${element.id}`);
       }
     }
+    return { strokes, warnings, clear: false };
   }
 
+  // Math primitives with lowering support: expand to basic elements and compile
+  if (element.type === 'cartesian_axes' || element.type === 'number_line' || element.type === 'vector_arrow') {
+    const lowered = lowerMathPrimitive(element);
+    for (const lowEl of lowered) {
+      const sub = await compileOneElement(lowEl, preset);
+      strokes.push(...sub.strokes);
+      warnings.push(...sub.warnings);
+    }
+    return { strokes, warnings, clear: false };
+  }
+
+  // Math primitives without lowering yet — skip with a warning.
+  if (element.type === 'function_curve' || element.type === 'angle_arc' || element.type === 'integral_region') {
+    warnings.push(`Math primitive "${element.type}" for element ${element.id} requires lowering pass; skipped`);
+    return { strokes, warnings, clear: false };
+  }
+
+  if (element.type === 'matrix_bracket') {
+    const numRows = element.rows.length;
+    const numCols = Math.max(...element.rows.map((r) => r.length));
+    const cw = element.cellWidth ?? 60;
+    const ch = element.cellHeight ?? 32;
+    const fontSize = 16;
+    const bracketInset = 12;
+    const bracketStubLen = 6;
+    const gridW = numCols * cw;
+    const gridH = numRows * ch;
+    const padX = 8;
+
+    // Render cell contents
+    for (let r = 0; r < numRows; r++) {
+      const row = element.rows[r]!;
+      for (let c = 0; c < row.length; c++) {
+        const cellText = row[c]!;
+        if (!cellText) continue;
+        const cx = element.x + bracketInset + padX + c * cw + cw / 2;
+        const cy = element.y + r * ch + ch / 2;
+        const isLatex = /[\\^_]/.test(cellText);
+        if (isLatex) {
+          try {
+            const cellStrokes = await compileTextLikeElement(
+              cellText,
+              `${element.id}-cell-${r}-${c}`,
+              cx - fontSize * 0.3,
+              cy - fontSize * 0.4,
+              fontSize,
+              color,
+              baseWidth,
+              false,
+            );
+            cellStrokes.forEach((s) => {
+              s.points = withJitterAmount(s.points, s.id, 0.03);
+              strokes.push(s);
+            });
+          } catch {
+            warnings.push(`Matrix cell (${r},${c}) LaTeX render failed for ${element.id}`);
+          }
+        } else {
+          try {
+            const safeLine = escapePlainTextForTex(cellText);
+            const cellStrokes = await compileTextLikeElement(
+              `\\text{${safeLine}}`,
+              `${element.id}-cell-${r}-${c}`,
+              cx - fontSize * 0.3,
+              cy - fontSize * 0.4,
+              fontSize,
+              color,
+              baseWidth,
+              false,
+            );
+            cellStrokes.forEach((s) => {
+              s.points = withJitterAmount(s.points, s.id, 0.035);
+              strokes.push(s);
+            });
+          } catch {
+            warnings.push(`Matrix cell (${r},${c}) text render failed for ${element.id}`);
+          }
+        }
+      }
+    }
+
+    // Bracket geometry
+    const leftX = element.x;
+    const rightX = element.x + bracketInset + padX + gridW + padX + bracketInset;
+    const topY = element.y - 4;
+    const botY = element.y + gridH + 4;
+
+    // Left bracket: top stub, vertical line, bottom stub
+    const leftTopStub: Point[] = [
+      { x: leftX + bracketStubLen, y: topY },
+      { x: leftX, y: topY },
+    ];
+    const leftVert: Point[] = [
+      { x: leftX, y: topY },
+      { x: leftX, y: botY },
+    ];
+    const leftBotStub: Point[] = [
+      { x: leftX, y: botY },
+      { x: leftX + bracketStubLen, y: botY },
+    ];
+
+    // Right bracket: top stub, vertical line, bottom stub (mirrored)
+    const rightTopStub: Point[] = [
+      { x: rightX - bracketStubLen, y: topY },
+      { x: rightX, y: topY },
+    ];
+    const rightVert: Point[] = [
+      { x: rightX, y: topY },
+      { x: rightX, y: botY },
+    ];
+    const rightBotStub: Point[] = [
+      { x: rightX, y: botY },
+      { x: rightX - bracketStubLen, y: botY },
+    ];
+
+    const bracketParts: { id: string; points: Point[] }[] = [
+      { id: `${element.id}-lb-top`, points: leftTopStub },
+      { id: `${element.id}-lb-vert`, points: leftVert },
+      { id: `${element.id}-lb-bot`, points: leftBotStub },
+      { id: `${element.id}-rb-top`, points: rightTopStub },
+      { id: `${element.id}-rb-vert`, points: rightVert },
+      { id: `${element.id}-rb-bot`, points: rightBotStub },
+    ];
+
+    for (const part of bracketParts) {
+      const pts = withJitterAmount(resamplePolyline(part.points, 3), part.id, 0.03);
+      strokes.push({
+        id: part.id,
+        elementId: element.id,
+        points: pts,
+        color,
+        baseWidth: baseWidth * 1.1,
+      });
+    }
+
+    return { strokes, warnings, clear: false };
+  }
+
+  // Exhaustive fallback: compile-time error when a new DrawElement variant is
+  // added but not handled above. At runtime, logs a warning and returns empty.
+  const _unhandled: never = element;
+  warnings.push(`Unknown DrawElement type "${(_unhandled as unknown as Record<string, unknown>)?.type}" for element ${(element as unknown as Record<string, unknown>).id}; skipped`);
   return { strokes, warnings, clear: false };
 }
 

@@ -39,6 +39,9 @@ export function buildWhiteboardContextMessageV2(context: StructuredWhiteboardCon
     .map(([type, count]) => `${type}:${count}`)
     .join(', ');
 
+  const mathCtx = context.scene_summary.math_context ?? 'empty';
+  const drawStyle = context.scene_summary.suggested_drawing_style ?? 'clean';
+
   const occupied = (context.occupied_regions ?? [])
     .slice(-10)
     .map((r) => `${r.id}@(${r.x.toFixed(0)},${r.y.toFixed(0)},${r.w.toFixed(0)}x${r.h.toFixed(0)})#${r.priority}`)
@@ -63,6 +66,8 @@ export function buildWhiteboardContextMessageV2(context: StructuredWhiteboardCon
     `- scene.element_count=${context.scene_summary.element_count}`,
     `- ${bounds}`,
     `- scene.type_counts=${counts || 'none'}`,
+    `- scene.math_context=${mathCtx}`,
+    `- scene.drawing_style=${drawStyle}`,
     `- occupied_regions=${occupied || 'none'}`,
     `- anchors=${anchors || 'none'}`,
     `- recent_blocks=${recent || 'none'}`,
@@ -71,6 +76,11 @@ export function buildWhiteboardContextMessageV2(context: StructuredWhiteboardCon
     '- Prefer semantic templates and maintain strict visual legibility.',
     '- Default to highest-scored suggested_next_region unless user requests an explicit region rewrite.',
     '- Keep derivations top-to-bottom with clear block boundaries and no collisions.',
+    'Drawing guidance:',
+    `- math_context="${mathCtx}": ${mathCtx === 'empty' ? 'canvas is blank — place new content starting at suggested_next_regions.' : mathCtx === 'has_axes' ? 'axes exist — overlay curves or annotations on existing axes where appropriate.' : mathCtx === 'has_function' ? 'function curves present — add labels, tangent lines, or complementary plots nearby.' : 'geometric shapes present — maintain consistent scale and alignment.'}`,
+    `- drawing_style="${drawStyle}": match existing aesthetic — ${drawStyle === 'formal' ? 'use precise coordinates, LaTeX labels, and clean lines.' : drawStyle === 'sketch' ? 'allow slight looseness and hand-drawn feel.' : 'use simple, uncluttered elements with uniform spacing.'}`,
+    '- Check occupied_regions before placing new elements to avoid overlap.',
+    '- Use anchors to align new elements with existing endpoints or shape centers.',
   ].join('\n');
 
   return clip(message, maxChars);

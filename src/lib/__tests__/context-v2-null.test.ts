@@ -31,7 +31,7 @@ describe('extendStructuredWhiteboardContext null/empty edge paths', () => {
 
   it('context with falsy max_chars resets to default 2200', () => {
     const ctx: StructuredWhiteboardContext = {
-      scene_summary: { element_count: 1, type_counts: { text: 1 } },
+      scene_summary: { element_count: 1, type_counts: { text: 1 }, element_type_summary: { text: 1 }, math_context: 'empty', suggested_drawing_style: 'clean' },
       occupied_regions: [],
       anchors: [],
       recent_blocks: [],
@@ -51,6 +51,9 @@ describe('extendStructuredWhiteboardContext null/empty edge paths', () => {
         element_count: 1,
         bounds: originalBounds,
         type_counts: { rect: 1 },
+        element_type_summary: { rect: 1 },
+        math_context: 'has_geometry',
+        suggested_drawing_style: 'sketch',
       },
       occupied_regions: [],
       anchors: [],

@@ -1,6 +1,6 @@
 /**
  * Pure SSE (Server-Sent Events) buffer parser.
- * Extracted from useAgentStream for testability.
+ * Single canonical location for all SSE parsing utilities.
  */
 export interface SSEParseResult {
   events: unknown[];
@@ -57,5 +57,28 @@ export function parseSSEBuffer(buffer: string): SSEParseResult {
     }
   }
 
+  return { events, remaining, errors };
+}
+
+/**
+ * Lightweight SSE frame parser that treats each `data:` line independently.
+ * Unlike parseSSEBuffer, does not join multi-data-line events or filter
+ * comments / `event:` prefixes / `[DONE]` sentinels.
+ */
+export function parseSSEFrames(
+  buffer: string,
+): { events: unknown[]; remaining: string; errors: string[] } {
+  const parts = buffer.split(/\r?\n\r?\n/);
+  const remaining = parts.pop() ?? '';
+  const events: unknown[] = [];
+  const errors: string[] = [];
+  for (const chunk of parts) {
+    for (const line of chunk.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('data:'))) {
+      const json = line.slice(5).trim();
+      if (!json) continue;
+      try { events.push(JSON.parse(json)); }
+      catch { errors.push('Invalid SSE JSON payload received'); }
+    }
+  }
   return { events, remaining, errors };
 }

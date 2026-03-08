@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSSEFrames } from '@/hooks/useAgentStream';
+import { parseSSEFrames } from '@/hooks/sse-parser';
 
 describe('parseSSEFrames', () => {
   it('parses valid SSE frames and returns remaining buffer', () => {

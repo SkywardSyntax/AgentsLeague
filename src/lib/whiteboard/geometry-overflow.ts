@@ -1,159 +1,101 @@
 import { COORD_BOUNDS } from './clamp-coordinates';
-import { clamp, distance } from './geometry';
-import type { Point, DrawElement, WhiteboardBounds } from '@/types/agent';
+import type { DrawElement } from '@/types/agent';
 
-export interface SafeResult<T> {
+interface SafeResult<T> {
   value: T;
   overflowed: boolean;
 }
 
-function safeClampX(value: number): { value: number; overflowed: boolean } {
-  if (Number.isNaN(value)) return { value: COORD_BOUNDS.MIN_X, overflowed: true };
-  const clamped = clamp(value, COORD_BOUNDS.MIN_X, COORD_BOUNDS.MAX_X);
-  return { value: clamped, overflowed: clamped !== value };
-}
-
-function safeClampY(value: number): { value: number; overflowed: boolean } {
-  if (Number.isNaN(value)) return { value: COORD_BOUNDS.MIN_Y, overflowed: true };
-  const clamped = clamp(value, COORD_BOUNDS.MIN_Y, COORD_BOUNDS.MAX_Y);
-  return { value: clamped, overflowed: clamped !== value };
+function clampValue(v: number): { value: number; overflowed: boolean } {
+  if (Number.isNaN(v) || !Number.isFinite(v)) {
+    return { value: v > 0 || Number.isNaN(v) ? COORD_BOUNDS.MIN_X : COORD_BOUNDS.MIN_X, overflowed: true };
+  }
+  if (v > COORD_BOUNDS.MAX_X) return { value: COORD_BOUNDS.MAX_X, overflowed: true };
+  if (v < COORD_BOUNDS.MIN_X) return { value: COORD_BOUNDS.MIN_X, overflowed: true };
+  return { value: v, overflowed: false };
 }
 
 export function safeAdd(a: number, b: number): SafeResult<number> {
-  const raw = a + b;
-  const result = safeClampX(raw);
-  return { value: result.value, overflowed: result.overflowed };
+  if (Number.isNaN(a) || Number.isNaN(b)) return { value: COORD_BOUNDS.MIN_X, overflowed: true };
+  return clampValue(a + b);
 }
 
 export function safeMul(a: number, b: number): SafeResult<number> {
-  const raw = a * b;
-  const result = safeClampX(raw);
-  return { value: result.value, overflowed: result.overflowed };
+  if (Number.isNaN(a) || Number.isNaN(b)) return { value: COORD_BOUNDS.MIN_X, overflowed: true };
+  return clampValue(a * b);
 }
 
-export function safeDist(p1: Point, p2: Point): SafeResult<number> {
-  const raw = distance(p1, p2);
-  const result = safeClampX(raw);
-  return { value: result.value, overflowed: result.overflowed };
+export function safeDist(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): SafeResult<number> {
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  return clampValue(d);
 }
 
-export interface AffineMatrix {
-  a: number;
-  b: number;
-  c: number;
-  d: number;
-  tx: number;
-  ty: number;
+interface Matrix2D {
+  a: number; b: number;
+  c: number; d: number;
+  tx: number; ty: number;
 }
 
 export function safeTransformPoint(
-  point: Point,
-  matrix: AffineMatrix,
-): SafeResult<Point> {
+  point: { x: number; y: number },
+  matrix: Matrix2D,
+): SafeResult<{ x: number; y: number }> {
   const rawX = matrix.a * point.x + matrix.c * point.y + matrix.tx;
   const rawY = matrix.b * point.x + matrix.d * point.y + matrix.ty;
-
-  const cx = safeClampX(rawX);
-  const cy = safeClampY(rawY);
-
+  const cx = clampValue(rawX);
+  const cy = clampValue(rawY);
   return {
     value: { x: cx.value, y: cy.value },
     overflowed: cx.overflowed || cy.overflowed,
   };
 }
 
-function elementExtremes(
-  el: DrawElement,
-): { minX: number; minY: number; maxX: number; maxY: number } | null {
-  switch (el.type) {
-    case 'rect':
-      return { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h };
-    case 'ellipse':
-      return {
-        minX: el.cx - el.rx,
-        minY: el.cy - el.ry,
-        maxX: el.cx + el.rx,
-        maxY: el.cy + el.ry,
-      };
-    case 'line':
-    case 'arrow':
-      return {
-        minX: Math.min(el.from.x, el.to.x),
-        minY: Math.min(el.from.y, el.to.y),
-        maxX: Math.max(el.from.x, el.to.x),
-        maxY: Math.max(el.from.y, el.to.y),
-      };
-    case 'text':
-    case 'latex':
-      return { minX: el.x, minY: el.y, maxX: el.x, maxY: el.y };
-    default:
-      return null;
-  }
-}
-
 export function safeBoundingBox(
   elements: DrawElement[],
-): SafeResult<WhiteboardBounds> {
-  let overflowed = false;
+): SafeResult<{ minX: number; minY: number; maxX: number; maxY: number }> {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
+  let overflowed = false;
 
   for (const el of elements) {
-    const ext = elementExtremes(el);
-    if (!ext) continue;
-    minX = Math.min(minX, ext.minX);
-    minY = Math.min(minY, ext.minY);
-    maxX = Math.max(maxX, ext.maxX);
-    maxY = Math.max(maxY, ext.maxY);
+    if ('x' in el && 'y' in el) {
+      const x = el.x as number;
+      const y = el.y as number;
+      const cx = clampValue(x);
+      const cy = clampValue(y);
+      if (cx.overflowed || cy.overflowed) overflowed = true;
+      if (cx.value < minX) minX = cx.value;
+      if (cy.value < minY) minY = cy.value;
+
+      let ex = cx.value;
+      let ey = cy.value;
+      if ('w' in el) ex += (el as { w: number }).w;
+      if ('h' in el) ey += (el as { h: number }).h;
+      const cex = clampValue(ex);
+      const cey = clampValue(ey);
+      if (cex.overflowed || cey.overflowed) overflowed = true;
+      if (cex.value > maxX) maxX = cex.value;
+      if (cey.value > maxY) maxY = cey.value;
+    }
   }
 
-  if (!Number.isFinite(minX)) {
-    overflowed = true;
-    minX = clamp(minX === Infinity ? 0 : minX, COORD_BOUNDS.MIN_X, COORD_BOUNDS.MAX_X);
-  }
-  if (!Number.isFinite(minY)) {
-    overflowed = true;
-    minY = clamp(minY === Infinity ? 0 : minY, COORD_BOUNDS.MIN_Y, COORD_BOUNDS.MAX_Y);
-  }
-  if (!Number.isFinite(maxX)) {
-    overflowed = true;
-    maxX = clamp(maxX === -Infinity ? 0 : maxX, COORD_BOUNDS.MIN_X, COORD_BOUNDS.MAX_X);
-  }
-  if (!Number.isFinite(maxY)) {
-    overflowed = true;
-    maxY = clamp(maxY === -Infinity ? 0 : maxY, COORD_BOUNDS.MIN_Y, COORD_BOUNDS.MAX_Y);
-  }
+  if (!Number.isFinite(minX)) { minX = COORD_BOUNDS.MIN_X; overflowed = true; }
+  if (!Number.isFinite(minY)) { minY = COORD_BOUNDS.MIN_X; overflowed = true; }
+  if (!Number.isFinite(maxX)) { maxX = COORD_BOUNDS.MAX_X; overflowed = true; }
+  if (!Number.isFinite(maxY)) { maxY = COORD_BOUNDS.MAX_X; overflowed = true; }
 
-  const cMinX = safeClampX(minX);
-  const cMinY = safeClampY(minY);
-  const cMaxX = safeClampX(maxX);
-  const cMaxY = safeClampY(maxY);
-
-  if (cMinX.overflowed || cMinY.overflowed || cMaxX.overflowed || cMaxY.overflowed) {
-    overflowed = true;
-  }
-
-  return {
-    value: {
-      minX: cMinX.value,
-      minY: cMinY.value,
-      maxX: cMaxX.value,
-      maxY: cMaxY.value,
-    },
-    overflowed,
-  };
+  return { value: { minX, minY, maxX, maxY }, overflowed };
 }
 
 export function overflowReport(
-  results: SafeResult<unknown>[],
+  results: Array<{ value: unknown; overflowed: boolean }>,
 ): { count: number; overflowCount: number; overflowRate: number } {
   const count = results.length;
   const overflowCount = results.filter((r) => r.overflowed).length;
-  return {
-    count,
-    overflowCount,
-    overflowRate: count > 0 ? overflowCount / count : 0,
-  };
+  return { count, overflowCount, overflowRate: count === 0 ? 0 : overflowCount / count };
 }

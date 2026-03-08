@@ -1,4 +1,7 @@
 import type {
+  DrawBatch,
+  DrawElement,
+  Point,
   RelativePose,
   SemanticBatch,
   SemanticCaptionBlock,
@@ -48,6 +51,7 @@ const COMMAND_CONNECT_SET = new Set(['connect', 'edge', 'link', 'arrow']);
 const COMMAND_CAPTION_SET = new Set(['caption', 'label', 'text']);
 const COMMAND_EQUATION_SET = new Set(['equation', 'eq', 'math']);
 const COMMAND_NOTE_SET = new Set(['note', 'legend']);
+const COMMAND_PLOT_SET = new Set(['plot', 'curve']);
 const COMMAND_SET_SET = new Set(['set', 'config', 'settings']);
 const SHAPE_SYNONYM_MAP: Record<string, GraphShapeType> = {
   rect: 'rect',
@@ -90,6 +94,7 @@ const ANCHOR_ALIAS_MAP: Record<string, string> = {
 };
 
 import { clamp } from './geometry';
+import { sampleFunction, tickMarksForRange } from './math-sampling';
 
 function toNumber(input: string | undefined): number | null {
   if (!input) return null;
@@ -381,13 +386,443 @@ function ensurePanel(
   return created;
 }
 
+// ---------------------------------------------------------------------------
+// Safe math expression evaluator (no eval / new Function)
+// ---------------------------------------------------------------------------
+
+const EXPR_CONSTANTS: Record<string, number> = {
+  pi: Math.PI,
+  e: Math.E,
+};
+
+const EXPR_FUNCTIONS: Record<string, (v: number) => number> = {
+  sin: Math.sin, cos: Math.cos, tan: Math.tan,
+  asin: Math.asin, acos: Math.acos, atan: Math.atan,
+  sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh,
+  sqrt: Math.sqrt, abs: Math.abs, log: Math.log,
+  ln: Math.log, log10: Math.log10, log2: Math.log2,
+  exp: Math.exp, floor: Math.floor, ceil: Math.ceil,
+  round: Math.round, sign: Math.sign,
+};
+
+type ExprNode =
+  | { kind: 'number'; value: number }
+  | { kind: 'var' }
+  | { kind: 'unary'; op: '-'; arg: ExprNode }
+  | { kind: 'binary'; op: '+' | '-' | '*' | '/' | '^'; left: ExprNode; right: ExprNode }
+  | { kind: 'call'; fn: (v: number) => number; arg: ExprNode };
+
+function tokenizeExpr(input: string): string[] {
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i]!;
+    if (/\s/.test(ch)) { i++; continue; }
+    if ('+-*/^()'.includes(ch)) { tokens.push(ch); i++; continue; }
+    if (/[0-9.]/.test(ch)) {
+      let num = '';
+      while (i < input.length && /[0-9.]/.test(input[i]!)) { num += input[i]; i++; }
+      tokens.push(num);
+      continue;
+    }
+    if (/[a-zA-Z_]/.test(ch)) {
+      let ident = '';
+      while (i < input.length && /[a-zA-Z_0-9]/.test(input[i]!)) { ident += input[i]; i++; }
+      tokens.push(ident);
+      continue;
+    }
+    return [];
+  }
+  return tokens;
+}
+
+function buildExprAST(tokens: string[]): ExprNode | null {
+  let pos = 0;
+  function peek(): string | undefined { return tokens[pos]; }
+  function advance(): string { return tokens[pos++]!; }
+
+  function parseAdditive(): ExprNode | null {
+    let left = parseMultiplicative();
+    if (!left) return null;
+    while (peek() === '+' || peek() === '-') {
+      const op = advance() as '+' | '-';
+      const right = parseMultiplicative();
+      if (!right) return null;
+      left = { kind: 'binary', op, left, right };
+    }
+    return left;
+  }
+
+  function parseMultiplicative(): ExprNode | null {
+    let left = parseUnary();
+    if (!left) return null;
+    while (peek() === '*' || peek() === '/') {
+      const op = advance() as '*' | '/';
+      const right = parseUnary();
+      if (!right) return null;
+      left = { kind: 'binary', op, left, right };
+    }
+    return left;
+  }
+
+  function parseUnary(): ExprNode | null {
+    if (peek() === '-') {
+      advance();
+      const a = parseUnary();
+      return a ? { kind: 'unary', op: '-', arg: a } : null;
+    }
+    if (peek() === '+') { advance(); return parseUnary(); }
+    return parsePower();
+  }
+
+  function parsePower(): ExprNode | null {
+    const base = parseCall();
+    if (!base) return null;
+    if (peek() === '^') {
+      advance();
+      const exponent = parseUnary();
+      return exponent ? { kind: 'binary', op: '^', left: base, right: exponent } : null;
+    }
+    return base;
+  }
+
+  function parseCall(): ExprNode | null {
+    const tok = peek();
+    if (tok && /^[a-zA-Z_]/.test(tok)) {
+      const fn = EXPR_FUNCTIONS[tok.toLowerCase()];
+      if (fn !== undefined && tokens[pos + 1] === '(') {
+        advance(); // ident
+        advance(); // '('
+        const arg = parseAdditive();
+        if (!arg || peek() !== ')') return null;
+        advance(); // ')'
+        return { kind: 'call', fn, arg };
+      }
+    }
+    return parsePrimary();
+  }
+
+  function parsePrimary(): ExprNode | null {
+    const tok = peek();
+    if (!tok) return null;
+    if (/^[0-9]/.test(tok) || (tok.startsWith('.') && tok.length > 1)) {
+      advance();
+      const v = Number(tok);
+      return Number.isFinite(v) ? { kind: 'number', value: v } : null;
+    }
+    if (tok === '(') {
+      advance();
+      const inner = parseAdditive();
+      if (!inner || peek() !== ')') return null;
+      advance();
+      return inner;
+    }
+    const lower = tok.toLowerCase();
+    if (lower === 'x') { advance(); return { kind: 'var' }; }
+    const c = EXPR_CONSTANTS[lower];
+    if (c !== undefined) { advance(); return { kind: 'number', value: c }; }
+    return null;
+  }
+
+  const result = parseAdditive();
+  return result && pos === tokens.length ? result : null;
+}
+
+function evalExprNode(node: ExprNode, x: number): number {
+  switch (node.kind) {
+    case 'number': return node.value;
+    case 'var': return x;
+    case 'unary': return -evalExprNode(node.arg, x);
+    case 'call': return node.fn(evalExprNode(node.arg, x));
+    case 'binary': {
+      const l = evalExprNode(node.left, x);
+      const r = evalExprNode(node.right, x);
+      switch (node.op) {
+        case '+': return l + r;
+        case '-': return l - r;
+        case '*': return l * r;
+        case '/': return l / r;
+        case '^': return Math.pow(l, r);
+      }
+    }
+  }
+}
+
+/**
+ * Parse a math expression string into a callable function of x.
+ *
+ * Supports: `+`, `-`, `*`, `/`, `^`, parentheses, constants (`pi`, `e`),
+ * and standard functions (`sin`, `cos`, `tan`, `sqrt`, `abs`, `log`, `exp`, …).
+ *
+ * Uses a safe recursive-descent parser — no `eval()`.
+ */
+export function parseMathExpression(expr: string): ((x: number) => number) | null {
+  const trimmed = expr.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  // Convenience: bare function name (e.g., "sin") → fn(x)
+  const bareFn = EXPR_FUNCTIONS[lower];
+  if (bareFn && !trimmed.includes('(')) {
+    return (x: number) => bareFn(x);
+  }
+  const tokens = tokenizeExpr(trimmed);
+  if (tokens.length === 0) return null;
+  const ast = buildExprAST(tokens);
+  if (!ast) return null;
+  return (x: number) => evalExprNode(ast, x);
+}
+
+// ---------------------------------------------------------------------------
+// MathScene – high-level math scene descriptions → DrawBatch
+// ---------------------------------------------------------------------------
+
+export interface FunctionDef {
+  label: string;
+  fn: (x: number) => number;
+  color?: string;
+}
+
+export interface MathSceneFunctionPlot {
+  type: 'function_plot';
+  functions: FunctionDef[];
+  xRange: [number, number];
+  yRange?: [number, number];
+  origin?: { x: number; y: number };
+  width?: number;
+  height?: number;
+  xLabel?: string;
+  yLabel?: string;
+  gridlines?: boolean;
+  steps?: number;
+}
+
+export interface GeometryShape {
+  kind: 'circle' | 'line_segment' | 'polygon' | 'point';
+  points: Point[];
+  label?: string;
+  color?: string;
+  radius?: number;
+}
+
+export interface MathSceneGeometry {
+  type: 'geometry';
+  shapes: GeometryShape[];
+  origin?: { x: number; y: number };
+  width?: number;
+  height?: number;
+}
+
+export interface AlgebraEquation {
+  tex: string;
+  role?: 'step' | 'result' | 'note';
+}
+
+export interface MathSceneAlgebra {
+  type: 'algebra';
+  equations: AlgebraEquation[];
+  origin?: { x: number; y: number };
+}
+
+export type MathScene = MathSceneFunctionPlot | MathSceneGeometry | MathSceneAlgebra;
+
+const DEFAULT_PLOT_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#db2777'];
+const PLOT_DEFAULTS = { ox: 80, oy: 60, w: 560, h: 380, steps: 200 } as const;
+
+function autoYRange(fns: FunctionDef[], xMin: number, xMax: number, steps: number): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  const dx = (xMax - xMin) / steps;
+  for (const { fn } of fns) {
+    for (let i = 0; i <= steps; i++) {
+      const y = fn(xMin + i * dx);
+      if (Number.isFinite(y)) {
+        if (y < lo) lo = y;
+        if (y > hi) hi = y;
+      }
+    }
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo >= hi) return [-10, 10];
+  const pad = (hi - lo) * 0.1 || 1;
+  return [lo - pad, hi + pad];
+}
+
+function renderFunctionPlotScene(scene: MathSceneFunctionPlot): DrawBatch {
+  const ox = scene.origin?.x ?? PLOT_DEFAULTS.ox;
+  const oy = scene.origin?.y ?? PLOT_DEFAULTS.oy;
+  const w = scene.width ?? PLOT_DEFAULTS.w;
+  const h = scene.height ?? PLOT_DEFAULTS.h;
+  const [xMin, xMax] = scene.xRange;
+  const steps = scene.steps ?? PLOT_DEFAULTS.steps;
+  const [yMin, yMax] = scene.yRange ?? autoYRange(scene.functions, xMin, xMax, steps);
+
+  const elements: DrawElement[] = [];
+  let idN = 0;
+  const nid = () => `fp-${++idN}`;
+
+  const toPixelX = (wx: number) => ox + ((wx - xMin) / (xMax - xMin)) * w;
+  const toPixelY = (wy: number) => oy + h - ((wy - yMin) / (yMax - yMin)) * h;
+
+  const xTicks = tickMarksForRange(xMin, xMax, 8);
+  const yTicks = tickMarksForRange(yMin, yMax, 6);
+
+  // Gridlines
+  if (scene.gridlines !== false) {
+    for (const t of xTicks) {
+      const px = toPixelX(t.value);
+      elements.push({ id: nid(), type: 'line', from: { x: px, y: oy }, to: { x: px, y: oy + h }, color: '#e5e7eb', stroke_width: 0.5 });
+    }
+    for (const t of yTicks) {
+      const py = toPixelY(t.value);
+      elements.push({ id: nid(), type: 'line', from: { x: ox, y: py }, to: { x: ox + w, y: py }, color: '#e5e7eb', stroke_width: 0.5 });
+    }
+  }
+
+  // Axes
+  const xAxisY = clamp(toPixelY(0), oy, oy + h);
+  const yAxisX = clamp(toPixelX(0), ox, ox + w);
+  elements.push({ id: nid(), type: 'arrow', from: { x: ox, y: xAxisY }, to: { x: ox + w, y: xAxisY }, color: '#374151', stroke_width: 1.5 });
+  elements.push({ id: nid(), type: 'arrow', from: { x: yAxisX, y: oy + h }, to: { x: yAxisX, y: oy }, color: '#374151', stroke_width: 1.5 });
+
+  // Tick labels
+  for (const t of xTicks) {
+    if (Math.abs(t.value) < 1e-9) continue;
+    elements.push({ id: nid(), type: 'text', x: toPixelX(t.value), y: xAxisY + 16, text: t.label, size: 11, color: '#6b7280' });
+  }
+  for (const t of yTicks) {
+    if (Math.abs(t.value) < 1e-9) continue;
+    elements.push({ id: nid(), type: 'text', x: yAxisX - 28, y: toPixelY(t.value) + 4, text: t.label, size: 11, color: '#6b7280' });
+  }
+
+  // Axis labels
+  if (scene.xLabel) {
+    elements.push({ id: nid(), type: 'text', x: ox + w + 10, y: xAxisY + 4, text: scene.xLabel, size: 14, color: '#374151' });
+  }
+  if (scene.yLabel) {
+    elements.push({ id: nid(), type: 'text', x: yAxisX - 10, y: oy - 16, text: scene.yLabel, size: 14, color: '#374151' });
+  }
+
+  // Function curves (using discontinuity-aware sampling from math-sampling)
+  for (let fi = 0; fi < scene.functions.length; fi++) {
+    const fdef = scene.functions[fi]!;
+    const color = fdef.color ?? DEFAULT_PLOT_COLORS[fi % DEFAULT_PLOT_COLORS.length]!;
+    const segments = sampleFunction(fdef.fn, xMin, xMax, steps);
+    for (const seg of segments) {
+      for (let i = 0; i < seg.length - 1; i++) {
+        const py1 = toPixelY(seg[i]!.y);
+        const py2 = toPixelY(seg[i + 1]!.y);
+        if ((py1 < oy - 50 && py2 < oy - 50) || (py1 > oy + h + 50 && py2 > oy + h + 50)) continue;
+        elements.push({
+          id: nid(), type: 'line',
+          from: { x: toPixelX(seg[i]!.x), y: py1 },
+          to: { x: toPixelX(seg[i + 1]!.x), y: py2 },
+          color, stroke_width: 2,
+        });
+      }
+    }
+    if (fdef.label) {
+      elements.push({ id: nid(), type: 'text', x: ox + w + 10, y: oy + 20 + fi * 20, text: fdef.label, size: 12, color });
+    }
+  }
+
+  return { batch_id: `math-plot-${Date.now()}`, elements, source: 'template' };
+}
+
+function renderGeometryScene(scene: MathSceneGeometry): DrawBatch {
+  const ox = scene.origin?.x ?? PLOT_DEFAULTS.ox;
+  const oy = scene.origin?.y ?? PLOT_DEFAULTS.oy;
+  const elements: DrawElement[] = [];
+  let idN = 0;
+  const nid = () => `geo-${++idN}`;
+
+  for (const shape of scene.shapes) {
+    const color = shape.color ?? '#2563eb';
+    switch (shape.kind) {
+      case 'point':
+        if (shape.points[0]) {
+          elements.push({ id: nid(), type: 'ellipse', cx: ox + shape.points[0].x, cy: oy + shape.points[0].y, rx: 4, ry: 4, color });
+          if (shape.label) {
+            elements.push({ id: nid(), type: 'text', x: ox + shape.points[0].x + 8, y: oy + shape.points[0].y - 8, text: shape.label, size: 12, color });
+          }
+        }
+        break;
+      case 'line_segment':
+        if (shape.points.length >= 2) {
+          elements.push({
+            id: nid(), type: 'line',
+            from: { x: ox + shape.points[0]!.x, y: oy + shape.points[0]!.y },
+            to: { x: ox + shape.points[1]!.x, y: oy + shape.points[1]!.y },
+            color, stroke_width: 2,
+          });
+          if (shape.label) {
+            const mx = ox + (shape.points[0]!.x + shape.points[1]!.x) / 2;
+            const my = oy + (shape.points[0]!.y + shape.points[1]!.y) / 2;
+            elements.push({ id: nid(), type: 'text', x: mx, y: my - 10, text: shape.label, size: 12, color });
+          }
+        }
+        break;
+      case 'circle':
+        if (shape.points[0] && shape.radius) {
+          elements.push({ id: nid(), type: 'ellipse', cx: ox + shape.points[0].x, cy: oy + shape.points[0].y, rx: shape.radius, ry: shape.radius, color });
+          if (shape.label) {
+            elements.push({ id: nid(), type: 'text', x: ox + shape.points[0].x, y: oy + shape.points[0].y - shape.radius - 10, text: shape.label, size: 12, color });
+          }
+        }
+        break;
+      case 'polygon':
+        for (let i = 0; i < shape.points.length; i++) {
+          const p1 = shape.points[i]!;
+          const p2 = shape.points[(i + 1) % shape.points.length]!;
+          elements.push({
+            id: nid(), type: 'line',
+            from: { x: ox + p1.x, y: oy + p1.y },
+            to: { x: ox + p2.x, y: oy + p2.y },
+            color, stroke_width: 2,
+          });
+        }
+        if (shape.label && shape.points.length > 0) {
+          const cx = shape.points.reduce((s, p) => s + p.x, 0) / shape.points.length;
+          const cy = shape.points.reduce((s, p) => s + p.y, 0) / shape.points.length;
+          elements.push({ id: nid(), type: 'text', x: ox + cx, y: oy + cy, text: shape.label, size: 12, color });
+        }
+        break;
+    }
+  }
+
+  return { batch_id: `math-geo-${Date.now()}`, elements, source: 'template' };
+}
+
+function renderAlgebraScene(scene: MathSceneAlgebra): DrawBatch {
+  const ox = scene.origin?.x ?? PLOT_DEFAULTS.ox;
+  const oy = scene.origin?.y ?? PLOT_DEFAULTS.oy;
+  const elements: DrawElement[] = [];
+  let idN = 0;
+  const nid = () => `alg-${++idN}`;
+
+  for (let i = 0; i < scene.equations.length; i++) {
+    const eq = scene.equations[i]!;
+    elements.push({ id: nid(), type: 'latex', x: ox, y: oy + i * 40, tex: eq.tex, displayMode: true, fontSize: 18 });
+  }
+
+  return { batch_id: `math-alg-${Date.now()}`, elements, source: 'template' };
+}
+
+/** Render a high-level math scene description into a DrawBatch. */
+export function renderMathScene(scene: MathScene): DrawBatch {
+  switch (scene.type) {
+    case 'function_plot': return renderFunctionPlotScene(scene);
+    case 'geometry': return renderGeometryScene(scene);
+    case 'algebra': return renderAlgebraScene(scene);
+  }
+}
+
 export function parseGraphScriptToSemanticBatch(input: unknown): {
   semanticBatch: SemanticBatch | null;
+  plotBatch: DrawBatch | null;
   warnings: string[];
 } {
   const warnings: string[] = [];
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return { semanticBatch: null, warnings: ['Graph script payload must be an object'] };
+    return { semanticBatch: null, plotBatch: null, warnings: ['Graph script payload must be an object'] };
   }
 
   const payload = input as Record<string, unknown>;
@@ -396,12 +831,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
     : `graph-${Date.now()}`;
   const rawScript = typeof payload.script === 'string' ? payload.script : '';
   if (rawScript.length > 50_000) {
-    return { semanticBatch: null, warnings: ['Script exceeds maximum length'] };
+    return { semanticBatch: null, plotBatch: null, warnings: ['Script exceeds maximum length'] };
   }
   // Strip control characters (keep \t, \n, \r)
   const script = rawScript.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
   if (!script.trim()) {
-    return { semanticBatch: null, warnings: ['Graph script is empty'] };
+    return { semanticBatch: null, plotBatch: null, warnings: ['Graph script is empty'] };
   }
 
   let stylePreset =
@@ -427,6 +862,15 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
   const shapeToPanel = new Map<string, string>();
   const shapeIdCounts = new Map<string, number>();
 
+  // Plot state for `plot` / `curve` DSL commands
+  const plotEntries: Array<{ expr: string; fn: (x: number) => number; color?: string; label?: string }> = [];
+  let plotXRange: [number, number] = [-10, 10];
+  let plotYRange: [number, number] | null = null;
+  let plotSteps: number = PLOT_DEFAULTS.steps;
+  let plotXLabel: string | undefined;
+  let plotYLabel: string | undefined;
+  let plotGridlines: boolean | undefined;
+
   const lines = script.split(/\r?\n/);
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const parsed = parseLine(lines[lineIdx]!);
@@ -447,6 +891,16 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
       if (inlineIntent && INTENT_SET.has(inlineIntent as NonNullable<GraphScriptIntent>)) {
         intent = inlineIntent as GraphScriptIntent;
       }
+      // Plot range settings
+      const xr = parsePair(kv.xrange);
+      if (xr) plotXRange = [xr.first, xr.second];
+      const yr = parsePair(kv.yrange);
+      if (yr) plotYRange = [yr.first, yr.second];
+      const stepsVal = toInt(kv.steps);
+      if (stepsVal != null && stepsVal >= 2) plotSteps = stepsVal;
+      if (kv.xlabel) plotXLabel = kv.xlabel;
+      if (kv.ylabel) plotYLabel = kv.ylabel;
+      if (kv.gridlines != null) plotGridlines = kv.gridlines !== 'false';
       continue;
     }
 
@@ -639,7 +1093,48 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
       continue;
     }
 
+    if (COMMAND_PLOT_SET.has(command)) {
+      const exprRaw = kv.fn ?? kv.expr ?? kv.function ?? positional[0];
+      if (!exprRaw) {
+        warnings.push(`line ${lineIdx + 1}: ${command} requires fn or expr`);
+        continue;
+      }
+      const fn = parseMathExpression(exprRaw);
+      if (!fn) {
+        warnings.push(`line ${lineIdx + 1}: could not parse expression '${exprRaw}'`);
+        continue;
+      }
+      const xr = parsePair(kv.xrange);
+      if (xr) plotXRange = [xr.first, xr.second];
+      const yr = parsePair(kv.yrange);
+      if (yr) plotYRange = [yr.first, yr.second];
+      const stepsVal = toInt(kv.steps);
+      if (stepsVal != null && stepsVal >= 2) plotSteps = stepsVal;
+      if (kv.xlabel) plotXLabel = kv.xlabel;
+      if (kv.ylabel) plotYLabel = kv.ylabel;
+      if (kv.gridlines != null) plotGridlines = kv.gridlines !== 'false';
+      plotEntries.push({ expr: exprRaw, fn, color: kv.color, label: kv.label ?? exprRaw });
+      continue;
+    }
+
     warnings.push(`line ${lineIdx + 1}: unsupported command '${command}'`);
+  }
+
+  // Build plot batch from accumulated plot commands
+  let plotBatch: DrawBatch | null = null;
+  if (plotEntries.length > 0) {
+    const scene: MathSceneFunctionPlot = {
+      type: 'function_plot',
+      functions: plotEntries.map((e) => ({ label: e.label ?? e.expr, fn: e.fn, color: e.color })),
+      xRange: plotXRange,
+      ...(plotYRange ? { yRange: plotYRange } : {}),
+      steps: plotSteps,
+      ...(plotXLabel ? { xLabel: plotXLabel } : {}),
+      ...(plotYLabel ? { yLabel: plotYLabel } : {}),
+      ...(plotGridlines !== undefined ? { gridlines: plotGridlines } : {}),
+    };
+    plotBatch = renderMathScene(scene);
+    plotBatch.batch_id = `${batch_id}-plot`;
   }
 
   const blocks = [
@@ -652,8 +1147,12 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
     ...captions,
   ];
 
+  if (blocks.length === 0 && !plotBatch) {
+    return { semanticBatch: null, plotBatch: null, warnings: [...warnings, 'No drawable blocks were parsed from graph script'] };
+  }
+
   if (blocks.length === 0) {
-    return { semanticBatch: null, warnings: [...warnings, 'No drawable blocks were parsed from graph script'] };
+    return { semanticBatch: null, plotBatch, warnings };
   }
 
   let template: GraphScriptTemplate = explicitTemplate ?? 'freeform_semantic';
@@ -671,6 +1170,7 @@ export function parseGraphScriptToSemanticBatch(input: unknown): {
       ...(intent ? { intent } : {}),
       ...(relations.length > 0 ? { relations } : {}),
     },
+    plotBatch,
     warnings,
   };
 }

@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { COORD_MIN, COORD_MAX } from '@/lib/whiteboard/coord-bounds';
 
 const PointSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
 });
 
 const COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$|^[a-z]+$/i;
@@ -15,18 +16,18 @@ const BaseElementSchema = z.object({
 
 const RectSchema = BaseElementSchema.extend({
   type: z.literal('rect'),
-  x: z.number().finite(),
-  y: z.number().finite(),
-  w: z.number().positive(),
-  h: z.number().positive(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  w: z.number().positive().max(COORD_MAX),
+  h: z.number().positive().max(COORD_MAX),
 });
 
 const EllipseSchema = BaseElementSchema.extend({
   type: z.literal('ellipse'),
-  cx: z.number().finite(),
-  cy: z.number().finite(),
-  rx: z.number().positive(),
-  ry: z.number().positive(),
+  cx: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  cy: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  rx: z.number().positive().max(COORD_MAX),
+  ry: z.number().positive().max(COORD_MAX),
 });
 
 const LineSchema = BaseElementSchema.extend({
@@ -43,16 +44,16 @@ const ArrowSchema = BaseElementSchema.extend({
 
 const TextSchema = BaseElementSchema.extend({
   type: z.literal('text'),
-  x: z.number().finite(),
-  y: z.number().finite(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
   text: z.string().max(500),
   size: z.number().positive().optional(),
 });
 
 const LatexSchema = BaseElementSchema.extend({
   type: z.literal('latex'),
-  x: z.number().finite(),
-  y: z.number().finite(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
   tex: z.string().max(2_000),
   displayMode: z.boolean().optional(),
   fontSize: z.number().positive().optional(),
@@ -63,6 +64,83 @@ const ClearSchema = BaseElementSchema.extend({
   type: z.literal('clear'),
 });
 
+const StylePresetSchema = z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']);
+
+const CartesianAxesSchema = BaseElementSchema.extend({
+  type: z.literal('cartesian_axes'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX),
+  height: z.number().positive().max(COORD_MAX),
+  xRange: z.tuple([z.number().finite(), z.number().finite()]),
+  yRange: z.tuple([z.number().finite(), z.number().finite()]),
+  xLabel: z.string().max(100).optional(),
+  yLabel: z.string().max(100).optional(),
+  gridlines: z.boolean().optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const NumberLineSchema = BaseElementSchema.extend({
+  type: z.literal('number_line'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  length: z.number().positive().max(COORD_MAX),
+  min: z.number().finite(),
+  max: z.number().finite(),
+  label: z.string().max(100).optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const VectorArrowSchema = BaseElementSchema.extend({
+  type: z.literal('vector_arrow'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  dx: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  dy: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  label: z.string().max(100).optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const MatrixBracketSchema = BaseElementSchema.extend({
+  type: z.literal('matrix_bracket'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  rows: z.array(z.array(z.string().max(200)).min(1).max(20)).min(1).max(20),
+  bracketStyle: z.enum(['[]', '()', '||', '{}']),
+  cellWidth: z.number().positive().max(COORD_MAX).optional(),
+  cellHeight: z.number().positive().max(COORD_MAX).optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const COLOR_OR_RGBA_REGEX = /^#[0-9a-fA-F]{3,8}$|^[a-z]+$|^rgba?\(\s*[\d.]+/i;
+
+const AngleArcSchema = BaseElementSchema.extend({
+  type: z.literal('angle_arc'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  radius: z.number().positive().max(COORD_MAX),
+  startAngle: z.number().finite(),
+  endAngle: z.number().finite(),
+  label: z.string().max(100).optional(),
+  style: StylePresetSchema.optional(),
+});
+
+const IntegralRegionSchema = BaseElementSchema.extend({
+  type: z.literal('integral_region'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX),
+  height: z.number().positive().max(COORD_MAX),
+  xRange: z.tuple([z.number().finite(), z.number().finite()]),
+  yRange: z.tuple([z.number().finite(), z.number().finite()]),
+  topPoints: z.array(PointSchema).min(2).max(500),
+  bottomPoints: z.array(PointSchema).max(500).optional(),
+  fillColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  strokeColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  label: z.string().max(200).optional(),
+  style: StylePresetSchema.optional(),
+});
+
 export const DrawElementSchema = z.discriminatedUnion('type', [
   RectSchema,
   EllipseSchema,
@@ -71,12 +149,22 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
   TextSchema,
   LatexSchema,
   ClearSchema,
+  CartesianAxesSchema,
+  NumberLineSchema,
+  VectorArrowSchema,
+  MatrixBracketSchema,
+  AngleArcSchema,
+  IntegralRegionSchema,
 ]);
+
+const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optional();
 
 export const DrawBatchSchema = z.object({
   batch_id: z.string().min(1).max(64),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
   elements: z.array(DrawElementSchema).max(200),
+  source: BatchSourceSchema,
+  schemaVersion: z.number().int().default(1),
 });
 
 const ChatMessageSchema = z.object({
@@ -122,6 +210,9 @@ export const StructuredWhiteboardContextSchema = z.object({
       })
       .optional(),
     type_counts: z.record(z.string(), z.number().int().nonnegative()),
+    element_type_summary: z.record(z.string(), z.number().int().nonnegative()).default({}),
+    math_context: z.enum(['empty', 'has_axes', 'has_function', 'has_geometry']).default('empty'),
+    suggested_drawing_style: z.enum(['clean', 'sketch', 'formal']).default('clean'),
   }),
   occupied_regions: z.array(
     z.object({
@@ -502,6 +593,153 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // function_curve: pass through as-is with validation (lowered later)
+    if (type === 'function_curve') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange) {
+        warnings.push(`FunctionCurve ${id} has invalid coordinates or ranges`);
+        continue;
+      }
+      const xr0 = asNumber(rawXRange[0]);
+      const xr1 = asNumber(rawXRange[1]);
+      const yr0 = asNumber(rawYRange[0]);
+      const yr1 = asNumber(rawYRange[1]);
+      if (xr0 == null || xr1 == null || yr0 == null || yr1 == null) {
+        warnings.push(`FunctionCurve ${id} has invalid range values`);
+        continue;
+      }
+      const expression = asString(raw.expression) ?? undefined;
+      const label = asString(raw.label) ?? undefined;
+      const rawPoints = Array.isArray(raw.points) ? raw.points : undefined;
+      let points: Array<{ x: number; y: number }> | undefined;
+      if (rawPoints) {
+        points = [];
+        for (const rp of rawPoints) {
+          const pt = pointFrom(rp);
+          if (pt) points.push(pt);
+        }
+        if (points.length === 0) points = undefined;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        xRange: [xr0, xr1] as [number, number],
+        yRange: [yr0, yr1] as [number, number],
+        ...(expression ? { expression } : {}),
+        ...(points ? { points } : {}),
+        ...(label ? { label } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // angle_arc: pass through with validation
+    if (type === 'angle_arc') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const radius = asNumber(raw.radius);
+      const startAngle = asNumber(raw.startAngle);
+      const endAngle = asNumber(raw.endAngle);
+      if (x == null || y == null || radius == null || startAngle == null || endAngle == null) {
+        warnings.push(`AngleArc ${id} has invalid coordinates or angles`);
+        continue;
+      }
+      const label = asString(raw.label) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        radius: Math.max(1, Math.abs(radius)),
+        startAngle,
+        endAngle,
+        ...(label ? { label } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // integral_region: pass through with validation
+    if (type === 'integral_region') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange) {
+        warnings.push(`IntegralRegion ${id} has invalid coordinates or ranges`);
+        continue;
+      }
+      const xr0 = asNumber(rawXRange[0]);
+      const xr1 = asNumber(rawXRange[1]);
+      const yr0 = asNumber(rawYRange[0]);
+      const yr1 = asNumber(rawYRange[1]);
+      if (xr0 == null || xr1 == null || yr0 == null || yr1 == null) {
+        warnings.push(`IntegralRegion ${id} has invalid range values`);
+        continue;
+      }
+      const rawTopPoints = Array.isArray(raw.topPoints) ? raw.topPoints : null;
+      if (!rawTopPoints || rawTopPoints.length < 2) {
+        warnings.push(`IntegralRegion ${id} needs at least 2 topPoints`);
+        continue;
+      }
+      const topPoints: Array<{ x: number; y: number }> = [];
+      for (const rp of rawTopPoints) {
+        const pt = pointFrom(rp);
+        if (pt) topPoints.push(pt);
+      }
+      if (topPoints.length < 2) {
+        warnings.push(`IntegralRegion ${id} has insufficient valid topPoints`);
+        continue;
+      }
+      let bottomPoints: Array<{ x: number; y: number }> | undefined;
+      const rawBottomPoints = Array.isArray(raw.bottomPoints) ? raw.bottomPoints : undefined;
+      if (rawBottomPoints) {
+        bottomPoints = [];
+        for (const rp of rawBottomPoints) {
+          const pt = pointFrom(rp);
+          if (pt) bottomPoints.push(pt);
+        }
+        if (bottomPoints.length === 0) bottomPoints = undefined;
+      }
+      const fillColor = asString(raw.fillColor) ?? undefined;
+      const strokeColor = asString(raw.strokeColor) ?? undefined;
+      const label = asString(raw.label) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        xRange: [xr0, xr1] as [number, number],
+        yRange: [yr0, yr1] as [number, number],
+        topPoints,
+        ...(bottomPoints ? { bottomPoints } : {}),
+        ...(fillColor ? { fillColor } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(label ? { label } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     warnings.push(`Unsupported element type at ${idx}`);
   }
 
@@ -517,6 +755,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
     batch_id,
     ...(style_preset ? { style_preset } : {}),
     elements,
+    schemaVersion: 1,
   };
 
   return { normalized, warnings };
@@ -533,7 +772,7 @@ export const CAPTION_REGION_HINTS = ['bottom', 'center', 'auto'] as const;
 export const PANEL_SHAPE_TYPES = ['rect', 'parallelogram', 'line', 'arrow'] as const;
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'angle_arc', 'integral_region'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption'] as const;
 

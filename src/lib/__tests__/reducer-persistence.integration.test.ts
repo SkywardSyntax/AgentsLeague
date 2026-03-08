@@ -56,7 +56,6 @@ function storeToPersistedSession(store: ChatStore, activeChatId: string): Persis
         scene: chat.scene,
         semanticScene: chat.semanticScene,
         plannerMeta: chat.plannerMeta,
-        warnings: chat.warnings.length > 0 ? chat.warnings : undefined,
       };
     }),
     prefs: { panelSizes: [62, 38] },
@@ -82,7 +81,7 @@ function restoreFromLoaded(loaded: PersistedSessionV3): ChatStore {
       semanticScene: chat.semanticScene ?? [],
       plannerMeta: chat.plannerMeta ?? [],
       batches: chat.id === activeId ? buildRestoreBatch(chat.id, chat.scene) : [],
-      warnings: chat.warnings ?? [],
+      warnings: [],
     };
   }
 

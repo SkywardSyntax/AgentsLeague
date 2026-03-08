@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { loadSession, saveSession } from '@/lib/client/persistence';
+import { clearCorruptSession, loadSession, saveSession } from '@/lib/client/persistence';
 import type {
   ChatMessage,
   DrawBatch,
@@ -9,6 +9,7 @@ import type {
   SemanticBatch,
   WhiteboardLayoutDiagnostics,
 } from '@/types/agent';
+import type { NotificationItem } from '@/components/app/WarningOverlay';
 
 export interface ChatSessionState {
   id: string;
@@ -20,7 +21,7 @@ export interface ChatSessionState {
   semanticScene: SemanticBatch[];
   plannerMeta: WhiteboardLayoutDiagnostics[];
   batches: DrawBatch[];
-  warnings: string[];
+  warnings: NotificationItem[];
 }
 
 function createId(): string {
@@ -30,6 +31,31 @@ function createId(): string {
 
 function defaultChatTitle(index: number): string {
   return `Chat ${index}`;
+}
+
+const DEFAULT_PANEL_SIZES: [number, number] = [62, 38];
+const DEFAULT_CHAT_TITLE_PATTERN = /^Chat \d+$/;
+
+function shouldPersistSession(
+  chats: ChatSessionState[],
+  panelSizes: [number, number],
+): boolean {
+  if (chats.length === 0) return false;
+  if (chats.length > 1) return true;
+  if (panelSizes[0] !== DEFAULT_PANEL_SIZES[0] || panelSizes[1] !== DEFAULT_PANEL_SIZES[1]) {
+    return true;
+  }
+
+  const onlyChat = chats[0];
+  if (!onlyChat) return false;
+  if (onlyChat.messages.length > 0) return true;
+  if (onlyChat.scene.length > 0 || onlyChat.semanticScene.length > 0 || onlyChat.plannerMeta.length > 0) {
+    return true;
+  }
+
+  const title = onlyChat.title.trim();
+  if (title.length > 0 && !DEFAULT_CHAT_TITLE_PATTERN.test(title)) return true;
+  return false;
 }
 
 export function createEmptyChatSession(index: number): ChatSessionState {
@@ -79,7 +105,7 @@ export function useSessionManager(): SessionManagerResult {
   const [chatSessions, setChatSessions] = useState<ChatSessionState[]>([seedChat]);
   const [activeChatId, setActiveChatId] = useState<string>(seedChat.id);
   const [didRestoreSession, setDidRestoreSession] = useState(false);
-  const [panelSizes, setPanelSizes] = useState<[number, number]>([62, 38]);
+  const [panelSizes, setPanelSizes] = useState<[number, number]>(DEFAULT_PANEL_SIZES);
   const [sessionId] = useState(() => createId());
 
   const activeChatIdRef = useRef<string>(activeChatId);
@@ -147,7 +173,11 @@ export function useSessionManager(): SessionManagerResult {
     if (persistTimeout.current) clearTimeout(persistTimeout.current);
 
     persistTimeout.current = setTimeout(() => {
-      if (chatSessions.length === 0) return;
+      if (!shouldPersistSession(chatSessions, panelSizes)) {
+        clearCorruptSession();
+        return;
+      }
+
       saveSession({
         version: 3,
         updatedAt: Date.now(),

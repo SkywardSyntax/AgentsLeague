@@ -16,7 +16,9 @@ import {
   lowerPlannedLayoutToDrawBatch,
   planSemanticBatch,
 } from '@/lib/whiteboard/planner';
-import { parseGraphScriptToSemanticBatch } from '@/lib/whiteboard/graph-script';
+import { parseGraphScriptToSemanticBatch, renderMathScene } from '@/lib/whiteboard/graph-script';
+import type { MathScene } from '@/lib/whiteboard/graph-script';
+import { clampBatchCoordinates } from '@/lib/whiteboard/clamp-coordinates';
 
 export interface ToolHandlerContext {
   send: (payload: unknown) => void;
@@ -39,7 +41,7 @@ function handleGraphScript(
   ctx: ToolHandlerContext,
 ): ToolHandlerResult {
   const parsedGraph = parseGraphScriptToSemanticBatch(parsedArgs);
-  if (!parsedGraph.semanticBatch) {
+  if (!parsedGraph.semanticBatch && !parsedGraph.plotBatch) {
     ctx.send({
       type: 'warning',
       turnId: ctx.turnId,
@@ -64,8 +66,31 @@ function handleGraphScript(
     });
   }
 
+  // Emit function-plot batch if present
+  if (parsedGraph.plotBatch) {
+    const constrained = enforceDrawBatchConstraints(parsedGraph.plotBatch);
+    emitRepairWarning(constrained, 'graph script plot', ctx);
+    ctx.send({ type: 'whiteboard.batch', turnId: ctx.turnId, batch: constrained.batch });
+  }
+
+  // If only a plot batch exists (no semantic blocks), return early
+  if (!parsedGraph.semanticBatch) {
+    return {
+      functionOutput: JSON.stringify({
+        ok: true,
+        batch_id: parsedGraph.plotBatch!.batch_id,
+        repaired: false,
+        fallback_used: false,
+      }),
+      updatedContext: ctx.turnContextV2,
+      sawToolBatch: true,
+    };
+  }
+
   const planned = planSemanticBatch(parsedGraph.semanticBatch, ctx.turnContextV2);
   let drawBatch = lowerPlannedLayoutToDrawBatch(planned);
+  // SEC-006: clamp coordinates before constraint enforcement
+  drawBatch = { ...drawBatch, elements: clampBatchCoordinates(drawBatch.elements) };
   const constrained = enforceDrawBatchConstraints(drawBatch);
   drawBatch = constrained.batch;
 
@@ -165,6 +190,8 @@ function handleSemanticBatch(
 
   const planned = planSemanticBatch(semanticPayload, ctx.turnContextV2);
   let drawBatch = lowerPlannedLayoutToDrawBatch(planned);
+  // SEC-006: clamp coordinates before constraint enforcement
+  drawBatch = { ...drawBatch, elements: clampBatchCoordinates(drawBatch.elements) };
   const constrained = enforceDrawBatchConstraints(drawBatch);
   drawBatch = constrained.batch;
 
@@ -207,6 +234,9 @@ function handleSemanticBatch(
   };
 }
 
+/** SEC-004: Hard element count cap applied during normalization and after re-validation */
+const MAX_BATCH_ELEMENTS = 200;
+
 function handleDrawBatch(
   parsedArgs: unknown,
   ctx: ToolHandlerContext,
@@ -219,6 +249,51 @@ function handleDrawBatch(
     const normalized = normalizeDrawBatchPayload(parsedArgs);
     normalizedBatch = normalized.normalized;
     normalizationWarnings.push(...normalized.warnings);
+
+    // SEC-004: Re-validate normalized batch against DrawBatchSchema
+    if (normalizedBatch) {
+      const revalidation = DrawBatchSchema.safeParse(normalizedBatch);
+      if (!revalidation.success) {
+        ctx.log.warn('normalized_batch_revalidation_failed', {
+          turnId: ctx.turnId,
+          issues: revalidation.error.issues.map((i) => i.message).join('; '),
+        });
+        ctx.send({
+          type: 'warning',
+          turnId: ctx.turnId,
+          code: 'INVALID_DRAW_BATCH',
+          message: 'Normalized draw batch failed re-validation',
+          context: revalidation.error.issues.map((i) => i.message).join('; '),
+        });
+        return {
+          functionOutput: JSON.stringify({ ok: false, error: 'normalized_batch_invalid' }),
+          updatedContext: ctx.turnContextV2,
+          sawToolBatch: false,
+        };
+      }
+      normalizedBatch = revalidation.data;
+    }
+  }
+
+  // SEC-004: Hard element count check post-normalization
+  if (normalizedBatch && normalizedBatch.elements.length > MAX_BATCH_ELEMENTS) {
+    ctx.log.warn('batch_element_count_exceeded', {
+      turnId: ctx.turnId,
+      count: normalizedBatch.elements.length,
+      max: MAX_BATCH_ELEMENTS,
+    });
+    ctx.send({
+      type: 'warning',
+      turnId: ctx.turnId,
+      code: 'BATCH_TOO_LARGE',
+      message: `Draw batch exceeds maximum element count (${MAX_BATCH_ELEMENTS})`,
+      context: `Received ${normalizedBatch.elements.length} elements`,
+    });
+    return {
+      functionOutput: JSON.stringify({ ok: false, error: 'batch_too_large' }),
+      updatedContext: ctx.turnContextV2,
+      sawToolBatch: false,
+    };
   }
 
   if (!normalizedBatch || normalizedBatch.elements.length === 0) {
@@ -249,6 +324,8 @@ function handleDrawBatch(
   }
 
   const constrained = enforceDrawBatchConstraints(normalizedBatch);
+  // SEC-006: clamp coordinates after constraint enforcement for legacy draw batches
+  constrained.batch = { ...constrained.batch, elements: clampBatchCoordinates(constrained.batch.elements) };
   emitRepairWarning(constrained, 'legacy draw batch', ctx);
 
   const legacySemantic = fromLegacyDrawBatchToSemanticStub(
@@ -306,6 +383,42 @@ function emitRepairWarning(
   }
 }
 
+function handleMathScene(
+  parsedArgs: unknown,
+  ctx: ToolHandlerContext,
+): ToolHandlerResult {
+  if (!parsedArgs || typeof parsedArgs !== 'object' || Array.isArray(parsedArgs)) {
+    return {
+      functionOutput: JSON.stringify({ ok: false, error: 'invalid_math_scene' }),
+      updatedContext: ctx.turnContextV2,
+      sawToolBatch: false,
+    };
+  }
+  const scene = parsedArgs as MathScene;
+  if (scene.type !== 'function_plot' && scene.type !== 'geometry' && scene.type !== 'algebra') {
+    ctx.send({
+      type: 'warning',
+      turnId: ctx.turnId,
+      code: 'INVALID_MATH_SCENE',
+      message: 'Math scene type must be function_plot, geometry, or algebra',
+    });
+    return {
+      functionOutput: JSON.stringify({ ok: false, error: 'invalid_math_scene_type' }),
+      updatedContext: ctx.turnContextV2,
+      sawToolBatch: false,
+    };
+  }
+  const batch = renderMathScene(scene);
+  const constrained = enforceDrawBatchConstraints(batch);
+  emitRepairWarning(constrained, 'math scene', ctx);
+  ctx.send({ type: 'whiteboard.batch', turnId: ctx.turnId, batch: constrained.batch });
+  return {
+    functionOutput: JSON.stringify({ ok: true, batch_id: constrained.batch.batch_id }),
+    updatedContext: ctx.turnContextV2,
+    sawToolBatch: true,
+  };
+}
+
 /**
  * Dispatches a tool call to the appropriate handler.
  * Returns null for unknown tool names.
@@ -318,6 +431,7 @@ export function handleToolCall(
   if (name === 'emit_graph_script') return handleGraphScript(parsedArgs, ctx);
   if (name === 'emit_semantic_batch') return handleSemanticBatch(parsedArgs, ctx);
   if (name === 'emit_draw_batch') return handleDrawBatch(parsedArgs, ctx);
+  if (name === 'emit_math_scene') return handleMathScene(parsedArgs, ctx);
   ctx.log.warn('unknown_tool_call', { name: String(name).slice(0, 120), turnId: ctx.turnId });
   return null;
 }

@@ -26,6 +26,7 @@ import {
   withContentType,
   withBodySizeLimit,
   withRateLimit,
+  withCsrfProtection,
 } from '@/lib/server/api-middleware';
 import type { HandlerContext, Handler } from '@/lib/server/api-middleware';
 import { isMockMode, isPassthroughMode, mockAgentStream, passthroughAgentStream } from './__mocks__/mock-stream';
@@ -40,12 +41,30 @@ import {
   lowerPlannedLayoutToDrawBatch,
   planSemanticBatch,
 } from '@/lib/whiteboard/planner';
+import { globalSequencer } from '@/lib/whiteboard/batch-sequencer';
 import type {
   SemanticBatch,
   StructuredWhiteboardContext,
 } from '@/types/agent';
 
 export const runtime = 'nodejs';
+
+/**
+ * TODO [SEC-001/SEC-002]: Validate session ownership and bind to authenticated principal.
+ * Currently a stub that logs a warning. Requires a full auth system to implement properly:
+ * - SEC-001: Add mandatory auth middleware; derive authoritative session/user server-side
+ * - SEC-002: Require signed/idempotent request metadata, bind session to authenticated principal
+ * Once an auth provider is integrated, this should verify the session belongs to the
+ * authenticated user and reject unauthenticated/replayed requests.
+ */
+function validateSession(sessionId: string, _request: Request): boolean {
+  const log = createLogger({ route: '/api/agent/stream', sessionId });
+  log.warn('session_auth_not_configured', {
+    message: 'No auth system configured — session ownership is not verified. See SEC-001/SEC-002.',
+    sessionId,
+  });
+  return true; // Stub: allow all until auth is wired
+}
 
 /** Concurrent stream guard — at most one active stream per sessionId */
 const activeStreams = new Set<string>();
@@ -148,6 +167,9 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
 
   const sessionId = parsed.data.sessionId;
 
+  // SEC-001/SEC-002: Validate session ownership (stub until auth system is integrated)
+  validateSession(sessionId, request);
+
   // Concurrent stream guard — reject if this session already has an active stream
   if (activeStreams.has(sessionId)) {
     log.warn('stream_rejected', { sessionId, reason: 'CONCURRENT_STREAM', status: 409 });
@@ -198,12 +220,28 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
       const encoder = new TextEncoder();
       let clientDisconnected = false;
       let eventCount = 0;
-      const send = (payload: unknown) => {
+      const sendRaw = (payload: unknown) => {
         if (clientDisconnected) return;
         eventCount++;
         if (!safeEnqueue(controller, formatSSE(payload), encoder)) {
           clientDisconnected = true;
         }
+      };
+      // Wrap send to auto-attach sequenceNumber to whiteboard.batch events (STATE-001)
+      const send = (payload: unknown) => {
+        if (
+          payload &&
+          typeof payload === 'object' &&
+          (payload as Record<string, unknown>).type === 'whiteboard.batch'
+        ) {
+          const p = payload as Record<string, unknown>;
+          const batch = p.batch as Record<string, unknown> | undefined;
+          if (batch && batch.sequenceNumber == null) {
+            sendRaw({ ...p, batch: { ...batch, sequenceNumber: globalSequencer.next() } });
+            return;
+          }
+        }
+        sendRaw(payload);
       };
       const heartbeatEncoder = new TextEncoder();
       const heartbeatInterval = setInterval(() => {
@@ -340,7 +378,7 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
               fallbackUsed: constrained.fallbackUsed,
               semanticBatch,
             });
-            send({ type: 'whiteboard.batch', turnId, batch: constrained.batch });
+            send({ type: 'whiteboard.batch', turnId, batch: { ...constrained.batch, source: 'ai-stream' as const } });
 
             const b = boundsOfBatch(constrained.batch);
             if (b) {
@@ -591,8 +629,22 @@ async function handlePost(request: Request, ctx: HandlerContext): Promise<Respon
 export const POST = applyMiddleware(
   compose(
     (h: Handler) => withContentType('application/json', h),
-    withRateLimit({ maxRequests: 30, windowMs: 60_000 }),
+    // SEC-003: Key rate limits to IP + sessionId to prevent bypass via header rotation
+    withRateLimit({
+      maxRequests: 30,
+      windowMs: 60_000,
+      keyExtractor: (request) => {
+        const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+          || request.headers.get('x-real-ip')
+          || 'unknown-ip';
+        const sessionId = request.headers.get('X-Session-Id');
+        if (sessionId) return `${ip}:${sessionId}`;
+        return isMockMode() ? `${ip}:mock-mode-fallback-session` : null;
+      },
+    }),
     (h: Handler) => withBodySizeLimit(512 * 1024, h),
+    // SEC-005: CSRF origin validation for mutating POST endpoint
+    withCsrfProtection(),
     withErrorBoundary,
   ),
   handlePost,

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { NotificationItem } from '@/components/app/WarningOverlay';
 import {
   createEmptyChatSession,
   createInitialTurn,
@@ -106,13 +107,15 @@ describe('selectChatMeta', () => {
 describe('selectActiveWarnings', () => {
   it('returns warnings for existing chat', () => {
     const chat = createEmptyChatSession(1);
-    chat.warnings = ['warn1', 'warn2'];
+    const w1: NotificationItem = { id: 'w1', message: 'warn1', severity: 'warning' };
+    const w2: NotificationItem = { id: 'w2', message: 'warn2', severity: 'warning' };
+    chat.warnings = [w1, w2];
     const store: ChatStore = {
       chatOrder: [chat.id],
       chats: { [chat.id]: chat },
       turn: createInitialTurn(),
     };
-    expect(selectActiveWarnings(store, chat.id)).toEqual(['warn1', 'warn2']);
+    expect(selectActiveWarnings(store, chat.id)).toEqual([w1, w2]);
   });
 
   it('returns empty array for nonexistent chat', () => {

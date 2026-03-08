@@ -73,8 +73,13 @@ describe('StreamProgress accessibility', () => {
       const result = StreamProgress({ phase: phases[i] });
       expect(result).not.toBeNull();
       const children = getChildren(result!);
+      // Find the label span: a child whose children prop is the expected text string
       const labelSpan = children.find(
-        (child) => typeof child === 'object' && child !== null && !getProps(child).role && !getProps(child)['aria-hidden'],
+        (child) =>
+          typeof child === 'object' &&
+          child !== null &&
+          typeof getProps(child).children === 'string' &&
+          (getProps(child).children as string).includes('…'),
       );
       expect(labelSpan).toBeDefined();
       expect(getProps(labelSpan!).children).toBe(expectedLabels[i]);

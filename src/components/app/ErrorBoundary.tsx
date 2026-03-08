@@ -50,52 +50,29 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <div
           role="alert"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '100vh',
-            padding: '1rem',
-            fontFamily: 'system-ui, sans-serif',
-          }}
+          className="flex min-h-screen items-center justify-center bg-white p-4 font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100"
         >
-          <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center' }}>
-            <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Something went wrong</h1>
-            <p style={{ color: '#666', marginBottom: '1.5rem' }}>
+          <div className="w-full max-w-[480px] text-center">
+            <h1 className="mb-4 text-2xl">Something went wrong</h1>
+            <p className="mb-6 text-gray-500 dark:text-gray-400">
               The application encountered an unexpected error. You can try reloading the page.
             </p>
-            <details aria-label="Error details" style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
-              <summary style={{ cursor: 'pointer', color: '#888' }}>Error details</summary>
+            <details aria-label="Error details" className="mb-6 text-left">
+              <summary className="cursor-pointer text-gray-500 dark:text-gray-400">Error details</summary>
               <pre
                 role="log"
-                style={{
-                  marginTop: '0.5rem',
-                  padding: '0.75rem',
-                  background: '#f5f5f5',
-                  borderRadius: '0.5rem',
-                  fontSize: '0.8rem',
-                  overflow: 'auto',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
+                className="mt-2 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 text-[0.8rem] text-gray-900 dark:bg-gray-800 dark:text-gray-100"
               >
                 {this.state.error?.message}
               </pre>
             </details>
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+            <div className="flex justify-center gap-3">
               {this.props.onRetry && (
                 <button
                   ref={this.primaryButtonRef}
                   type="button"
                   onClick={this.handleRetry}
-                  style={{
-                    padding: '0.5rem 1.5rem',
-                    fontSize: '0.9rem',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #ccc',
-                    background: '#fff',
-                    cursor: 'pointer',
-                  }}
+                  className="cursor-pointer rounded-lg border border-gray-300 bg-white px-6 py-2 text-sm text-gray-900 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
                 >
                   Try Again
                 </button>
@@ -104,14 +81,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 ref={this.props.onRetry ? undefined : this.primaryButtonRef}
                 type="button"
                 onClick={() => window.location.reload()}
-                style={{
-                  padding: '0.5rem 1.5rem',
-                  fontSize: '0.9rem',
-                  borderRadius: '0.5rem',
-                  border: '1px solid #ccc',
-                  background: '#fff',
-                  cursor: 'pointer',
-                }}
+                className="cursor-pointer rounded-lg border border-gray-300 bg-white px-6 py-2 text-sm text-gray-900 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
               >
                 Reload
               </button>

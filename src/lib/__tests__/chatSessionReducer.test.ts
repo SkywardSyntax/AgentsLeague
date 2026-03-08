@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { NotificationItem } from '@/components/app/WarningOverlay';
 import {
   chatSessionReducer,
   createEmptyChatSession,
@@ -14,6 +15,11 @@ import {
   type PendingDiagnosticsEntry,
 } from '../state/chatSessionReducer';
 
+let notificationCounter = 0;
+function makeWarning(message: string): NotificationItem {
+  return { id: `test-${notificationCounter++}`, message, severity: 'warning' };
+}
+
 function makeStore(overrides?: Partial<ChatStore>): ChatStore {
   const chat = createEmptyChatSession(1);
   return {
@@ -28,21 +34,25 @@ function chatId(store: ChatStore): string {
   return store.chatOrder[0]!;
 }
 
+function w(msg: string): NotificationItem {
+  return { id: msg, message: msg, severity: 'warning' };
+}
+
 describe('chatSessionReducer', () => {
   describe('PUSH_WARNING', () => {
     it('appends a warning to the target chat', () => {
       const store = makeStore();
       const id = chatId(store);
-      const next = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: id, warning: 'test warn' });
-      expect(next.chats[id]!.warnings).toEqual(['test warn']);
+      const next = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: id, warning: w('test warn') });
+      expect(next.chats[id]!.warnings).toEqual([w('test warn')]);
     });
 
     it('deduplicates consecutive identical warnings', () => {
       const store = makeStore();
       const id = chatId(store);
-      let s = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: id, warning: 'dup' });
-      s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: 'dup' });
-      expect(s.chats[id]!.warnings).toEqual(['dup']);
+      let s = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: id, warning: w('dup') });
+      s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: w('dup') });
+      expect(s.chats[id]!.warnings).toEqual([w('dup')]);
     });
 
     it('caps warnings at 8', () => {
@@ -50,7 +60,7 @@ describe('chatSessionReducer', () => {
       const id = chatId(store);
       let s = store;
       for (let i = 0; i < 10; i++) {
-        s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: `w${i}` });
+        s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: w(`w${i}`) });
       }
       expect(s.chats[id]!.warnings).toHaveLength(8);
     });
@@ -579,8 +589,8 @@ describe('chatSessionReducer', () => {
         chats: { [chat1.id]: chat1, [chat2.id]: chat2 },
         turn: createInitialTurn(),
       };
-      const s = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: chat1.id, warning: 'oops' });
-      expect(s.chats[chat1.id]!.warnings).toEqual(['oops']);
+      const s = chatSessionReducer(store, { type: 'PUSH_WARNING', chatId: chat1.id, warning: w('oops') });
+      expect(s.chats[chat1.id]!.warnings).toEqual([w('oops')]);
       expect(s.chats[chat2.id]!.warnings).toEqual([]);
     });
   });
@@ -681,12 +691,12 @@ describe('chatSessionReducer', () => {
       const id = chatId(store);
       let s = store;
       for (let i = 0; i < 9; i++) {
-        s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: `w${i}` });
+        s = chatSessionReducer(s, { type: 'PUSH_WARNING', chatId: id, warning: w(`w${i}`) });
       }
       expect(s.chats[id]!.warnings).toHaveLength(8);
       // First warning (w0) should be evicted; oldest remaining is w1
-      expect(s.chats[id]!.warnings[0]).toBe('w1');
-      expect(s.chats[id]!.warnings[7]).toBe('w8');
+      expect(s.chats[id]!.warnings[0]?.message).toBe('w1');
+      expect(s.chats[id]!.warnings[7]?.message).toBe('w8');
     });
   });
 

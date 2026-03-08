@@ -8,11 +8,14 @@ import type {
   WhiteboardContext,
 } from '@/types/agent';
 import { validateSSEEvent, type ValidatedAgentSSEEvent } from '@/lib/schema';
+import { friendlyErrorMessage } from '@/lib/client/error-messages';
+import { DEFAULT_RETRY_CONFIG } from '@/lib/stream-reconnect';
 
 
 export interface StreamHandlers {
   onEvent: (event: ValidatedAgentSSEEvent) => void;
-  onError: (message: string) => void;
+  onError: (message: string, meta?: { code: string; retryable: boolean }) => void;
+  onComplete?: (result: { lastEvent: ValidatedAgentSSEEvent | null; hadParseError: boolean }) => void;
 }
 
 /**
@@ -58,61 +61,46 @@ function shouldRetry(
 }
 
 function computeDelay(attempt: number, reason: string, retryAfterMs?: number): number {
+  const { baseDelayMs, maxDelayMs } = DEFAULT_RETRY_CONFIG;
   // Slower backoff for rate limits
-  const baseMs = reason === 'rate_limited' ? 2000 : 1000;
-  const exponential = Math.min(baseMs * 2 ** attempt, 8000);
+  const baseMs = reason === 'rate_limited' ? baseDelayMs * 2 : baseDelayMs;
+  const exponential = Math.min(baseMs * 2 ** attempt, maxDelayMs);
   // ±20% jitter
   const jitter = exponential * (0.8 + Math.random() * 0.4);
   // Respect server-specified retry-after
   return retryAfterMs != null ? Math.max(retryAfterMs, jitter) : jitter;
 }
 
-export interface ParsedSSEResult {
-  events: string[];
-  remainder: string;
-}
+function normalizeSSEEvent(
+  parsed: unknown,
+  fallbackTurnId: string,
+): ValidatedAgentSSEEvent | null {
+  const validated = validateSSEEvent(parsed);
+  if (validated) return validated;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
 
-export function parseSSEBuffer(buffer: string): ParsedSSEResult {
-  const parts = buffer.split(/\r?\n\r?\n/);
-  if (parts.length <= 1) {
-    return { events: [], remainder: buffer };
+  const rec = parsed as Record<string, unknown>;
+  if (rec.type !== 'error' || typeof rec.message !== 'string' || rec.message.length === 0) {
+    return null;
   }
 
-  const remainder = parts.pop() ?? '';
-  const events: string[] = [];
-  for (const chunk of parts) {
-    const lines = chunk
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith('data:'));
-    for (const line of lines) {
-      const json = line.slice(5).trim();
-      if (json) events.push(json);
-    }
-  }
-  return { events, remainder };
-}
-
-/**
- * Parse an SSE buffer into decoded event objects. Returns parsed events,
- * the leftover (incomplete) buffer tail, and any JSON parse errors.
- */
-export function parseSSEFrames(
-  buffer: string,
-): { events: unknown[]; remaining: string; errors: string[] } {
-  const parts = buffer.split(/\r?\n\r?\n/);
-  const remaining = parts.pop() ?? '';
-  const events: unknown[] = [];
-  const errors: string[] = [];
-  for (const chunk of parts) {
-    for (const line of chunk.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('data:'))) {
-      const json = line.slice(5).trim();
-      if (!json) continue;
-      try { events.push(JSON.parse(json)); }
-      catch { errors.push('Invalid SSE JSON payload received'); }
-    }
-  }
-  return { events, remaining, errors };
+  return {
+    type: 'error',
+    turnId:
+      typeof rec.turnId === 'string' && rec.turnId.length > 0
+        ? rec.turnId
+        : fallbackTurnId,
+    code:
+      typeof rec.code === 'string' && rec.code.length > 0
+        ? rec.code
+        : 'STREAM_ERROR',
+    message: rec.message,
+    retryable: typeof rec.retryable === 'boolean' ? rec.retryable : false,
+    retryAfterMs:
+      typeof rec.retryAfterMs === 'number' && Number.isFinite(rec.retryAfterMs)
+        ? rec.retryAfterMs
+        : undefined,
+  };
 }
 
 
@@ -151,13 +139,14 @@ export function useAgentStream() {
       const gen = ++generationRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
-      const maxRetries = args.maxRetries ?? 2;
+      const maxRetries = args.maxRetries ?? DEFAULT_RETRY_CONFIG.maxRetries;
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         if (!mountedRef.current) return;
         let lastEvent: ValidatedAgentSSEEvent | null = null;
         let httpStatus: number | null = null;
         let caughtError: unknown = null;
+        let sawParseError = false;
 
         try {
           const res = await fetch('/api/agent/stream', {
@@ -189,8 +178,9 @@ export function useAgentStream() {
               await retrySleep(delayMs, controller.signal);
               continue;
             }
-            if (mountedRef.current) {
-              handlersRef.current?.onError(`Stream request failed with status ${res.status}`);
+            if (mountedRef.current && gen === generationRef.current) {
+              const friendly = friendlyErrorMessage(`Stream request failed with status ${res.status}`);
+              handlersRef.current?.onError(friendly.message, { code: `http_${res.status}`, retryable: friendly.retryable });
             }
             return;
           }
@@ -221,12 +211,15 @@ export function useAgentStream() {
                 if (!json) continue;
                 try {
                   const parsed = JSON.parse(json);
-                  const event = validateSSEEvent(parsed);
+                  const event = normalizeSSEEvent(parsed, lastEvent?.turnId ?? 'unknown-turn');
                   if (!event) {
                     consecutiveFailures++;
                     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
                       if (mountedRef.current && gen === generationRef.current) {
-                        handlersRef.current?.onError('Stream corrupted — too many malformed events');
+                        handlersRef.current?.onError(
+                          'Connection was interrupted — please try again',
+                          { code: 'STREAM_CORRUPTED', retryable: true },
+                        );
                       }
                       return;
                     }
@@ -241,12 +234,19 @@ export function useAgentStream() {
                   consecutiveFailures++;
                   if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
                     if (mountedRef.current && gen === generationRef.current) {
-                      handlersRef.current?.onError('Stream corrupted — too many malformed events');
+                      handlersRef.current?.onError(
+                        'Connection was interrupted — please try again',
+                        { code: 'STREAM_CORRUPTED', retryable: true },
+                      );
                     }
                     return;
                   }
                   if (mountedRef.current && gen === generationRef.current) {
-                    handlersRef.current?.onError('Invalid SSE JSON payload received');
+                    handlersRef.current?.onError(
+                      'Connection was interrupted — please try again',
+                      { code: 'PARSE_ERROR', retryable: true },
+                    );
+                    sawParseError = true;
                   }
                 }
               }
@@ -259,7 +259,7 @@ export function useAgentStream() {
             if (json) {
               try {
                 const parsed = JSON.parse(json);
-                const event = validateSSEEvent(parsed);
+                const event = normalizeSSEEvent(parsed, lastEvent?.turnId ?? 'unknown-turn');
                 if (event) {
                   lastEvent = event;
                   if (mountedRef.current && gen === generationRef.current) {
@@ -281,7 +281,18 @@ export function useAgentStream() {
             await retrySleep(delayMs, controller.signal);
             continue;
           }
-          // Stream completed (or non-retryable) — stop
+          if (mountedRef.current && gen === generationRef.current) {
+            handlersRef.current?.onComplete?.({ lastEvent, hadParseError: sawParseError });
+          }
+          if (!lastEvent) {
+            if (!sawParseError && mountedRef.current && gen === generationRef.current) {
+              handlersRef.current?.onError(
+                'Response was cut short — please try again',
+                { code: 'STREAM_EMPTY', retryable: true },
+              );
+            }
+            return;
+          }
           return;
         } catch (error) {
           caughtError = error;
@@ -299,7 +310,9 @@ export function useAgentStream() {
             continue;
           }
           if (mountedRef.current && gen === generationRef.current) {
-            handlersRef.current?.onError(caughtError instanceof Error ? caughtError.message : 'Stream aborted unexpectedly');
+            const rawMsg = caughtError instanceof Error ? caughtError.message : 'Stream aborted unexpectedly';
+            const friendly = friendlyErrorMessage(rawMsg);
+            handlersRef.current?.onError(friendly.message, { code: 'NETWORK_ERROR', retryable: friendly.retryable });
           }
           return;
         }

@@ -1,5 +1,8 @@
 import type { DrawElement } from '@/types/agent';
 
+// NOTE: When new DrawElement types are added, update elementPosition and
+// computeBoundingBox switches below — they must stay exhaustive.
+
 export interface CanvasSupportResult {
   canvas2d: boolean;
   webgl: boolean;
@@ -65,6 +68,15 @@ function elementPosition(el: DrawElement): string {
       return `x=${el.x}, y=${el.y}`;
     case 'clear':
       return 'clear';
+    case 'cartesian_axes':
+    case 'number_line':
+    case 'vector_arrow':
+    case 'function_curve':
+    case 'matrix_bracket':
+    case 'angle_arc':
+    case 'integral_region':
+    default:
+      return el.type;
   }
 }
 

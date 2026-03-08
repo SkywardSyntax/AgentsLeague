@@ -102,7 +102,7 @@ describe('Lane 03 — Chat Hook API', () => {
 
   it('StructuredWhiteboardContext interface shape is stable', () => {
     const ctx: StructuredWhiteboardContext = {
-      scene_summary: { element_count: 0, type_counts: {} },
+      scene_summary: { element_count: 0, type_counts: {}, element_type_summary: {}, math_context: 'empty', suggested_drawing_style: 'clean' },
       occupied_regions: [],
       anchors: [],
       recent_blocks: [],

@@ -1,8 +1,65 @@
-import type { ActiveStroke, Point, StrokeTrajectory } from '@/types/agent';
+import type { ActiveStroke, DrawingSpeed, Point, StrokeTrajectory } from '@/types/agent';
 import { cumulativeLengths, distance, totalLength } from './geometry';
+
+export type { DrawingSpeed };
 
 /** Drawing speed used to derive animation duration from stroke path length. */
 export const STROKE_SPEED_PX_PER_SECOND = 180;
+
+/** Duration bounds per drawing-speed mode (min, max) in ms. */
+const SPEED_DURATION_BOUNDS: Record<Exclude<DrawingSpeed, 'instant'>, { min: number; max: number; pxPerSec: number }> = {
+  fast:    { min: 60,  max: 400,  pxPerSec: 600 },
+  natural: { min: 220, max: 2600, pxPerSec: 180 },
+  slow:    { min: 500, max: 4000, pxPerSec: 100 },
+};
+
+/**
+ * Infer the appropriate drawing speed from stroke characteristics.
+ * - Very short strokes (< 20 px): 'fast'
+ * - Long smooth curves (few sharp corners, length > 200): 'slow'
+ * - Everything else: 'natural'
+ */
+export function inferDrawingSpeed(
+  stroke: StrokeTrajectory,
+  length: number,
+  batchSource?: string,
+): DrawingSpeed {
+  if (stroke.drawingSpeed) return stroke.drawingSpeed;
+
+  if (batchSource === 'injection') return 'instant';
+
+  if (length < 20) return 'fast';
+
+  // Detect tick-mark / grid-line patterns via stroke ID conventions
+  const lowerId = stroke.id.toLowerCase();
+  if (lowerId.includes('tick') || lowerId.includes('grid')) return 'fast';
+
+  // Long smooth curves: few direction changes relative to length
+  if (length > 200 && stroke.points.length >= 6) {
+    const sharpCorners = countSharpCorners(stroke.points);
+    if (sharpCorners <= 1) return 'slow';
+  }
+
+  return 'natural';
+}
+
+/** Count corners with angle change > 60° (dot product < 0.5). */
+function countSharpCorners(points: Point[]): number {
+  let count = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1]!;
+    const curr = points[i]!;
+    const next = points[i + 1]!;
+    const d1 = distance(prev, curr);
+    const d2 = distance(curr, next);
+    if (d1 === 0 || d2 === 0) continue;
+    const dot =
+      ((curr.x - prev.x) * (next.x - curr.x) + (curr.y - prev.y) * (next.y - curr.y)) /
+      (d1 * d2);
+    if (dot < 0.5) count++;
+  }
+  return count;
+}
 
 /**
  * Compute animation duration in ms from stroke path `length` in world pixels.
@@ -17,11 +74,12 @@ export function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-export function strokeDurationMs(length: number, reducedMotion = false): number {
-  if (reducedMotion) return 0;
-  if (!Number.isFinite(length) || length < 0) return 220;
-  const raw = (length / STROKE_SPEED_PX_PER_SECOND) * 1000;
-  return Math.min(2600, Math.max(220, raw));
+export function strokeDurationMs(length: number, reducedMotion = false, speed: DrawingSpeed = 'natural'): number {
+  if (reducedMotion || speed === 'instant') return 0;
+  if (!Number.isFinite(length) || length < 0) return SPEED_DURATION_BOUNDS[speed].min;
+  const bounds = SPEED_DURATION_BOUNDS[speed];
+  const raw = (length / bounds.pxPerSec) * 1000;
+  return Math.min(bounds.max, Math.max(bounds.min, raw));
 }
 
 
@@ -47,38 +105,93 @@ export function staggeredStartTimes(
   return Array.from({ length: count }, (_, i) => batchStartedAt + i * clamped);
 }
 
+/** Callback fired when every stroke in a batch finishes animating. */
+export type BatchCompleteCallback = (batchId: string) => void;
+
+/**
+ * Options for {@link createActiveBatch}.
+ */
+export interface ActiveBatchOptions {
+  startedAt?: number;
+  stagger?: boolean | Clock;
+  reducedMotion?: boolean;
+  /** Source of the batch — used by {@link inferDrawingSpeed} to decide animation mode. */
+  batchSource?: string;
+  /** Identifier for the batch, passed to {@link onBatchComplete}. */
+  batchId?: string;
+  /** Fired when all strokes in this batch finish animating. Register via RAF loop. */
+  onBatchComplete?: BatchCompleteCallback;
+}
+
 /**
  * Convert raw `StrokeTrajectory[]` to `ActiveStroke[]` by precomputing
  * cumulative path lengths and animation duration for each stroke.
  * All strokes in the batch share the same `startedAt` timestamp so they
  * animate in parallel (unless stagger is true).
+ *
+ * Accepts either the legacy positional arguments or a single options object.
  */
 export function createActiveBatch(
   strokes: StrokeTrajectory[],
   startedAt?: number,
   stagger: boolean | Clock = false,
   reducedMotion = false,
+  batchSource?: string,
 ): ActiveStroke[] {
   const clock = typeof stagger === 'function' ? stagger : defaultClock;
   const doStagger = typeof stagger === 'boolean' ? stagger : false;
   const start = startedAt ?? clock();
   const valid = strokes.filter((s) => s.points.length >= 2);
-  const times = doStagger && !reducedMotion
-    ? staggeredStartTimes(valid.length, start)
-    : null;
-  return valid.map((stroke, i) => {
-    const cumulative = cumulativeLengths(stroke.points);
+
+  // Partition into instant vs animated strokes
+  const instantStrokes: StrokeTrajectory[] = [];
+  const animatedEntries: { stroke: StrokeTrajectory; length: number; speed: DrawingSpeed }[] = [];
+
+  for (const stroke of valid) {
     const length = totalLength(stroke.points);
+    const speed = inferDrawingSpeed(stroke, length, batchSource);
+    if (speed === 'instant' || reducedMotion) {
+      instantStrokes.push(stroke);
+    } else {
+      animatedEntries.push({ stroke, length, speed });
+    }
+  }
+
+  const times = doStagger && !reducedMotion
+    ? staggeredStartTimes(animatedEntries.length, start)
+    : null;
+
+  // Build ActiveStroke array — instant strokes get durationMs=0
+  const result: ActiveStroke[] = [];
+
+  for (const s of instantStrokes) {
+    const cumulative = cumulativeLengths(s.points);
+    const length = totalLength(s.points);
+    result.push({
+      ...s,
+      startedAt: start,
+      durationMs: 0,
+      length,
+      cumulativeLengths: cumulative,
+      speedFactors: cornerSpeedFactors(s.points),
+    });
+  }
+
+  for (let i = 0; i < animatedEntries.length; i++) {
+    const { stroke, length, speed } = animatedEntries[i]!;
+    const cumulative = cumulativeLengths(stroke.points);
     const factors = cornerSpeedFactors(stroke.points);
-    return {
+    result.push({
       ...stroke,
       startedAt: times ? times[i]! : start,
-      durationMs: strokeDurationMs(length, reducedMotion),
+      durationMs: strokeDurationMs(length, false, speed),
       length,
       cumulativeLengths: cumulative,
       speedFactors: factors,
-    };
-  });
+    });
+  }
+
+  return result;
 }
 
 /** Staggered batch: each stroke starts after `staggerMs` delay from the previous */
@@ -87,16 +200,18 @@ export function createStaggeredBatch(
   staggerMs: number,
   startedAt?: number,
   clock: Clock = defaultClock,
+  batchSource?: string,
 ): ActiveStroke[] {
   const baseStart = startedAt ?? clock();
   return strokes.map((stroke, index) => {
     const cumulative = cumulativeLengths(stroke.points);
     const length = totalLength(stroke.points);
+    const speed = inferDrawingSpeed(stroke, length, batchSource);
     const factors = cornerSpeedFactors(stroke.points);
     return {
       ...stroke,
       startedAt: baseStart + index * staggerMs,
-      durationMs: strokeDurationMs(length),
+      durationMs: strokeDurationMs(length, false, speed),
       length,
       cumulativeLengths: cumulative,
       speedFactors: factors,

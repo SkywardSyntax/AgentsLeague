@@ -37,7 +37,7 @@ describe('ChatPanel concurrency guards', () => {
     renderChatPanel({ status: 'thinking', disabled: true, input: 'hello', onSend });
 
     const sendButton = screen.getByRole('button', { name: 'Send message' });
-    expect(sendButton).toBeDisabled();
+    expect(sendButton).toHaveAttribute('aria-disabled', 'true');
 
     sendButton.click();
     expect(onSend).not.toHaveBeenCalled();
@@ -48,7 +48,7 @@ describe('ChatPanel concurrency guards', () => {
     renderChatPanel({ status: 'idle', disabled: false, input: '', onSend });
 
     const sendButton = screen.getByRole('button', { name: 'Send message' });
-    expect(sendButton).toBeDisabled();
+    expect(sendButton).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('Send button enabled when idle + non-empty input; onSend called once', () => {
@@ -56,7 +56,7 @@ describe('ChatPanel concurrency guards', () => {
     renderChatPanel({ status: 'idle', disabled: false, input: 'hello', onSend });
 
     const sendButton = screen.getByRole('button', { name: 'Send message' });
-    expect(sendButton).not.toBeDisabled();
+    expect(sendButton).toHaveAttribute('aria-disabled', 'false');
 
     fireEvent.click(sendButton);
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -67,7 +67,7 @@ describe('ChatPanel concurrency guards', () => {
     renderChatPanel({ status: 'idle', onCancel });
 
     const stopButton = screen.getByRole('button', { name: 'Stop' });
-    expect(stopButton).toBeDisabled();
+    expect(stopButton).toHaveAttribute('aria-disabled', 'true');
 
     stopButton.click();
     expect(onCancel).not.toHaveBeenCalled();

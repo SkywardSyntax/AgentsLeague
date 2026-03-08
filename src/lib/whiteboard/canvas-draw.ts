@@ -32,7 +32,7 @@ export function drawStroke(
         !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
     const t = i / n;
 
-    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
+    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
     const worldWidth = baseWidth * widthMod;
     const px = screenStrokePx(worldWidth, camera.zoom, dpr);
     const worldLineWidth = px / (camera.zoom * dpr);
@@ -105,7 +105,7 @@ export function drawSmoothStroke(
         !Number.isFinite(seg.p3.x) || !Number.isFinite(seg.p3.y)) continue;
 
     const t = n > 1 ? i / (n - 1) : 0;
-    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI * 2);
+    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
     const px = screenStrokePx(baseWidth * widthMod, camera.zoom, dpr);
     const worldLineWidth = px / (camera.zoom * dpr);
 

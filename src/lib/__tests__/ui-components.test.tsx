@@ -3,7 +3,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { PillButton } from '@/components/ui/PillButton';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
-import { WarningOverlay } from '@/components/app/WarningOverlay';
+import { WarningOverlay, type NotificationItem } from '@/components/app/WarningOverlay';
 
 afterEach(cleanup);
 
@@ -104,31 +104,35 @@ describe('MobilePanelSwitcher', () => {
 });
 
 // ---------- WarningOverlay ----------
+function makeNotification(message: string): NotificationItem {
+  return { id: `test-${message}`, message, severity: 'warning' };
+}
+
 describe('WarningOverlay', () => {
-  it('renders nothing when warnings is empty', () => {
-    const { container } = render(<WarningOverlay warnings={[]} />);
+  it('renders nothing when notifications is empty', () => {
+    const { container } = render(<WarningOverlay notifications={[]} />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders all warnings when non-empty', () => {
-    const warnings = ['Warning 1', 'Warning 2', 'Warning 3'];
-    render(<WarningOverlay warnings={warnings} />);
-    for (const w of warnings) {
-      expect(screen.getByText(w)).toBeTruthy();
+  it('renders all notifications when non-empty', () => {
+    const notifications = ['Warning 1', 'Warning 2', 'Warning 3'].map(makeNotification);
+    render(<WarningOverlay notifications={notifications} />);
+    for (const n of notifications) {
+      expect(screen.getByText(n.message)).toBeTruthy();
     }
   });
 
-  it('renders warnings in order', () => {
-    const warnings = ['First', 'Second', 'Third'];
-    render(<WarningOverlay warnings={warnings} />);
+  it('renders notifications in order', () => {
+    const notifications = ['First', 'Second', 'Third'].map(makeNotification);
+    render(<WarningOverlay notifications={notifications} />);
     const paragraphs = screen.getAllByText(/First|Second|Third/);
     expect(paragraphs[0].textContent).toBe('First');
     expect(paragraphs[1].textContent).toBe('Second');
     expect(paragraphs[2].textContent).toBe('Third');
   });
 
-  it('handles single warning', () => {
-    render(<WarningOverlay warnings={['Only one']} />);
+  it('handles single notification', () => {
+    render(<WarningOverlay notifications={[makeNotification('Only one')]} />);
     expect(screen.getByText('Only one')).toBeTruthy();
   });
 });

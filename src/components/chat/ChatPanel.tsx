@@ -4,10 +4,18 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '@/types/agent';
 import { downloadChatAsMarkdown, downloadChatAsJson } from '@/lib/client/export-chat';
 import { MessageContent } from './MessageContent';
-import { StreamProgress, type StreamPhase } from './StreamProgress';
+import { StreamProgress, type StreamPhase, type DrawingProgressInfo } from './StreamProgress';
 import { MessageErrorBoundary } from './MessageErrorBoundary';
 import { MessageSearch } from './MessageSearch';
 import { PillButton } from '@/components/ui/PillButton';
+import { LatexSvg } from './LatexSvg';
+
+const MATH_SUGGESTION_CHIPS = [
+  'Draw coordinate axes',
+  'Plot sin(x)',
+  'Draw a triangle',
+  'Explain Pythagorean theorem',
+] as const;
 
 function useTabKeyboard(chats: ChatThreadMeta[], onSelectChat: (id: string) => void) {
   return useCallback(
@@ -48,6 +56,7 @@ interface ChatPanelProps {
   input: string;
   status: 'idle' | 'thinking' | 'streaming' | 'drawing';
   streamPhase?: StreamPhase;
+  drawingProgress?: DrawingProgressInfo;
   retryAttempt?: number;
   maxRetries?: number;
   onInput: (value: string) => void;
@@ -58,6 +67,7 @@ interface ChatPanelProps {
   onDeleteChat: (chatId: string) => void;
   onDeleteMessage: (messageId: string) => void;
   onClearChat: () => void;
+  onRetry?: (lastUserMessage: string) => void;
   disabled: boolean;
   inputRef?: React.RefObject<HTMLTextAreaElement | null>;
 }
@@ -69,6 +79,7 @@ export const ChatPanel = memo(function ChatPanel({
   input,
   status,
   streamPhase,
+  drawingProgress,
   retryAttempt,
   maxRetries,
   onInput,
@@ -79,6 +90,7 @@ export const ChatPanel = memo(function ChatPanel({
   onDeleteChat,
   onDeleteMessage,
   onClearChat,
+  onRetry,
   disabled,
   inputRef,
 }: ChatPanelProps) {
@@ -91,6 +103,7 @@ export const ChatPanel = memo(function ChatPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [mathMode, setMathMode] = useState(false);
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
   const handleSelectChat = useCallback((id: string) => onSelectChat(id), [onSelectChat]);
 
@@ -120,6 +133,8 @@ export const ChatPanel = memo(function ChatPanel({
     const q = searchQuery.toLowerCase();
     return messages.filter((m) => m.content.toLowerCase().includes(q));
   }, [messages, searchQuery]);
+  const stopDisabled = status === 'idle';
+  const sendDisabled = disabled || input.trim().length === 0;
 
   const handleSearch = useCallback((query: string) => setSearchQuery(query), []);
 
@@ -171,35 +186,36 @@ export const ChatPanel = memo(function ChatPanel({
       className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-card)]"
     >
       <div className="border-b border-[var(--color-border)] px-3 py-2">
-        <div
+        <div className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-0.5">
+          <div
             ref={tablistRef}
             role="tablist"
             aria-label="Chat threads"
             onKeyDown={handleTabKeyDown}
-            className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-0.5"
+            className="flex min-w-0 flex-1 items-center gap-2"
           >
-          {chats.map((chat) => {
-            const isActive = chat.id === activeChatId;
-            return (
-              <PillButton
-                key={chat.id}
-                role="tab"
-                aria-selected={isActive}
-                aria-label={`Switch to chat: ${chat.title}`}
-                variant={isActive ? 'accent' : 'default'}
-                onClick={() => handleSelectChat(chat.id)}
-                disabled={!canManageChats || isActive}
-                tabIndex={isActive ? 0 : -1}
-                className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-[var(--color-surface-soft)] hover:bg-[var(--color-surface)]'} disabled:opacity-65`}
-              >
-                <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
-                <span className="rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[10px] tabular-nums">
-                  {chat.messageCount}
-                </span>
-              </PillButton>
-            );
-          })}
-
+            {chats.map((chat) => {
+              const isActive = chat.id === activeChatId;
+              return (
+                <PillButton
+                  key={chat.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-label={`Switch to chat: ${chat.title}`}
+                  variant={isActive ? 'accent' : 'default'}
+                  onClick={() => handleSelectChat(chat.id)}
+                  disabled={!canManageChats || isActive}
+                  tabIndex={isActive ? 0 : -1}
+                  className={`group flex shrink-0 items-center gap-2 ${isActive ? '' : 'bg-[var(--color-surface-soft)] hover:bg-[var(--color-surface)]'} disabled:opacity-65`}
+                >
+                  <span className="max-w-36 truncate text-left font-medium">{chat.title}</span>
+                  <span className="rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[10px] tabular-nums">
+                    {chat.messageCount}
+                  </span>
+                </PillButton>
+              );
+            })}
+          </div>
           <PillButton
             onClick={onCreateChat}
             disabled={!canManageChats}
@@ -225,9 +241,12 @@ export const ChatPanel = memo(function ChatPanel({
         </div>
         <PillButton
           data-testid="chat-stop"
-          onClick={onCancel}
-          disabled={status === 'idle'}
-          className="disabled:opacity-40"
+          onClick={() => {
+            if (stopDisabled) return;
+            onCancel();
+          }}
+          aria-disabled={stopDisabled}
+          className={stopDisabled ? 'cursor-not-allowed opacity-40' : ''}
         >
           Stop
         </PillButton>
@@ -282,7 +301,7 @@ export const ChatPanel = memo(function ChatPanel({
       </div>
 
       {status !== 'idle' && streamPhase && (
-        <StreamProgress phase={streamPhase} retryAttempt={retryAttempt} maxRetries={maxRetries} />
+        <StreamProgress phase={streamPhase} retryAttempt={retryAttempt} maxRetries={maxRetries} drawingProgress={drawingProgress} />
       )}
 
       <MessageSearch
@@ -351,6 +370,21 @@ export const ChatPanel = memo(function ChatPanel({
               <MessageErrorBoundary fallbackText={message.content.slice(0, 120)}>
                 <MessageContent content={message.content} />
               </MessageErrorBoundary>
+              {message.errorMeta?.retryable && status === 'idle' && onRetry && (() => {
+                const lastUserMsg = messages
+                  .slice(0, messages.indexOf(message))
+                  .findLast((m) => m.role === 'user');
+                if (!lastUserMsg) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onRetry(lastUserMsg.content)}
+                    className="mt-2 rounded-lg border border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)] px-3 py-1 text-xs font-medium text-[var(--color-accent)] transition hover:bg-[var(--color-accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                  >
+                    ↻ Retry
+                  </button>
+                );
+              })()}
             </article>
           );
         })}
@@ -366,10 +400,28 @@ export const ChatPanel = memo(function ChatPanel({
       </div>
 
       <footer className="border-t border-[var(--color-border)] bg-[var(--color-surface-soft)]/55 p-3">
+        {messages.length === 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label="Suggestion chips">
+            {MATH_SUGGESTION_CHIPS.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                data-testid="suggestion-chip"
+                onClick={() => onInput(chip)}
+                disabled={disabled}
+                className="rounded-full border border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)] px-3 py-1 text-xs font-medium text-[var(--color-accent)] transition hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        )}
+
         <form
           aria-label="Send a message"
           onSubmit={(e) => {
             e.preventDefault();
+            if (sendDisabled) return;
             onSend();
           }}
         >
@@ -378,28 +430,67 @@ export const ChatPanel = memo(function ChatPanel({
             ref={inputRef}
             aria-label="Message input"
             value={input}
-            onChange={(e) => onInput(e.target.value)}
+            onChange={(e) => {
+              onInput(e.target.value);
+              // Auto-resize: reset to minimum then expand to content
+              const el = e.target;
+              el.style.height = 'auto';
+              el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+            }}
             maxLength={8000}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
+                if (sendDisabled) return;
                 onSend();
               }
             }}
             placeholder="Explain this concept and draw it out..."
-            rows={3}
+            rows={2}
             disabled={disabled}
             className="w-full resize-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
           />
 
+          {mathMode && input.trim().length > 0 && (
+            <div
+              data-testid="math-preview"
+              className="mt-2 rounded-xl border border-dashed border-[var(--color-accent-soft)] bg-[var(--color-surface)] p-3"
+            >
+              <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                Math Preview
+              </p>
+              <div className="text-sm leading-6">
+                <LatexSvg tex={input.trim()} displayMode />
+              </div>
+            </div>
+          )}
+
           <div className="mt-2 flex items-center justify-between">
-            <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline · Ctrl+Shift+K focus</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] text-[var(--color-text-muted)]">Enter to send · Shift+Enter newline</p>
+              <button
+                type="button"
+                data-testid="math-mode-toggle"
+                aria-pressed={mathMode}
+                aria-label="Toggle math mode"
+                onClick={() => setMathMode((v) => !v)}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold transition ${
+                  mathMode
+                    ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-white'
+                    : 'border-[var(--color-border)] bg-[var(--color-surface-soft)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'
+                }`}
+              >
+                π Math
+              </button>
+            </div>
             <button
               type="submit"
               data-testid="chat-send"
-              disabled={disabled || input.trim().length === 0}
+              aria-disabled={sendDisabled}
               aria-label="Send message"
-              className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition ${
+                sendDisabled ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'
+              }`}
             >
               Send
             </button>

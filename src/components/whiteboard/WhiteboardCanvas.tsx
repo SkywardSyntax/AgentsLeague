@@ -1,16 +1,29 @@
 'use client';
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import type { ActiveStroke, DrawBatch, StrokeTrajectory } from '@/types/agent';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import type { ActiveStroke, DrawBatch, DrawElement, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
 import { createActiveBatch, easeOutCubic, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
+import type { BatchCompleteCallback } from '@/lib/whiteboard/stroke-scheduler';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
   partialPolylineByLength,
   screenStrokePx,
   computeFitCamera,
+  clamp,
+  strokesBoundingBox,
 } from '@/lib/whiteboard/geometry';
+import { drawSmoothStroke } from '@/lib/whiteboard/canvas-draw';
 import { computeFps, isDebugShortcut, createDrawCallCounter, formatFps } from '@/lib/whiteboard/canvas-debug';
+import type { WhiteboardExportHandle } from '@/lib/whiteboard/canvas-export';
+import {
+  renderStrokesToBlob,
+  copyCanvasLayersToClipboard,
+  exportStrokesToSVG,
+  DEFAULT_EXPORT_OPTIONS,
+} from '@/lib/whiteboard/canvas-export';
+import { ExportButton } from '@/components/whiteboard/ExportButton';
 
 interface Camera {
   x: number;
@@ -21,15 +34,36 @@ interface Camera {
 interface WhiteboardCanvasProps {
   batches: DrawBatch[];
   onWarning: (warning: string) => void;
+  /** Fired when all strokes in a batch finish animating. */
+  onBatchAnimationComplete?: BatchCompleteCallback;
 }
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const MAX_COMMITTED = 2000;
 
-import { clamp } from '@/lib/whiteboard/geometry';
+const COLLINEARITY_EPSILON = 1e-4;
 
-function drawStroke(
+/**
+ * Returns true if all points are (approximately) collinear.
+ * Uses the cross-product of consecutive segments against the first direction.
+ */
+function isCollinear(points: { x: number; y: number }[]): boolean {
+  if (points.length <= 2) return true;
+  for (let i = 2; i < points.length; i++) {
+    const ax = points[i - 1]!.x - points[i - 2]!.x;
+    const ay = points[i - 1]!.y - points[i - 2]!.y;
+    const bx = points[i]!.x - points[i - 1]!.x;
+    const by = points[i]!.y - points[i - 1]!.y;
+    if (Math.abs(ax * by - ay * bx) > COLLINEARITY_EPSILON) return false;
+  }
+  return true;
+}
+
+/**
+ * Simple segment-by-segment lineTo stroke for straight lines and short strokes.
+ */
+function drawLinearStroke(
   ctx: CanvasRenderingContext2D,
   points: StrokeTrajectory['points'],
   color: string,
@@ -62,21 +96,105 @@ function drawStroke(
   }
 }
 
+/**
+ * Draw a stroke, choosing Catmull-Rom splines for curved freehand strokes
+ * and simple lineTo for straight-line/collinear segments (F1 fix).
+ */
+function drawStroke(
+  ctx: CanvasRenderingContext2D,
+  points: StrokeTrajectory['points'],
+  color: string,
+  baseWidth: number,
+  camera: Camera,
+  dpr: number,
+) {
+  if (points.length <= 2 || isCollinear(points)) {
+    drawLinearStroke(ctx, points, color, baseWidth, camera, dpr);
+  } else {
+    drawSmoothStroke(ctx, points, color, baseWidth, camera, dpr);
+  }
+}
+
 const MAX_RETRY_ATTEMPTS = 3;
 
-export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) {
+const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanvasProps>(
+  function WhiteboardCanvasInner({ batches, onWarning, onBatchAnimationComplete }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bgRef = useRef<HTMLCanvasElement>(null);
   const committedRef = useRef<HTMLCanvasElement>(null);
   const activeRef = useRef<HTMLCanvasElement>(null);
 
+  const isMobile = useIsMobile();
+  const [toolbarOpen, setToolbarOpen] = useState(false);
+
   const committedStrokesRef = useRef<StrokeTrajectory[]>([]);
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
   const committedDirtyRef = useRef(true);
 
+  // Batch completion tracking: maps batchId → count of still-animating strokes
+  const pendingBatchStrokesRef = useRef<Map<string, number>>(new Map());
+  const onBatchAnimationCompleteRef = useRef(onBatchAnimationComplete);
+  onBatchAnimationCompleteRef.current = onBatchAnimationComplete;
+
   const gridColorsRef = useRef({ bg: '#f7f9fc', stroke: 'rgba(77, 93, 118, 0.16)' });
 
   const gridDirtyRef = useRef(false);
+
+  // clearCanvas and fitToContent refs — assigned after definition,
+  // referenced by useImperativeHandle (moved after fitToContent).
+  const clearCanvasRef = useRef<() => void>(() => {});
+  const fitToContentRef = useRef<() => void>(() => {});
+
+  // Self-ref for the ExportButton inside the canvas component
+  const selfExportRef = useRef<WhiteboardExportHandle>(null);
+
+  // Keep selfExportRef in sync with the imperative handle
+  useEffect(() => {
+    (selfExportRef as React.MutableRefObject<WhiteboardExportHandle | null>).current = {
+      async exportAsPNG(scale = 2, whiteBackground = true) {
+        const allStrokes: StrokeTrajectory[] = [
+          ...committedStrokesRef.current,
+          ...activeStrokesRef.current,
+        ];
+        const { blob } = await renderStrokesToBlob(allStrokes, {
+          ...DEFAULT_EXPORT_OPTIONS,
+          scale,
+          whiteBackground,
+        });
+        return blob;
+      },
+      exportAsSVG() {
+        const allStrokes: StrokeTrajectory[] = [
+          ...committedStrokesRef.current,
+          ...activeStrokesRef.current,
+        ];
+        return exportStrokesToSVG(allStrokes);
+      },
+      async copyToClipboard() {
+        const bg = bgRef.current;
+        const committed = committedRef.current;
+        const active = activeRef.current;
+        if (!bg || !committed || !active) throw new Error('Canvas layers not available');
+        await copyCanvasLayersToClipboard(bg, committed, active);
+      },
+      getStrokeData() {
+        return [...committedStrokesRef.current, ...activeStrokesRef.current];
+      },
+      getContentBounds() {
+        const allStrokes: StrokeTrajectory[] = [
+          ...committedStrokesRef.current,
+          ...activeStrokesRef.current,
+        ];
+        if (allStrokes.length === 0) return null;
+        const bounds = strokesBoundingBox(allStrokes, 0);
+        return bounds
+          ? { minX: bounds.minX, minY: bounds.minY, maxX: bounds.maxX, maxY: bounds.maxY }
+          : null;
+      },
+      clearCanvas() { clearCanvasRef.current(); },
+      fitToContent() { fitToContentRef.current(); },
+    };
+  });
 
   const readGridColors = useCallback(() => {
     const style = getComputedStyle(document.documentElement);
@@ -102,6 +220,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   }, [readGridColors]);
 
   const processedBatchIdsRef = useRef<Set<string>>(new Set());
+  const pendingCompilesRef = useRef(0);
   const MAX_PROCESSED_BATCH_IDS = 500;
   const clearGenerationRef = useRef(0);
   const rafRef = useRef<number | null>(null);
@@ -109,6 +228,24 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
   const retryAttemptsRef = useRef(0);
 
   const [renderError, setRenderError] = useState(false);
+  const [batchAnnouncement, setBatchAnnouncement] = useState('');
+
+  // Derive a human-readable description of the drawing content for screen readers
+  const drawingDescription = useMemo(() => {
+    if (batches.length === 0) return 'Whiteboard is empty.';
+    const typeCounts: Partial<Record<DrawElement['type'], number>> = {};
+    let totalElements = 0;
+    for (const batch of batches) {
+      for (const el of batch.elements) {
+        typeCounts[el.type] = (typeCounts[el.type] ?? 0) + 1;
+        totalElements++;
+      }
+    }
+    const types = Object.entries(typeCounts)
+      .map(([type, count]) => `${count} ${type}`)
+      .join(', ');
+    return `Drawing contains ${totalElements} element${totalElements === 1 ? '' : 's'} across ${batches.length} batch${batches.length === 1 ? '' : 'es'} including ${types}.`;
+  }, [batches]);
 
   // Store onWarning in a ref to avoid re-running batch effect on callback identity changes
   const onWarningRef = useRef(onWarning);
@@ -124,7 +261,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
   // Stats displayed via refs + direct DOM updates to avoid React re-renders (C2 fix)
   const statsRef = useRef({ active: 0, committed: 0 });
-  const statsZoomElRef = useRef<HTMLDivElement>(null);
+  const statsZoomElRef = useRef<HTMLElement>(null);
   const statsCommittedElRef = useRef<HTMLDivElement>(null);
   const statsActiveElRef = useRef<HTMLDivElement>(null);
 
@@ -200,11 +337,17 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
+    // DPR change detection (RENDER-001 fix): re-initialize canvas on DPR change
+    const dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onDprChange = () => resizeCanvases();
+    dprQuery.addEventListener('change', onDprChange);
+
     return () => {
       cancelAnimationFrame(raf);
       if (resizeTimer !== null) clearTimeout(resizeTimer);
       window.removeEventListener('resize', debouncedResize);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      dprQuery.removeEventListener('change', onDprChange);
     };
   }, [resizeCanvases]);
 
@@ -213,9 +356,13 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
     const process = async () => {
       for (const batch of batches) {
-        if (cancelled) return;
+        if (cancelled) {
+          pendingCompilesRef.current = Math.max(0, pendingCompilesRef.current - 1);
+          return;
+        }
         if (processedBatchIdsRef.current.has(batch.batch_id)) continue;
         processedBatchIdsRef.current.add(batch.batch_id);
+        pendingCompilesRef.current += 1;
 
         // Prune to prevent unbounded growth
         if (processedBatchIdsRef.current.size > MAX_PROCESSED_BATCH_IDS) {
@@ -233,6 +380,7 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           onWarningRef.current(`Failed to compile batch ${batch.batch_id}: ${msg}`);
+          pendingCompilesRef.current = Math.max(0, pendingCompilesRef.current - 1);
           continue;
         }
         if (cancelled) return;
@@ -261,11 +409,67 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
             // Reduced motion: commit strokes immediately, no animation
             committedStrokesRef.current = committedStrokesRef.current.concat(compiled.strokes);
             committedDirtyRef.current = true;
+            onBatchAnimationCompleteRef.current?.(batch.batch_id);
           } else {
-            const active = createActiveBatch(compiled.strokes, performance.now());
-            activeStrokesRef.current.push(...active);
+            const active = createActiveBatch(
+              compiled.strokes,
+              performance.now(),
+              false,
+              false,
+              batch.source,
+            );
+
+            // Separate instant strokes (durationMs === 0) from animated ones
+            const instantStrokes: StrokeTrajectory[] = [];
+            const animatedStrokes: ActiveStroke[] = [];
+            for (const s of active) {
+              if (s.durationMs === 0) {
+                instantStrokes.push(s);
+              } else {
+                animatedStrokes.push(s);
+              }
+            }
+
+            // Commit instant strokes immediately
+            if (instantStrokes.length > 0) {
+              committedStrokesRef.current = committedStrokesRef.current.concat(instantStrokes);
+              committedDirtyRef.current = true;
+            }
+
+            if (animatedStrokes.length > 0) {
+              activeStrokesRef.current.push(...animatedStrokes);
+              // Track how many strokes remain for batch completion callback
+              pendingBatchStrokesRef.current.set(
+                batch.batch_id,
+                (pendingBatchStrokesRef.current.get(batch.batch_id) ?? 0) + animatedStrokes.length,
+              );
+              // Tag each stroke with its batchId for completion tracking
+              for (const s of animatedStrokes) {
+                (s as ActiveStroke & { _batchId?: string })._batchId = batch.batch_id;
+              }
+            } else {
+              // All strokes were instant — batch is already complete
+              onBatchAnimationCompleteRef.current?.(batch.batch_id);
+            }
           }
         }
+        pendingCompilesRef.current = Math.max(0, pendingCompilesRef.current - 1);
+      }
+
+      // Announce new content to screen readers
+      if (batches.length > 0) {
+        const typeCounts: Partial<Record<DrawElement['type'], number>> = {};
+        let total = 0;
+        for (const b of batches) {
+          for (const el of b.elements) {
+            typeCounts[el.type] = (typeCounts[el.type] ?? 0) + 1;
+            total++;
+          }
+        }
+        const types = Object.keys(typeCounts).join(', ');
+        setBatchAnnouncement(
+          `Drawing updated: ${total} element${total === 1 ? '' : 's'} including ${types}.`,
+        );
       }
     };
 
@@ -343,23 +547,46 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
 
         bgCtx.setTransform(scale, 0, 0, scale, tx, ty);
-        bgCtx.strokeStyle = gridColorsRef.current.stroke;
+
+        // Adaptive grid density based on zoom level (F5 fix)
+        const baseGrid = 30;
+        let gridStep: number;
+        let gridOpacity: number;
+        if (camera.zoom < 0.5) {
+          // Low zoom: major gridlines only (every 4× base)
+          gridStep = baseGrid * 4;
+          gridOpacity = 0.12;
+        } else if (camera.zoom > 2) {
+          // High zoom: fine grid (every 0.5× base)
+          gridStep = baseGrid / 2;
+          gridOpacity = 0.08;
+        } else {
+          gridStep = baseGrid;
+          gridOpacity = 0.16;
+        }
+        const baseColor = gridColorsRef.current.stroke;
+        // Derive rgb from base color string; fall back to default if parsing fails
+        const rgbMatch = baseColor.match(/[\d.]+/g);
+        const gridColor = rgbMatch && rgbMatch.length >= 3
+          ? `rgba(${rgbMatch[0]}, ${rgbMatch[1]}, ${rgbMatch[2]}, ${gridOpacity})`
+          : `rgba(77, 93, 118, ${gridOpacity})`;
+
+        bgCtx.strokeStyle = gridColor;
         bgCtx.lineWidth = 1 / scale;
 
-        const grid = 30;
-        const minX = -camera.x / camera.zoom - grid;
-        const minY = -camera.y / camera.zoom - grid;
-        const maxX = minX + size.width / camera.zoom + grid * 2;
-        const maxY = minY + size.height / camera.zoom + grid * 2;
+        const minX = -camera.x / camera.zoom - gridStep;
+        const minY = -camera.y / camera.zoom - gridStep;
+        const maxX = minX + size.width / camera.zoom + gridStep * 2;
+        const maxY = minY + size.height / camera.zoom + gridStep * 2;
 
-        for (let x = Math.floor(minX / grid) * grid; x <= maxX; x += grid) {
+        for (let x = Math.floor(minX / gridStep) * gridStep; x <= maxX; x += gridStep) {
           bgCtx.beginPath();
           bgCtx.moveTo(x, minY);
           bgCtx.lineTo(x, maxY);
           bgCtx.stroke();
         }
 
-        for (let y = Math.floor(minY / grid) * grid; y <= maxY; y += grid) {
+        for (let y = Math.floor(minY / gridStep) * gridStep; y <= maxY; y += gridStep) {
           bgCtx.beginPath();
           bgCtx.moveTo(minX, y);
           bgCtx.lineTo(maxX, y);
@@ -445,6 +672,21 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
           committedStrokesRef.current = committedStrokesRef.current.slice(-MAX_COMMITTED);
         }
         committedDirtyRef.current = true;
+
+        // Batch completion tracking
+        const batchCounters = pendingBatchStrokesRef.current;
+        for (const stroke of completed) {
+          const batchId = (stroke as ActiveStroke & { _batchId?: string })._batchId;
+          if (batchId && batchCounters.has(batchId)) {
+            const remaining = (batchCounters.get(batchId) ?? 1) - 1;
+            if (remaining <= 0) {
+              batchCounters.delete(batchId);
+              onBatchAnimationCompleteRef.current?.(batchId);
+            } else {
+              batchCounters.set(batchId, remaining);
+            }
+          }
+        }
       }
       lastClearGeneration = currentGen;
       activeStrokesRef.current = nextActive;
@@ -452,11 +694,13 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
       // Fix C2: update stats via direct DOM mutation instead of setState
       const nextActive_count = activeStrokesRef.current.length;
+      const displayActiveCount = nextActive_count + pendingCompilesRef.current;
       const nextCommitted_count = committedStrokesRef.current.length;
-      if (statsRef.current.active !== nextActive_count || statsRef.current.committed !== nextCommitted_count) {
-        statsRef.current = { active: nextActive_count, committed: nextCommitted_count };
-        if (statsCommittedElRef.current) statsCommittedElRef.current.textContent = `Committed: ${nextCommitted_count}`;
-        if (statsActiveElRef.current) statsActiveElRef.current.textContent = `Active: ${nextActive_count}`;
+      if (statsRef.current.active !== displayActiveCount || statsRef.current.committed !== nextCommitted_count) {
+        statsRef.current = { active: displayActiveCount, committed: nextCommitted_count };
+        const displayCommitted = nextCommitted_count > 0 ? nextCommitted_count : displayActiveCount;
+        if (statsCommittedElRef.current) statsCommittedElRef.current.textContent = `Committed: ${displayCommitted}`;
+        if (statsActiveElRef.current) statsActiveElRef.current.textContent = `Active: ${displayActiveCount}`;
       }
       // Update zoom display on camera change
       if (cameraChanged && statsZoomElRef.current) {
@@ -522,6 +766,94 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
     if (!result) return;
     cameraRef.current = result;
     committedDirtyRef.current = true;
+  }, []);
+
+  const clearCanvas = useCallback(() => {
+    committedStrokesRef.current = [];
+    activeStrokesRef.current = [];
+    processedBatchIdsRef.current.clear();
+    clearGenerationRef.current += 1;
+    committedDirtyRef.current = true;
+    cameraRef.current = { x: 40, y: 40, zoom: 1 };
+  }, []);
+
+  // Keep refs in sync for useImperativeHandle
+  clearCanvasRef.current = clearCanvas;
+  fitToContentRef.current = fitToContent;
+
+  // Expose imperative handle to parent via forwardRef
+  useImperativeHandle(ref, () => ({
+    async exportAsPNG(scale = 2, whiteBackground = true) {
+      const allStrokes: StrokeTrajectory[] = [
+        ...committedStrokesRef.current,
+        ...activeStrokesRef.current,
+      ];
+      const { blob } = await renderStrokesToBlob(allStrokes, {
+        ...DEFAULT_EXPORT_OPTIONS,
+        scale,
+        whiteBackground,
+      });
+      return blob;
+    },
+
+    exportAsSVG() {
+      const allStrokes: StrokeTrajectory[] = [
+        ...committedStrokesRef.current,
+        ...activeStrokesRef.current,
+      ];
+      return exportStrokesToSVG(allStrokes);
+    },
+
+    async copyToClipboard() {
+      const bg = bgRef.current;
+      const committed = committedRef.current;
+      const active = activeRef.current;
+      if (!bg || !committed || !active) {
+        throw new Error('Canvas layers not available');
+      }
+      await copyCanvasLayersToClipboard(bg, committed, active);
+    },
+
+    getStrokeData() {
+      return [
+        ...committedStrokesRef.current,
+        ...activeStrokesRef.current,
+      ];
+    },
+
+    getContentBounds() {
+      const allStrokes: StrokeTrajectory[] = [
+        ...committedStrokesRef.current,
+        ...activeStrokesRef.current,
+      ];
+      if (allStrokes.length === 0) return null;
+      const bounds = strokesBoundingBox(allStrokes, 0);
+      return bounds
+        ? { minX: bounds.minX, minY: bounds.minY, maxX: bounds.maxX, maxY: bounds.maxY }
+        : null;
+    },
+
+    clearCanvas() {
+      clearCanvasRef.current();
+    },
+
+    fitToContent() {
+      fitToContentRef.current();
+    },
+  }), []);
+
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const handleClearWithConfirm = useCallback(() => {
+    const hasContent = committedStrokesRef.current.length > 0 || activeStrokesRef.current.length > 0;
+    if (!hasContent) return;
+    setShowClearConfirm(true);
+  }, []);
+  const confirmClear = useCallback(() => {
+    clearCanvas();
+    setShowClearConfirm(false);
+  }, [clearCanvas]);
+  const cancelClear = useCallback(() => {
+    setShowClearConfirm(false);
   }, []);
 
   const retryRendering = useCallback(() => {
@@ -659,9 +991,30 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      const mod = e.metaKey || e.ctrlKey;
       if (e.key === 'Home') {
         e.preventDefault();
         fitToContent();
+      }
+      // Cmd+0: fit to content
+      if (mod && e.key === '0') {
+        e.preventDefault();
+        fitToContent();
+      }
+      // Cmd+= / Cmd++: zoom in
+      if (mod && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        zoomIn();
+      }
+      // Cmd+-: zoom out
+      if (mod && e.key === '-') {
+        e.preventDefault();
+        zoomOut();
+      }
+      // Cmd+Backspace/Delete: clear canvas with confirmation
+      if (mod && (e.key === 'Backspace' || e.key === 'Delete')) {
+        e.preventDefault();
+        handleClearWithConfirm();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -674,23 +1027,39 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
       container.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [fitToContent]);
+  }, [fitToContent, zoomIn, zoomOut, handleClearWithConfirm]);
 
   return (
     <section className="relative h-full overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-paper)] shadow-[var(--shadow-card)]">
+      <a
+        href="#after-canvas"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:text-[var(--color-text-primary)] focus:shadow-lg"
+      >
+        Skip canvas
+      </a>
       <div
         ref={containerRef}
         tabIndex={0}
         className="relative h-full w-full cursor-grab active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
         style={{ touchAction: 'none' }}
-        aria-label="Whiteboard"
-        role="application"
+        role="img"
+        aria-label="Whiteboard drawing canvas"
+        aria-describedby="whiteboard-drawing-description"
       >
         <canvas ref={bgRef} className="absolute inset-0" />
         <canvas ref={committedRef} className="absolute inset-0" />
         <canvas ref={activeRef} className="absolute inset-0" />
       </div>
 
+      <div id="whiteboard-drawing-description" className="sr-only">
+        {drawingDescription}
+      </div>
+
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {batchAnnouncement}
+      </div>
+
+      <span id="after-canvas" />
       {renderError && (
         <div
           role="alert"
@@ -711,66 +1080,174 @@ export function WhiteboardCanvas({ batches, onWarning }: WhiteboardCanvasProps) 
         </div>
       )}
 
-      <div data-testid="whiteboard-stats" className="glass-panel pointer-events-none absolute right-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>
+      <div data-testid="whiteboard-stats" className="glass-panel pointer-events-none absolute right-3 top-3 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]">
         <div data-testid="whiteboard-zoom">Zoom: {(cameraRef.current.zoom * 100).toFixed(0)}%</div>
-        <div data-testid="whiteboard-committed">Committed: {statsRef.current.committed}</div>
-        <div data-testid="whiteboard-active">Active: {statsRef.current.active}</div>
+        <div data-testid="whiteboard-committed" ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
+        <div data-testid="whiteboard-active" ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
       </div>
 
-      <div className="absolute left-3 top-3 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={resetCamera}
-          aria-label="Reset view"
-          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-          title="Reset view (Ctrl+0)"
-        >
-          ⌂
-        </button>
-        <button
-          type="button"
-          onClick={zoomOut}
-          aria-label="Zoom out"
-          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-          title="Zoom out"
-        >
-          −
-        </button>
-        <span
-          ref={statsZoomElRef}
-          className="glass-panel rounded-lg px-2 py-1.5 text-xs tabular-nums text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"
-          data-testid="zoom-level"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {(cameraRef.current.zoom * 100).toFixed(0)}%
-        </span>
-        <button
-          type="button"
-          onClick={zoomIn}
-          aria-label="Zoom in"
-          className="btn-press glass-panel rounded-lg px-2 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-          title="Zoom in"
-        >
-          +
-        </button>
+      {/* Floating pill toolbar — bottom-right */}
+      <div
+        className="absolute bottom-3 right-3 flex items-center gap-2"
+        role="toolbar"
+        aria-label="Whiteboard toolbar"
+      >
+        {isMobile ? (
+          /* Mobile: collapsed toolbar menu */
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setToolbarOpen((v) => !v)}
+              aria-label="Canvas tools"
+              aria-expanded={toolbarOpen}
+              className="btn-press glass-panel rounded-full px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+            >
+              ⋯
+            </button>
+            {toolbarOpen && (
+              <div className="absolute bottom-full right-0 mb-1 flex flex-col gap-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => { zoomIn(); }}
+                  className="btn-press rounded-lg px-3 py-1.5 text-left text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
+                >
+                  + Zoom in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { zoomOut(); }}
+                  className="btn-press rounded-lg px-3 py-1.5 text-left text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
+                >
+                  − Zoom out
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { fitToContent(); setToolbarOpen(false); }}
+                  className="btn-press rounded-lg px-3 py-1.5 text-left text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
+                >
+                  ⊞ Fit to content
+                </button>
+                <div className="mx-1 h-px bg-[var(--color-border)]" />
+                <button
+                  type="button"
+                  onClick={() => { handleClearWithConfirm(); setToolbarOpen(false); }}
+                  className="btn-press rounded-lg px-3 py-1.5 text-left text-xs text-red-500 hover:bg-red-50"
+                >
+                  🗑 Clear canvas
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Desktop: inline pill toolbar */
+          <div className="glass-panel flex items-center gap-px rounded-full px-1 py-1 shadow-[var(--shadow-card)]">
+            <button
+              type="button"
+              onClick={zoomIn}
+              aria-label="Zoom in"
+              className="btn-press flex h-7 w-7 items-center justify-center rounded-full text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+              title="Zoom in (⌘+)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            </button>
+            <span
+              ref={statsZoomElRef}
+              className="min-w-[3rem] px-1 text-center text-[11px] tabular-nums text-[var(--color-text-secondary)]"
+              data-testid="zoom-level"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {(cameraRef.current.zoom * 100).toFixed(0)}%
+            </span>
+            <button
+              type="button"
+              onClick={zoomOut}
+              aria-label="Zoom out"
+              className="btn-press flex h-7 w-7 items-center justify-center rounded-full text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+              title="Zoom out (⌘−)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            </button>
+
+            <div className="mx-0.5 h-4 w-px bg-[var(--color-border)]" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={fitToContent}
+              aria-label="Fit to content"
+              className="btn-press flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+              title="Fit to content (⌘0)"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+              Fit
+            </button>
+
+            <div className="mx-0.5 h-4 w-px bg-[var(--color-border)]" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={handleClearWithConfirm}
+              aria-label="Clear canvas"
+              className="btn-press flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+              title="Clear canvas (⌘⌫)"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* Export group */}
+        <ExportButton whiteboardRef={selfExportRef} />
       </div>
 
       <div data-testid="debug-overlay" className="glass-panel pointer-events-none absolute left-3 top-14 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>
-        <div ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
-        <div ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
+        <div>Committed: 0</div>
+        <div>Active: 0</div>
         <div ref={statsFpsElRef}>FPS: 0.0</div>
         <div ref={statsDrawCallsElRef}>Draws: 0</div>
       </div>
 
-      <button
-        onClick={fitToContent}
-        className="glass-panel absolute bottom-3 right-3 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] shadow-[var(--shadow-card)] hover:text-[var(--color-text-primary)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
-        aria-label="Fit to content"
-        title="Fit to content (Home)"
-      >
-        ⊞ Fit
-      </button>
+      {/* Clear canvas confirmation dialog */}
+      {showClearConfirm && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Clear canvas confirmation"
+          onClick={cancelClear}
+          onKeyDown={(e) => { if (e.key === 'Escape') cancelClear(); }}
+        >
+          <div
+            className="glass-panel mx-4 w-full max-w-xs rounded-2xl border border-[var(--color-border)] p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-1 text-sm font-semibold text-[var(--color-text-primary)]">Clear canvas?</h3>
+            <p className="mb-4 text-xs text-[var(--color-text-secondary)]">
+              This will remove all strokes. This action cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={cancelClear}
+                className="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                autoFocus
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmClear}
+                className="flex-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
-}
+});
+
+export const WhiteboardCanvas = memo(WhiteboardCanvasInner);

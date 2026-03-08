@@ -148,5 +148,38 @@ export function computeElementBounds(
     return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
   }
 
+  // cartesian_axes: bounding box covers the full axis span
+  if (el.type === 'cartesian_axes') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    const xSpan = el.xRange[1] - el.xRange[0];
+    const ySpan = el.yRange[1] - el.yRange[0];
+    if (xSpan <= 0 || ySpan <= 0) return null;
+    const xScale = el.width / xSpan;
+    const yScale = el.height / ySpan;
+    if (!Number.isFinite(xScale) || !Number.isFinite(yScale)) return null;
+    const minX = el.x + el.xRange[0] * xScale;
+    const maxX = el.x + el.xRange[1] * xScale;
+    const minY = el.y - el.yRange[1] * yScale;
+    const maxY = el.y - el.yRange[0] * yScale;
+    return { minX, minY, maxX, maxY };
+  }
+
+  // number_line: horizontal line with tick margin
+  if (el.type === 'number_line') {
+    if (!allFinite(el.x, el.y, el.length) || !isFinitePositive(el.length)) return null;
+    return { minX: el.x, minY: el.y - 20, maxX: el.x + el.length, maxY: el.y + 20 };
+  }
+
+  // vector_arrow: bounding box from tail to tip
+  if (el.type === 'vector_arrow') {
+    if (!allFinite(el.x, el.y, el.dx, el.dy)) return null;
+    return {
+      minX: Math.min(el.x, el.x + el.dx),
+      minY: Math.min(el.y, el.y + el.dy),
+      maxX: Math.max(el.x, el.x + el.dx),
+      maxY: Math.max(el.y, el.y + el.dy),
+    };
+  }
+
   return null;
 }

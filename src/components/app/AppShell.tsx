@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
+import { useDrawHistory } from '@/hooks/useDrawHistory';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useSessionManager, type ChatSessionState } from '@/hooks/useSessionManager';
 import { AGENT_DOMAINS, QueryEngine } from '@/lib/agent/queryEngine';
@@ -25,8 +26,13 @@ import { fromLegacyDrawBatchToSemanticStub } from '@/lib/whiteboard/planner';
 import { ErrorBoundary } from '@/components/app/ErrorBoundary';
 import { AppHeader } from '@/components/app/AppHeader';
 import { AgentSidebar } from '@/components/app/AgentSidebar';
-import { WarningOverlay } from '@/components/app/WarningOverlay';
+import { WarningOverlay, type NotificationItem } from '@/components/app/WarningOverlay';
 import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
+import { DrawPayloadInjector } from '@/components/whiteboard/DrawPayloadInjector';
+import { DrawingStatusPill, type DrawingPillState } from '@/components/whiteboard/DrawingStatusPill';
+import { DrawingStatistics, type DrawSource } from '@/components/whiteboard/DrawingStatistics';
+import type { StreamPhase, DrawingProgressInfo } from '@/components/chat/StreamProgress';
+import { friendlyEventErrorMessage } from '@/lib/client/error-messages';
 
 interface AgentAPI {
   submitQuery: (text: string) => Promise<void>;
@@ -49,12 +55,17 @@ function createId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function createMessage(role: ChatMessage['role'], content: string): ChatMessage {
+function createMessage(
+  role: ChatMessage['role'],
+  content: string,
+  errorMeta?: ChatMessage['errorMeta'],
+): ChatMessage {
   return {
     id: createId(),
     role,
     content,
     createdAt: Date.now(),
+    ...(errorMeta ? { errorMeta } : {}),
   };
 }
 
@@ -79,6 +90,20 @@ function withoutStreamOverlay(chat: ChatSessionState): ChatSessionState {
   };
 }
 
+/** Replay a batches array to reconstruct the flat element scene. */
+function rebuildSceneFromBatches(batches: DrawBatch[]): DrawElement[] {
+  const scene: DrawElement[] = [];
+  for (const batch of batches) {
+    if (batch.elements.some((el) => el.type === 'clear')) {
+      scene.length = 0;
+    }
+    for (const el of batch.elements) {
+      if (el.type !== 'clear') scene.push(el);
+    }
+  }
+  return scene;
+}
+
 export function AppShell() {
   const {
     chatSessions,
@@ -95,14 +120,25 @@ export function AppShell() {
     setPanelSizes,
   } = useSessionManager();
 
-  const [appMode, setAppMode] = useState<AppMode>(() => getInitialAppMode());
+  const [appMode] = useState<AppMode>(() => {
+    if (typeof window === 'undefined') return getInitialAppMode();
+    return getClientAppMode(window.location.search);
+  });
   const isAgentMode = appMode === 'agent';
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'thinking' | 'streaming' | 'drawing'>('idle');
-  const [agentRunning, setAgentRunning] = useState(isAgentMode);
+  const [agentRunning, setAgentRunning] = useState(() => appMode === 'agent');
   const [agentLastQuery, setAgentLastQuery] = useState('');
   const [agentDomainIndex, setAgentDomainIndex] = useState(0);
-  const [mobileActivePanel, setMobileActivePanel] = useState<'whiteboard' | 'chat'>('whiteboard');
+  const [mobileActivePanel, setMobileActivePanel] = useState<'whiteboard' | 'chat' | 'draw'>('whiteboard');
+
+  // Drawing progress tracking
+  const [drawingElementCount, setDrawingElementCount] = useState(0);
+  const [drawingTypeCounts, setDrawingTypeCounts] = useState<Partial<Record<DrawElement['type'], number>>>({});
+  const [batchJustCompleted, setBatchJustCompleted] = useState(false);
+  const [lastDrawSource, setLastDrawSource] = useState<DrawSource>('None');
+  const [drawingPillState, setDrawingPillState] = useState<DrawingPillState>({ kind: 'idle' });
+  const batchCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const streamChatIdRef = useRef<string | null>(null);
@@ -111,6 +147,7 @@ export function AppShell() {
   const turnSawToolBatchRef = useRef(false);
   const agentQueryEngineRef = useRef(new QueryEngine());
   const agentDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partialCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTurnEventsRef = useRef<string[]>([]);
   const pendingDiagnosticsRef = useRef<
     Map<
@@ -126,34 +163,65 @@ export function AppShell() {
   >(new Map());
   const { run, cancel } = useAgentStream();
 
+  // --- Undo / Redo history ---
+  const {
+    canUndo, canRedo,
+    pushState: pushHistoryState,
+    undo: historyUndo,
+    redo: historyRedo,
+  } = useDrawHistory(activeChatId, activeChat?.batches ?? []);
+
+  // Stable refs so the streaming event handler can call pushState without a
+  // stale closure (handleEvent's deps intentionally exclude draw-history).
+  const pushHistoryRef = useRef(pushHistoryState);
+  pushHistoryRef.current = pushHistoryState;
+  const activeBatchesRef = useRef<DrawBatch[]>(activeChat?.batches ?? []);
+  if (activeChat) activeBatchesRef.current = activeChat.batches;
+
+  // STATE-001: Buffering for deterministic cross-channel batch ordering
+  const nextExpectedSeqRef = useRef(1);
+  const pendingBatchEventsRef = useRef<Map<number, AgentSSEEvent & { type: 'whiteboard.batch' }>>(new Map());
+
   const resetStreamState = useCallback(() => {
+    if (partialCompletionTimerRef.current) {
+      clearTimeout(partialCompletionTimerRef.current);
+      partialCompletionTimerRef.current = null;
+    }
+    if (batchCompletionTimerRef.current) {
+      clearTimeout(batchCompletionTimerRef.current);
+      batchCompletionTimerRef.current = null;
+    }
     streamChatIdRef.current = null;
     currentAssistantMessageId.current = null;
     turnHadRenderableOutputRef.current = false;
     turnSawToolBatchRef.current = false;
     pendingDiagnosticsRef.current.clear();
+    setDrawingElementCount(0);
+    setDrawingTypeCounts({});
+    setBatchJustCompleted(false);
+    setDrawingPillState({ kind: 'idle' });
   }, []);
 
-  useEffect(() => {
-    setAppMode(getClientAppMode(window.location.search));
+  const pushTurnEvent = useCallback((event: unknown) => {
+    lastTurnEventsRef.current.push(JSON.stringify(event));
+    if (lastTurnEventsRef.current.length > 80) {
+      lastTurnEventsRef.current = lastTurnEventsRef.current.slice(-80);
+    }
   }, []);
 
-  useEffect(() => {
-    if (isAgentMode) setAgentRunning(true);
-  }, [isAgentMode]);
-
-  const pushWarning = useCallback((warning: string, chatIdOverride?: string) => {
+  const pushWarning = useCallback((warning: string, chatIdOverride?: string, severity: NotificationItem['severity'] = 'warning') => {
     const targetChatId = chatIdOverride ?? streamChatIdRef.current ?? activeChatIdRef.current;
     if (!targetChatId) return;
 
     setChatSessions((prev) =>
       prev.map((chat) => {
         if (chat.id !== targetChatId) return chat;
-        if (chat.warnings[chat.warnings.length - 1] === warning) return chat;
+        if (chat.warnings[chat.warnings.length - 1]?.message === warning) return chat;
+        const item: NotificationItem = { id: createId(), message: warning, severity };
         return {
           ...chat,
           updatedAt: Date.now(),
-          warnings: [...chat.warnings, warning].slice(-8),
+          warnings: [...chat.warnings, item].slice(-8),
         };
       }),
     );
@@ -161,10 +229,7 @@ export function AppShell() {
 
   const handleEvent = useCallback(
     (event: AgentSSEEvent) => {
-      lastTurnEventsRef.current.push(event.type);
-      if (lastTurnEventsRef.current.length > 80) {
-        lastTurnEventsRef.current = lastTurnEventsRef.current.slice(-80);
-      }
+      pushTurnEvent(event);
       const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
       if (!targetChatId) return;
 
@@ -215,52 +280,109 @@ export function AppShell() {
       }
 
       if (event.type === 'whiteboard.batch') {
-        turnHadRenderableOutputRef.current = true;
-        const isProvisionalStreamBatch = event.batch.batch_id.startsWith('stream-provisional-');
-        const firstToolBatch = !isProvisionalStreamBatch && !turnSawToolBatchRef.current;
-        if (!isProvisionalStreamBatch) {
-          turnSawToolBatchRef.current = true;
+        // STATE-001: deterministic cross-channel batch ordering.
+        // If the batch has a sequenceNumber, buffer out-of-order arrivals
+        // and apply them in monotonically increasing order.
+        const seq = event.batch.sequenceNumber;
+        if (seq != null && seq > nextExpectedSeqRef.current) {
+          pendingBatchEventsRef.current.set(seq, event);
+          return;
         }
-        const diagnostics = pendingDiagnosticsRef.current.get(event.batch.batch_id);
-        if (diagnostics) pendingDiagnosticsRef.current.delete(event.batch.batch_id);
-        setStatus('drawing');
-        setChatSessions((prev) =>
-          prev.map((chat) => {
-            if (chat.id !== targetChatId) return chat;
-            const baseChat = firstToolBatch ? withoutStreamOverlay(chat) : chat;
-            const hasClear = event.batch.elements.some((el) => el.type === 'clear');
-            const baseScene = hasClear ? [] : [...baseChat.scene];
-            event.batch.elements.forEach((element) => {
-              if (element.type !== 'clear') baseScene.push(element);
-            });
 
-            const nextPlannerMeta =
-              diagnostics != null
-                ? [
-                    ...baseChat.plannerMeta,
-                    {
-                      batchId: diagnostics.batchId,
-                      templateUsed: diagnostics.templateUsed,
-                      fallbackUsed: diagnostics.fallbackUsed,
-                      violationsFixed: diagnostics.violationsFixed,
-                    },
-                  ].slice(-40)
-                : baseChat.plannerMeta;
+        const applyBatch = (batchEvent: AgentSSEEvent & { type: 'whiteboard.batch' }) => {
+          turnHadRenderableOutputRef.current = true;
+          const isProvisionalStreamBatch = batchEvent.batch.batch_id.startsWith('stream-provisional-');
+          const firstToolBatch = !isProvisionalStreamBatch && !turnSawToolBatchRef.current;
 
-            const semanticBatch =
-              diagnostics?.semanticBatch ??
-              fromLegacyDrawBatchToSemanticStub(event.batch.batch_id, event.batch.elements);
-            const nextSemanticScene = [...baseChat.semanticScene, semanticBatch].slice(-80);
-            return {
-              ...baseChat,
-              updatedAt: Date.now(),
-              scene: baseScene,
-              semanticScene: nextSemanticScene,
-              plannerMeta: nextPlannerMeta,
-              batches: [...baseChat.batches, event.batch],
-            };
-          }),
-        );
+          // Snapshot batches before the first real batch of this turn so the
+          // entire turn can be undone in a single step.
+          if (firstToolBatch) {
+            pushHistoryRef.current(activeBatchesRef.current);
+          }
+
+          if (!isProvisionalStreamBatch) {
+            turnSawToolBatchRef.current = true;
+          }
+          const diagnostics = pendingDiagnosticsRef.current.get(batchEvent.batch.batch_id);
+          if (diagnostics) pendingDiagnosticsRef.current.delete(batchEvent.batch.batch_id);
+          setStatus('drawing');
+
+          // Track drawing progress for UI feedback
+          const drawableElements = batchEvent.batch.elements.filter((el) => el.type !== 'clear');
+          const batchTypeCounts: Partial<Record<DrawElement['type'], number>> = {};
+          for (const el of drawableElements) {
+            batchTypeCounts[el.type] = (batchTypeCounts[el.type] ?? 0) + 1;
+          }
+          setDrawingElementCount((prev) => prev + drawableElements.length);
+          setDrawingTypeCounts((prev) => {
+            const merged = { ...prev };
+            for (const [type, count] of Object.entries(batchTypeCounts)) {
+              const key = type as DrawElement['type'];
+              merged[key] = (merged[key] ?? 0) + (count ?? 0);
+            }
+            return merged;
+          });
+          setLastDrawSource('AI');
+          setDrawingPillState({ kind: 'ai_drawing', elementCount: drawableElements.length });
+
+          // Flash batch completion
+          setBatchJustCompleted(true);
+          if (batchCompletionTimerRef.current) clearTimeout(batchCompletionTimerRef.current);
+          batchCompletionTimerRef.current = setTimeout(() => {
+            batchCompletionTimerRef.current = null;
+            setBatchJustCompleted(false);
+          }, 1500);
+
+          setChatSessions((prev) =>
+            prev.map((chat) => {
+              if (chat.id !== targetChatId) return chat;
+              const baseChat = firstToolBatch ? withoutStreamOverlay(chat) : chat;
+              const hasClear = batchEvent.batch.elements.some((el) => el.type === 'clear');
+              const baseScene = hasClear ? [] : [...baseChat.scene];
+              batchEvent.batch.elements.forEach((element) => {
+                if (element.type !== 'clear') baseScene.push(element);
+              });
+
+              const nextPlannerMeta =
+                diagnostics != null
+                  ? [
+                      ...baseChat.plannerMeta,
+                      {
+                        batchId: diagnostics.batchId,
+                        templateUsed: diagnostics.templateUsed,
+                        fallbackUsed: diagnostics.fallbackUsed,
+                        violationsFixed: diagnostics.violationsFixed,
+                      },
+                    ].slice(-40)
+                  : baseChat.plannerMeta;
+
+              const semanticBatch =
+                diagnostics?.semanticBatch ??
+                fromLegacyDrawBatchToSemanticStub(batchEvent.batch.batch_id, batchEvent.batch.elements);
+              const nextSemanticScene = [...baseChat.semanticScene, semanticBatch].slice(-80);
+              return {
+                ...baseChat,
+                updatedAt: Date.now(),
+                scene: baseScene,
+                semanticScene: nextSemanticScene,
+                plannerMeta: nextPlannerMeta,
+                batches: [...baseChat.batches, batchEvent.batch],
+              };
+            }),
+          );
+        };
+
+        applyBatch(event);
+        if (seq != null) {
+          nextExpectedSeqRef.current = seq + 1;
+          // Drain any buffered batches that are now in order
+          while (pendingBatchEventsRef.current.has(nextExpectedSeqRef.current)) {
+            const buffered = pendingBatchEventsRef.current.get(nextExpectedSeqRef.current)!;
+            pendingBatchEventsRef.current.delete(nextExpectedSeqRef.current);
+            applyBatch(buffered);
+            nextExpectedSeqRef.current++;
+          }
+        }
         return;
       }
 
@@ -284,13 +406,24 @@ export function AppShell() {
         currentAssistantMessageId.current = null;
         resetStreamState();
         setStatus('idle');
+        const friendly = friendlyEventErrorMessage(
+          event.code,
+          event.message,
+          event.retryAfterMs,
+        );
         setChatSessions((prev) =>
           prev.map((chat) =>
             chat.id === targetChatId
               ? {
                   ...chat,
                   updatedAt: Date.now(),
-                  messages: [...chat.messages, createMessage('assistant', `Error: ${event.message}`)],
+                  messages: [
+                    ...chat.messages,
+                    createMessage('assistant', friendly.message, {
+                      code: event.code,
+                      retryable: friendly.retryable,
+                    }),
+                  ],
                 }
               : chat,
           ),
@@ -299,10 +432,11 @@ export function AppShell() {
       }
 
       if (event.type === 'turn.done') {
+        const hadRenderableOutput = turnHadRenderableOutputRef.current;
         setChatSessions((prev) =>
           prev.map((chat) => {
             if (chat.id !== targetChatId) return chat;
-            if (turnHadRenderableOutputRef.current) return chat;
+            if (hadRenderableOutput) return chat;
             return {
               ...chat,
               updatedAt: Date.now(),
@@ -314,11 +448,17 @@ export function AppShell() {
           }),
         );
         turnHadRenderableOutputRef.current = false;
+        // Show done pill briefly if we drew shapes, then reset
+        if (turnSawToolBatchRef.current) {
+          setDrawingPillState((prev) =>
+            prev.kind === 'ai_drawing' ? { kind: 'done', shapeCount: prev.elementCount } : { kind: 'done', shapeCount: 0 },
+          );
+        }
         resetStreamState();
         setStatus('idle');
       }
     },
-    [pushWarning, resetStreamState],
+    [pushTurnEvent, pushWarning, resetStreamState],
   );
 
   const sendMessage = useCallback(
@@ -352,7 +492,7 @@ export function AppShell() {
       resetStreamState();
       turnHadRenderableOutputRef.current = false;
       streamChatIdRef.current = chatId;
-      lastTurnEventsRef.current = ['turn.started'];
+      lastTurnEventsRef.current = [JSON.stringify({ type: 'turn.started' })];
 
       void run({
         sessionId,
@@ -361,15 +501,17 @@ export function AppShell() {
         plannerMode: 'semantic_preferred',
         whiteboardContext,
         whiteboardContextV2,
+        maxRetries: 0,
         handlers: {
           onEvent: handleEvent,
-          onError: (msg) => {
+          onError: (msg, meta) => {
             const targetChatId = streamChatIdRef.current ?? activeChatIdRef.current;
-            turnHadRenderableOutputRef.current = true;
+            const hadRenderableOutput = turnHadRenderableOutputRef.current;
             resetStreamState();
             setStatus('idle');
-            lastTurnEventsRef.current.push('error');
+            pushTurnEvent({ type: 'client.error', message: msg });
             if (!targetChatId) return;
+            if (hadRenderableOutput) return;
 
             setChatSessions((prev) =>
               prev.map((chat) =>
@@ -377,17 +519,33 @@ export function AppShell() {
                   ? {
                       ...chat,
                       updatedAt: Date.now(),
-                      messages: [...chat.messages, createMessage('assistant', `Stream error: ${msg}`)],
+                      messages: [
+                        ...chat.messages,
+                        createMessage('assistant', msg, meta ? { code: meta.code, retryable: meta.retryable } : undefined),
+                      ],
                     }
                   : chat,
               ),
             );
           },
+          onComplete: ({ lastEvent }) => {
+            if (!lastEvent) return;
+            if (lastEvent.type === 'turn.done' || lastEvent.type === 'error') return;
+            pushTurnEvent({ type: 'client.complete', partial: true, source: lastEvent.type });
+            if (partialCompletionTimerRef.current) {
+              clearTimeout(partialCompletionTimerRef.current);
+            }
+            partialCompletionTimerRef.current = setTimeout(() => {
+              partialCompletionTimerRef.current = null;
+              resetStreamState();
+              setStatus('idle');
+            }, 8_000);
+          },
         },
       });
       return true;
     },
-    [activeChat, handleEvent, resetStreamState, run, sessionId, status],
+    [activeChat, handleEvent, pushTurnEvent, resetStreamState, run, sessionId, status],
   );
 
   const send = useCallback(() => {
@@ -435,6 +593,7 @@ export function AppShell() {
   const clearActiveChat = useCallback(() => {
     if (!activeChat || status !== 'idle') return;
 
+    pushHistoryState(activeChat.batches);
     resetStreamState();
 
     const clearBatch: DrawBatch = {
@@ -459,7 +618,7 @@ export function AppShell() {
           : chat,
       ),
     );
-  }, [activeChat, resetStreamState, status]);
+  }, [activeChat, pushHistoryState, resetStreamState, status]);
 
   const clearForAgent = useCallback(() => {
     clearActiveChat();
@@ -558,6 +717,54 @@ export function AppShell() {
           : 'Drawing';
   const agentDomain = AGENT_DOMAINS[agentDomainIndex % AGENT_DOMAINS.length]!;
 
+  // Derived stream phase for ChatPanel → StreamProgress
+  const streamPhase: StreamPhase | undefined =
+    status === 'thinking'
+      ? 'thinking'
+      : status === 'streaming'
+        ? 'streaming_text'
+        : status === 'drawing'
+          ? 'drawing'
+          : undefined;
+
+  const drawingProgress: DrawingProgressInfo | undefined =
+    status === 'drawing'
+      ? {
+          elementCount: drawingElementCount,
+          typeCounts: drawingTypeCounts,
+          batchJustCompleted,
+        }
+      : undefined;
+
+  // --- Undo / Redo restore ---
+  const restoreFromBatches = useCallback(
+    (batches: DrawBatch[]) => {
+      const scene = rebuildSceneFromBatches(batches);
+      const semanticScene = batches
+        .map((b) => fromLegacyDrawBatchToSemanticStub(b.batch_id, b.elements))
+        .slice(-80);
+      setChatSessions((prev) =>
+        prev.map((chat) => {
+          if (chat.id !== activeChatIdRef.current) return chat;
+          return { ...chat, updatedAt: Date.now(), batches, scene, semanticScene };
+        }),
+      );
+    },
+    [setChatSessions],
+  );
+
+  const handleUndo = useCallback(() => {
+    if (status !== 'idle') return;
+    const batches = historyUndo();
+    if (batches) restoreFromBatches(batches);
+  }, [historyUndo, restoreFromBatches, status]);
+
+  const handleRedo = useCallback(() => {
+    if (status !== 'idle') return;
+    const batches = historyRedo();
+    if (batches) restoreFromBatches(batches);
+  }, [historyRedo, restoreFromBatches, status]);
+
   useKeyboardShortcuts(
     useMemo(
       () => ({
@@ -583,8 +790,10 @@ export function AppShell() {
         },
         togglePanel: () =>
           setMobileActivePanel((p) => (p === 'whiteboard' ? 'chat' : 'whiteboard')),
+        undo: handleUndo,
+        redo: handleRedo,
       }),
-      [activeChatId, cancel, chatSessions, createChat, resetStreamState, selectChat, status],
+      [activeChatId, cancel, chatSessions, createChat, handleRedo, handleUndo, resetStreamState, selectChat, status],
     ),
   );
 
@@ -596,6 +805,53 @@ export function AppShell() {
       ),
     );
   }, [activeChat, setChatSessions]);
+
+  const dismissOneWarning = useCallback(
+    (notificationId: string) => {
+      if (!activeChat) return;
+      setChatSessions((prev) =>
+        prev.map((chat) =>
+          chat.id === activeChat.id
+            ? { ...chat, warnings: chat.warnings.filter((w) => w.id !== notificationId) }
+            : chat,
+        ),
+      );
+    },
+    [activeChat, setChatSessions],
+  );
+
+  const handleDrawInject = useCallback(
+    (batch: DrawBatch) => {
+      if (!activeChat) return;
+      pushHistoryState(activeChat.batches);
+
+      // Determine source from batch_id prefix
+      const source: DrawSource = batch.batch_id.startsWith('tpl-') ? 'Template' : 'Injected';
+      setLastDrawSource(source);
+      const injectCount = batch.elements.filter((el) => el.type !== 'clear').length;
+      setDrawingPillState({ kind: 'done', shapeCount: injectCount });
+
+      const hasClear = batch.elements.some((el) => el.type === 'clear');
+      setChatSessions((prev) =>
+        prev.map((chat) => {
+          if (chat.id !== activeChat.id) return chat;
+          const baseScene = hasClear ? [] : [...chat.scene];
+          batch.elements.forEach((element) => {
+            if (element.type !== 'clear') baseScene.push(element);
+          });
+          const semanticBatch = fromLegacyDrawBatchToSemanticStub(batch.batch_id, batch.elements);
+          return {
+            ...chat,
+            updatedAt: Date.now(),
+            scene: baseScene,
+            semanticScene: [...chat.semanticScene, semanticBatch].slice(-80),
+            batches: [...chat.batches, batch],
+          };
+        }),
+      );
+    },
+    [activeChat, pushHistoryState, setChatSessions],
+  );
 
   if (!didRestoreSession) {
     return (
@@ -619,7 +875,7 @@ export function AppShell() {
     <main id="main-content" className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:text-[var(--color-text-primary)] focus:shadow-lg">Skip to main content</a>
       <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
-        <AppHeader status={status} />
+        <AppHeader status={status} canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
 
         <div
           className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 md:flex-row"
@@ -629,13 +885,22 @@ export function AppShell() {
             id="panel-whiteboard"
             data-testid="whiteboard-canvas"
             tabIndex={-1}
-            className={isAgentMode ? 'h-full w-full' : `w-full md:h-full md:w-[var(--left-width)] ${mobileActivePanel === 'whiteboard' ? 'h-full' : 'hidden'} md:!block`}
+            className={`relative ${isAgentMode ? 'h-full w-full' : 'min-h-0 w-full flex-1 md:h-full md:w-[var(--left-width)]'}`}
           >
             <WhiteboardCanvas
               key={activeChat.id}
               batches={activeChat.batches}
               onWarning={(warning) => pushWarning(warning, activeChat.id)}
             />
+            <DrawingStatusPill state={drawingPillState} />
+            <DrawingStatistics
+              scene={activeChat.scene}
+              batches={activeChat.batches}
+              lastDrawSource={lastDrawSource}
+            />
+            {!isAgentMode && (
+              <DrawPayloadInjector onInject={handleDrawInject} forceOpen={mobileActivePanel === 'draw'} />
+            )}
           </section>
 
           {!isAgentMode && (
@@ -673,7 +938,7 @@ export function AppShell() {
               id="panel-chat"
               data-testid="chat-panel"
               tabIndex={-1}
-              className={`min-h-0 w-full md:h-full md:flex-1 ${mobileActivePanel === 'chat' ? 'h-full' : 'hidden'} md:!block`}
+              className="min-h-0 w-full flex-1 md:h-full md:flex-1"
             >
               <ChatPanel
                 chats={chatMeta}
@@ -681,6 +946,8 @@ export function AppShell() {
                 messages={activeChat.messages}
                 input={input}
                 status={status}
+                streamPhase={streamPhase}
+                drawingProgress={drawingProgress}
                 inputRef={chatInputRef}
                 onInput={setInput}
                 onSend={send}
@@ -709,6 +976,9 @@ export function AppShell() {
                   );
                 }}
                 onClearChat={clearActiveChat}
+                onRetry={(lastUserMessage) => {
+                  sendMessage(lastUserMessage);
+                }}
                 disabled={status !== 'idle'}
               />
             </section>
@@ -725,7 +995,11 @@ export function AppShell() {
             />
           )}
 
-          <WarningOverlay warnings={activeChat.warnings} onDismiss={dismissWarnings} />
+          <WarningOverlay
+            notifications={activeChat.warnings}
+            onDismissOne={dismissOneWarning}
+            onDismissAll={dismissWarnings}
+          />
         </div>
       </div>
       {!isAgentMode && (

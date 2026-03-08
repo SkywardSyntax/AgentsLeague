@@ -116,6 +116,17 @@ function clampElement(el: DrawElement): DrawElement {
       return { ...el, x: clampCoord(el.x), y: clampCoord(el.y) };
     case 'clear':
       return el;
+    // Math primitives — coordinates validated by schema; pass through as-is
+    case 'cartesian_axes':
+    case 'number_line':
+    case 'vector_arrow':
+    case 'function_curve':
+    case 'matrix_bracket':
+    case 'angle_arc':
+    case 'integral_region':
+      return el;
+    default:
+      return el;
   }
 }
 

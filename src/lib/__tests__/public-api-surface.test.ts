@@ -198,8 +198,6 @@ describe('Public API surface — persistence + mode + useAgentStream', () => {
     const hook = await import('@/hooks/useAgentStream');
     expect(Object.keys(hook).sort()).toMatchInlineSnapshot(`
       [
-        "parseSSEBuffer",
-        "parseSSEFrames",
         "useAgentStream",
       ]
     `);

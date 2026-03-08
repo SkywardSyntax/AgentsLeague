@@ -4,11 +4,16 @@
  */
 
 import { COORD_BOUNDS } from './clamp-coordinates';
+import { COORD_MIN, COORD_MAX } from './coord-bounds';
 
 const MAX_POINTS_PER_STROKE = 10_000;
 const MAX_STROKES_PER_BATCH = 500;
 const MIN_POINT_DISTANCE = 0.01;
-const MAX_COORDINATE_VALUE = 1_000_000;
+/** Derived from canonical bounds — rejects anything outside canvas range */
+const MAX_COORDINATE_VALUE = Math.max(
+  Math.abs(COORD_MIN),
+  Math.abs(COORD_MAX),
+);
 const MAX_DENSITY_PER_UNIT = 100; // max points per 1x1 area
 
 export interface CoordinateValidationResult {

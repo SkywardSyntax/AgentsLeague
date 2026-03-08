@@ -3,9 +3,13 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 
 interface AppHeaderProps {
   status: 'idle' | 'thinking' | 'streaming' | 'drawing';
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
-export function AppHeader({ status }: AppHeaderProps) {
+export function AppHeader({ status, canUndo, canRedo, onUndo, onRedo }: AppHeaderProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -17,6 +21,34 @@ export function AppHeader({ status }: AppHeaderProps) {
         <p className="text-[11px] text-[var(--color-text-muted)]">Interleaved conversational whiteboard</p>
       </div>
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="Undo (⌘Z)"
+          title="Undo (⌘Z)"
+          disabled={!canUndo}
+          onClick={onUndo}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:pointer-events-none disabled:opacity-35"
+          data-testid="undo-btn"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          aria-label="Redo (⌘⇧Z)"
+          title="Redo (⌘⇧Z)"
+          disabled={!canRedo}
+          onClick={onRedo}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:pointer-events-none disabled:opacity-35"
+          data-testid="redo-btn"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10" />
+            <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+          </svg>
+        </button>
         <button
           type="button"
           aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}

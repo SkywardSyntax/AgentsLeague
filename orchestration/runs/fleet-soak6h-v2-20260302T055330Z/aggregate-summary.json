@@ -1,0 +1,128 @@
+{
+  "runDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z",
+  "generatedAt": "2026-03-02T20:53:20.155Z",
+  "totals": {
+    "agents": 10,
+    "successfulAgents": 6,
+    "failedAgents": 4,
+    "totalTurns": 99,
+    "totalRecoveries": 0,
+    "totalScreenshots": 99
+  },
+  "lanes": [
+    {
+      "agentName": "agent-01",
+      "agentId": "01",
+      "startedAt": "2026-03-02T05:54:51.570Z",
+      "endedAt": "2026-03-02T11:54:52.330Z",
+      "durationMs": 21600760,
+      "completedTurns": 16,
+      "recoveries": 0,
+      "failedSnapshots": 4240,
+      "stalledIntervals": 8,
+      "screenshots": 16,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-01/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-01/screenshots",
+      "baseUrl": "http://127.0.0.1:4301"
+    },
+    {
+      "agentName": "agent-02",
+      "agentId": "02",
+      "startedAt": "2026-03-02T05:54:50.556Z",
+      "endedAt": "2026-03-02T11:54:52.072Z",
+      "durationMs": 21601516,
+      "completedTurns": 16,
+      "recoveries": 0,
+      "failedSnapshots": 4240,
+      "stalledIntervals": 6,
+      "screenshots": 16,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-02/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-02/screenshots",
+      "baseUrl": "http://127.0.0.1:4302"
+    },
+    {
+      "agentName": "agent-03",
+      "agentId": "03",
+      "startedAt": "2026-03-02T05:54:50.320Z",
+      "endedAt": "2026-03-02T11:54:52.072Z",
+      "durationMs": 21601752,
+      "completedTurns": 16,
+      "recoveries": 0,
+      "failedSnapshots": 4240,
+      "stalledIntervals": 2,
+      "screenshots": 16,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-03/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-03/screenshots",
+      "baseUrl": "http://127.0.0.1:4303"
+    },
+    {
+      "agentName": "agent-04",
+      "ts": "2026-03-02T05:58:28.210Z",
+      "type": "run.failure",
+      "message": "page.waitForFunction: Timeout 120000ms exceeded."
+    },
+    {
+      "agentName": "agent-05",
+      "agentId": "05",
+      "startedAt": "2026-03-02T05:54:50.316Z",
+      "endedAt": "2026-03-02T11:54:50.433Z",
+      "durationMs": 21600117,
+      "completedTurns": 21,
+      "recoveries": 0,
+      "failedSnapshots": 4240,
+      "stalledIntervals": 2,
+      "screenshots": 21,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-05/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-05/screenshots",
+      "baseUrl": "http://127.0.0.1:4305"
+    },
+    {
+      "agentName": "agent-06",
+      "ts": "2026-03-02T06:01:15.785Z",
+      "type": "run.failure",
+      "message": "page.screenshot: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - taking page screenshot\u001b[22m\n\u001b[2m  - waiting for fonts to load...\u001b[22m\n"
+    },
+    {
+      "agentName": "agent-07",
+      "ts": "2026-03-02T06:01:17.600Z",
+      "type": "run.failure",
+      "message": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4307/?mode=agent\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:4307/?mode=agent\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "agentName": "agent-08",
+      "agentId": "08",
+      "startedAt": "2026-03-02T05:54:52.003Z",
+      "endedAt": "2026-03-02T11:54:56.647Z",
+      "durationMs": 21604644,
+      "completedTurns": 19,
+      "recoveries": 0,
+      "failedSnapshots": 4241,
+      "stalledIntervals": 4,
+      "screenshots": 19,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-08/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-08/screenshots",
+      "baseUrl": "http://127.0.0.1:4308"
+    },
+    {
+      "agentName": "agent-09",
+      "ts": "2026-03-02T06:01:17.590Z",
+      "type": "run.failure",
+      "message": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4309/?mode=agent\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:4309/?mode=agent\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "agentName": "agent-10",
+      "agentId": "10",
+      "startedAt": "2026-03-02T05:54:50.380Z",
+      "endedAt": "2026-03-02T20:53:18.581Z",
+      "durationMs": 53908201,
+      "completedTurns": 11,
+      "recoveries": 0,
+      "failedSnapshots": 1,
+      "stalledIntervals": 3,
+      "screenshots": 11,
+      "eventLog": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-10/events.jsonl",
+      "screenshotsDir": "/Users/nb29255/Desktop/GitHubRepos/AgentsLeague/orchestration/runs/fleet-soak6h-v2-20260302T055330Z/agent-10/screenshots",
+      "baseUrl": "http://127.0.0.1:4310"
+    }
+  ]
+}

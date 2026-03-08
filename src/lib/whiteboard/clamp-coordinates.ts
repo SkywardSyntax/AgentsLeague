@@ -1,12 +1,13 @@
 import type { DrawElement } from '@/types/agent';
+import { COORD_MIN, COORD_MAX, DIMENSION_MIN, DIMENSION_MAX } from './coord-bounds';
 
 export const COORD_BOUNDS = {
-  MIN_X: -2000,
-  MAX_X: 4000,
-  MIN_Y: -2000,
-  MAX_Y: 4000,
-  MIN_DIMENSION: 1,
-  MAX_DIMENSION: 3000,
+  MIN_X: COORD_MIN,
+  MAX_X: COORD_MAX,
+  MIN_Y: COORD_MIN,
+  MAX_Y: COORD_MAX,
+  MIN_DIMENSION: DIMENSION_MIN,
+  MAX_DIMENSION: DIMENSION_MAX,
 } as const;
 
 function clampCoord(v: number, min: number, max: number): number {

@@ -1,5 +1,6 @@
 import type { ChatStore } from './chatSessionReducer';
 import type { AppStatus } from './statusMachine';
+import type { NotificationItem } from '@/components/app/WarningOverlay';
 
 export interface Selector<S, R> {
   (state: S): R;
@@ -71,7 +72,7 @@ export const selectChatMeta = createSelector(
       })),
 );
 
-export function selectActiveWarnings(store: ChatStore, chatId: string): string[] {
+export function selectActiveWarnings(store: ChatStore, chatId: string): NotificationItem[] {
   return store.chats[chatId]?.warnings ?? [];
 }
 

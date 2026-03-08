@@ -1,10 +1,16 @@
 export type ChatRole = 'user' | 'assistant' | 'system';
 
+export interface ChatMessageErrorMeta {
+  code: string;
+  retryable: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
   createdAt: number;
+  errorMeta?: ChatMessageErrorMeta;
 }
 
 export type StylePreset = 'clean_pen_sketch' | 'rough_sketch' | 'blueprint_neat';
@@ -71,6 +77,118 @@ export interface ClearElement extends BaseDrawElement {
   type: 'clear';
 }
 
+// --- P0 math drawing primitives ---
+
+export interface CartesianAxesElement extends BaseDrawElement {
+  type: 'cartesian_axes';
+  /** Top-left corner of the plot area */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Numeric range for the x-axis, e.g. [-5, 5] */
+  xRange: [number, number];
+  /** Numeric range for the y-axis, e.g. [-3, 10] */
+  yRange: [number, number];
+  xLabel?: string;
+  yLabel?: string;
+  gridlines?: boolean;
+  style?: StylePreset;
+}
+
+export interface NumberLineElement extends BaseDrawElement {
+  type: 'number_line';
+  x: number;
+  y: number;
+  length: number;
+  min: number;
+  max: number;
+  label?: string;
+  style?: StylePreset;
+}
+
+export interface VectorArrowElement extends BaseDrawElement {
+  type: 'vector_arrow';
+  /** Tail position */
+  x: number;
+  y: number;
+  /** Direction components */
+  dx: number;
+  dy: number;
+  label?: string;
+  color?: string;
+  style?: StylePreset;
+}
+
+export interface MatrixBracketElement extends BaseDrawElement {
+  type: 'matrix_bracket';
+  x: number;
+  y: number;
+  /** Cell content (LaTeX or text), indexed as rows[row][col] */
+  rows: string[][];
+  bracketStyle: '[]' | '()' | '||' | '{}';
+  cellWidth?: number;
+  cellHeight?: number;
+  style?: StylePreset;
+}
+
+export interface FunctionCurveElement extends BaseDrawElement {
+  type: 'function_curve';
+  /** Canvas position of the plot-area origin (top-left) */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Domain [min, max] */
+  xRange: [number, number];
+  /** Range [min, max] (for vertical scaling) */
+  yRange: [number, number];
+  /** Safe JS math expression, e.g. "Math.sin(x)" */
+  expression?: string;
+  /** Pre-sampled data points (preferred for AI use) */
+  points?: Array<{ x: number; y: number }>;
+  label?: string;
+  style?: StylePreset;
+}
+
+export interface AngleArcElement extends BaseDrawElement {
+  type: 'angle_arc';
+  /** Vertex position */
+  x: number;
+  y: number;
+  /** Arc radius */
+  radius: number;
+  /** Start angle in degrees (0 = right, CCW positive) */
+  startAngle: number;
+  /** End angle in degrees */
+  endAngle: number;
+  /** Label text, e.g. "45°" or "θ" */
+  label?: string;
+  style?: StylePreset;
+}
+
+export interface IntegralRegionElement extends BaseDrawElement {
+  type: 'integral_region';
+  /** Origin position */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Integration bounds [a, b] */
+  xRange: [number, number];
+  /** Y-axis scaling range */
+  yRange: [number, number];
+  /** Pre-sampled boundary points (top curve) */
+  topPoints: Array<{ x: number; y: number }>;
+  /** Bottom curve points; if absent, y=0 baseline is used */
+  bottomPoints?: Array<{ x: number; y: number }>;
+  fillColor?: string;
+  strokeColor?: string;
+  /** Label text, e.g. "∫f(x)dx" */
+  label?: string;
+  style?: StylePreset;
+}
+
 export type DrawElement =
   | RectElement
   | EllipseElement
@@ -78,12 +196,34 @@ export type DrawElement =
   | ArrowElement
   | TextElement
   | LatexElement
-  | ClearElement;
+  | ClearElement
+  | CartesianAxesElement
+  | NumberLineElement
+  | VectorArrowElement
+  | FunctionCurveElement
+  | MatrixBracketElement
+  | AngleArcElement
+  | IntegralRegionElement;
+
+/**
+ * Exhaustive-check helper for the DrawElement discriminated union.
+ * Place in the `default` branch of any switch on `element.type` so
+ * the compiler errors when a new variant is added to DrawElement.
+ */
+export function assertNeverDrawElement(x: never, fallback?: string): never {
+  throw new Error(`Unhandled DrawElement type: ${(x as Record<string, unknown>)?.type ?? fallback}`);
+}
 
 export interface DrawBatch {
   batch_id: string;
   style_preset?: StylePreset;
   elements: DrawElement[];
+  /** Origin of this batch — useful for auditing and conflict resolution. */
+  source?: 'ai-stream' | 'injection' | 'template';
+  /** Schema version for forward-compatible deserialization (default: 1). */
+  schemaVersion?: number;
+  /** Monotonic sequence number for deterministic cross-channel ordering (STATE-001). */
+  sequenceNumber?: number;
 }
 
 export type SemanticTemplate =
@@ -201,11 +341,20 @@ export interface WhiteboardContext {
   };
 }
 
+export type MathContext = 'empty' | 'has_axes' | 'has_function' | 'has_geometry';
+export type DrawingStyle = 'clean' | 'sketch' | 'formal';
+
 export interface StructuredWhiteboardContext {
   scene_summary: {
     element_count: number;
     bounds?: WhiteboardBounds;
     type_counts: Partial<Record<DrawElement['type'], number>>;
+    /** Count of each element type for quick AI reference. */
+    element_type_summary?: Partial<Record<DrawElement['type'], number>>;
+    /** High-level classification of what math content is on the board. */
+    math_context?: MathContext;
+    /** Suggested drawing style based on existing content consistency. */
+    suggested_drawing_style?: DrawingStyle;
   };
   occupied_regions: Array<{
     id: string;
@@ -248,6 +397,8 @@ export interface WhiteboardLayoutDiagnostics {
   fallbackUsed: boolean;
 }
 
+export type DrawingSpeed = 'instant' | 'fast' | 'natural' | 'slow';
+
 export interface StrokeTrajectory {
   id: string;
   elementId: string;
@@ -255,6 +406,8 @@ export interface StrokeTrajectory {
   color: string;
   baseWidth: number;
   bounds?: { minX: number; minY: number; maxX: number; maxY: number };
+  /** Hint for animation speed; inferred automatically when omitted. */
+  drawingSpeed?: DrawingSpeed;
 }
 
 export interface ActiveStroke extends StrokeTrajectory {

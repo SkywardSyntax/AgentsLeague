@@ -7,6 +7,8 @@ import { formatTexError, isTimeoutError } from '@/lib/latex/tex-errors';
 interface LatexSvgProps {
   tex: string;
   displayMode: boolean;
+  /** Fires once the SVG has been rendered (or retrieved from cache). Used by export to know when LaTeX is ready. */
+  onRenderComplete?: () => void;
 }
 
 export const svgCache = new Map<string, string>();
@@ -93,7 +95,7 @@ function fallbackCopy(text: string): void {
   document.body.removeChild(textarea);
 }
 
-export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
+export function LatexSvg({ tex, displayMode, onRenderComplete }: LatexSvgProps) {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
@@ -101,6 +103,8 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
   const [retried, setRetried] = useState(false);
   const texRef = useRef(tex);
   texRef.current = tex;
+  const onRenderCompleteRef = useRef(onRenderComplete);
+  onRenderCompleteRef.current = onRenderComplete;
   const retryButtonRef = useRef<HTMLButtonElement>(null);
   const copyButtonRef = useRef<HTMLButtonElement>(null);
   const cached = getCachedSvg(tex, displayMode);
@@ -112,6 +116,13 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
     svgCache.set(cacheKey, cached);
   }
 
+  // Fire onRenderComplete when SVG is available from cache on first render
+  useEffect(() => {
+    if (cached) {
+      onRenderCompleteRef.current?.();
+    }
+  }, [cached]);
+
   useEffect(() => {
     let cancelled = false;
     if (cached) return;
@@ -120,11 +131,11 @@ export function LatexSvg({ tex, displayMode }: LatexSvgProps) {
       try {
         const rendered = await renderTexToSvg(tex, displayMode);
         if (!cancelled) {
-
           setSvg(rendered);
           setError(null);
           setTimedOut(false);
           setRetried(false);
+          onRenderCompleteRef.current?.();
         }
       } catch (err) {
         if (!cancelled) {

@@ -20,7 +20,7 @@ function makeLargeStore(chatCount: number, messagesPerChat: number): ChatStore {
 
   for (let i = 0; i < chatCount; i++) {
     const chat = createEmptyChatSession(i + 1);
-    chat.warnings = [`warn-${i}`];
+    chat.warnings = [{ id: `warn-${i}`, message: `warn-${i}`, severity: 'warning' }];
     for (let j = 0; j < messagesPerChat; j++) {
       chat.messages.push(createMessage(j % 2 === 0 ? 'user' : 'assistant', `Message ${j} in chat ${i}`));
     }

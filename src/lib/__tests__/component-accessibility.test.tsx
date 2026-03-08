@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ChatPanel } from '@/components/chat/ChatPanel';
-import { WarningOverlay } from '@/components/app/WarningOverlay';
+import { WarningOverlay, type NotificationItem } from '@/components/app/WarningOverlay';
 import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 
 afterEach(cleanup);
@@ -70,15 +70,16 @@ describe('accessibility annotations', () => {
   });
 
   it('WarningOverlay has role="status" and aria-live="polite"', () => {
-    render(<WarningOverlay warnings={['Test warning']} />);
+    const notification: NotificationItem = { id: 'test-1', message: 'Test warning', severity: 'warning' };
+    render(<WarningOverlay notifications={[notification]} />);
     const container = screen.getByRole('status');
     expect(container).toBeTruthy();
     expect(container.getAttribute('aria-live')).toBe('polite');
-    expect(container.getAttribute('aria-label')).toBe('Warnings');
+    expect(container.getAttribute('aria-label')).toBe('Notifications');
   });
 
-  it('WarningOverlay renders nothing when no warnings', () => {
-    const { container } = render(<WarningOverlay warnings={[]} />);
+  it('WarningOverlay renders nothing when no notifications', () => {
+    const { container } = render(<WarningOverlay notifications={[]} />);
     expect(container.innerHTML).toBe('');
   });
 
