@@ -158,6 +158,53 @@ export interface FunctionCurveElement extends BaseDrawElement {
   style?: StylePreset;
 }
 
+export interface ParametricCurveElement extends BaseDrawElement {
+  type: 'parametric_curve';
+  /** Canvas position of the plot-area origin (top-left) */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Math viewport X bounds [min, max] */
+  xRange: [number, number];
+  /** Math viewport Y bounds [min, max] */
+  yRange: [number, number];
+  /** Parameter range start */
+  tMin: number;
+  /** Parameter range end */
+  tMax: number;
+  /** Expression for x(t), e.g. "cos(t)" */
+  xExpression: string;
+  /** Expression for y(t), e.g. "sin(t)" */
+  yExpression: string;
+  /** Number of sample points (default 200) */
+  steps?: number;
+  label?: string;
+  style?: StylePreset;
+}
+
+export interface PolarPlotElement extends BaseDrawElement {
+  type: 'polar_plot';
+  /** Canvas center X */
+  cx: number;
+  /** Canvas center Y */
+  cy: number;
+  /** Canvas scale (pixels per unit) */
+  radius: number;
+  /** r(θ) expression, e.g. "1 + cos(theta)" */
+  expression: string;
+  /** Theta range start (default 0) */
+  thetaMin?: number;
+  /** Theta range end (default 2π) */
+  thetaMax?: number;
+  /** Number of sample points (default 200) */
+  steps?: number;
+  /** Show polar grid (dashed r-circles and θ-lines) */
+  showPolarGrid?: boolean;
+  label?: string;
+  style?: StylePreset;
+}
+
 export interface AngleArcElement extends BaseDrawElement {
   type: 'angle_arc';
   /** Vertex position */
@@ -240,7 +287,9 @@ export type DrawElement =
   | AngleArcElement
   | IntegralRegionElement
   | CircleWithRadiusElement
-  | TriangleWithAnglesElement;
+  | TriangleWithAnglesElement
+  | ParametricCurveElement
+  | PolarPlotElement;
 
 /**
  * Exhaustive-check helper for the DrawElement discriminated union.
@@ -407,6 +456,26 @@ export interface WhiteboardContext {
 export type MathContext = 'empty' | 'has_axes' | 'has_function' | 'has_geometry';
 export type DrawingStyle = 'clean' | 'sketch' | 'formal';
 
+export interface SpatialBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface SpatialSummary {
+  occupied_regions: Array<{
+    label: string;
+    bounds: SpatialBounds;
+  }>;
+  free_regions: Array<{
+    label: string;
+    bounds: SpatialBounds;
+    area: number;
+  }>;
+  largest_free_region: SpatialBounds | null;
+}
+
 export interface StructuredWhiteboardContext {
   scene_summary: {
     element_count: number;
@@ -448,6 +517,8 @@ export interface StructuredWhiteboardContext {
     h: number;
     score: number;
   }>;
+  /** Spatial occupancy analysis for overlap avoidance. */
+  spatial_summary?: SpatialSummary;
   token_budget_hint: {
     max_chars: number;
   };

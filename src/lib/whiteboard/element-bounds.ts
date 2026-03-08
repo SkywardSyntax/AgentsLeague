@@ -192,6 +192,29 @@ export function computeElementBounds(
     };
   }
 
+  // function_curve: bounding box is the plot area
+  if (el.type === 'function_curve') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
+  }
+
+  // parametric_curve: bounding box is the plot area
+  if (el.type === 'parametric_curve') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
+  }
+
+  // polar_plot: bounding box is center ± radius
+  if (el.type === 'polar_plot') {
+    if (!allFinite(el.cx, el.cy, el.radius) || !isFinitePositive(el.radius)) return null;
+    return {
+      minX: el.cx - el.radius,
+      minY: el.cy - el.radius,
+      maxX: el.cx + el.radius,
+      maxY: el.cy + el.radius,
+    };
+  }
+
   // triangle_with_angles: bounding box of all vertices
   if (el.type === 'triangle_with_angles') {
     const xs = el.vertices.map((v) => v.x);

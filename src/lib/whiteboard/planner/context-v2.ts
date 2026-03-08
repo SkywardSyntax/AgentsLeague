@@ -8,6 +8,7 @@ import type {
   WhiteboardBounds,
 } from '@/types/agent';
 import { boundsOf } from './bounds';
+import { computeSpatialSummary, whiteboardBoundsToRects } from './spatial-layout';
 
 function mergeBounds(a: WhiteboardBounds | undefined, b: WhiteboardBounds | null): WhiteboardBounds | undefined {
   if (!b) return a;
@@ -119,6 +120,24 @@ function recentBlocksFromSemanticBatch(batch: SemanticBatch): StructuredWhiteboa
         };
       }
 
+      if (block.kind === 'node') {
+        return {
+          id: `${batch.batch_id}:${block.id}`,
+          kind: block.kind,
+          region: 'auto',
+          text_preview: block.label?.slice(0, 80),
+        };
+      }
+
+      if (block.kind === 'edge') {
+        return {
+          id: `${batch.batch_id}:${block.id}`,
+          kind: block.kind,
+          region: 'auto',
+          text_preview: block.label?.slice(0, 80) ?? `${block.from}→${block.to}`,
+        };
+      }
+
       return {
         id: `${batch.batch_id}:${block.id}`,
         kind: block.kind,
@@ -193,6 +212,9 @@ export function buildStructuredWhiteboardContext(
     { name: 'below_right', x: suggestedX + 700, y: suggestedY, w: 620, h: 420, score: 0.88 },
   ];
 
+  const spatialRects = whiteboardBoundsToRects(occupiedRegions);
+  const spatial_summary = computeSpatialSummary(spatialRects);
+
   return {
     scene_summary: {
       element_count: elements.length,
@@ -206,6 +228,7 @@ export function buildStructuredWhiteboardContext(
     anchors: anchors.slice(-80),
     recent_blocks: recentBlocks,
     suggested_next_regions: suggestedRegions,
+    spatial_summary,
     token_budget_hint: {
       max_chars: 2200,
     },
@@ -231,6 +254,7 @@ export function extendStructuredWhiteboardContext(
         anchors: [...context.anchors],
         recent_blocks: [...context.recent_blocks],
         suggested_next_regions: [...context.suggested_next_regions],
+        spatial_summary: context.spatial_summary ? { ...context.spatial_summary } : undefined,
         token_budget_hint: { ...context.token_budget_hint },
       }
     : defaultStructuredContext();
@@ -300,6 +324,10 @@ export function extendStructuredWhiteboardContext(
   if (!base.token_budget_hint?.max_chars) {
     base.token_budget_hint = { max_chars: 2200 };
   }
+
+  // Recompute spatial summary from current occupied regions
+  const spatialRects = whiteboardBoundsToRects(base.occupied_regions);
+  base.spatial_summary = computeSpatialSummary(spatialRects);
 
   return base;
 }

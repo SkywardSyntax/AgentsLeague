@@ -5,6 +5,8 @@ import type {
   NumberLineElement,
   VectorArrowElement,
   FunctionCurveElement,
+  ParametricCurveElement,
+  PolarPlotElement,
   AngleArcElement,
   IntegralRegionElement,
   CircleWithRadiusElement,
@@ -62,6 +64,8 @@ function drawOrderPriority(el: DrawElement): number {
     case 'matrix_bracket':
     case 'circle_with_radius':
     case 'triangle_with_angles':
+    case 'parametric_curve':
+    case 'polar_plot':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -332,6 +336,228 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
       type: 'text',
       x: el.x + el.width + 8,
       y: el.y + 4,
+      text: el.label,
+      size: 14,
+      color: curveColor,
+    });
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// ParametricCurve / PolarPlot expansion
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a math expression that uses variable `varName` instead of `x`.
+ * Works by replacing standalone occurrences of the variable with `x`
+ * before delegating to the standard parser.
+ */
+function parseMathExprWithVar(expr: string, varName: string): ((v: number) => number) | null {
+  const re = new RegExp(`\\b${varName}\\b`, 'g');
+  const normalized = expr.replace(re, 'x');
+  return parseMathExpression(normalized);
+}
+
+function expandParametricCurve(el: ParametricCurveElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const [xMin, xMax] = el.xRange;
+  const [yMin, yMax] = el.yRange;
+  const curveColor = el.color ?? '#1f2a44';
+  const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
+  const curveWidth = el.stroke_width ?? (isMathStyle ? 1.5 : 1.8);
+  const steps = el.steps ?? 200;
+
+  const xFn = parseMathExprWithVar(el.xExpression, 't');
+  const yFn = parseMathExprWithVar(el.yExpression, 't');
+  if (!xFn || !yFn) return result;
+
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
+
+  // Sample parametric curve
+  const dt = (el.tMax - el.tMin) / (steps - 1);
+  const rawPoints: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < steps; i++) {
+    const t = el.tMin + i * dt;
+    try {
+      const px = xFn(t);
+      const py = yFn(t);
+      rawPoints.push({ x: px, y: py });
+    } catch {
+      rawPoints.push({ x: NaN, y: NaN });
+    }
+  }
+
+  if (rawPoints.length < 2) return result;
+
+  // Split on discontinuities (non-finite values)
+  const segments: Array<Array<{ x: number; y: number }>> = [];
+  let current: Array<{ x: number; y: number }> = [];
+  for (const p of rawPoints) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+      if (current.length > 0) {
+        segments.push(current);
+        current = [];
+      }
+      continue;
+    }
+    current.push(p);
+  }
+  if (current.length > 0) segments.push(current);
+
+  // Convert each segment to line DrawElements
+  let segIdx = 0;
+  for (const seg of segments) {
+    for (let i = 0; i < seg.length - 1; i++) {
+      const from = seg[i]!;
+      const to = seg[i + 1]!;
+      result.push({
+        id: `${el.id}-seg${segIdx}-${i}`,
+        type: 'line',
+        from: { x: toCanvasX(from.x), y: toCanvasY(from.y) },
+        to: { x: toCanvasX(to.x), y: toCanvasY(to.y) },
+        color: curveColor,
+        stroke_width: curveWidth,
+      });
+    }
+    segIdx++;
+  }
+
+  // Label
+  if (el.label) {
+    result.push({
+      id: `${el.id}-label`,
+      type: 'text',
+      x: el.x + el.width + 8,
+      y: el.y + 4,
+      text: el.label,
+      size: 14,
+      color: curveColor,
+    });
+  }
+
+  return result;
+}
+
+function expandPolarPlot(el: PolarPlotElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const { cx, cy, radius } = el;
+  const curveColor = el.color ?? '#1f2a44';
+  const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
+  const curveWidth = el.stroke_width ?? (isMathStyle ? 1.5 : 1.8);
+  const steps = el.steps ?? 200;
+  const thetaMin = el.thetaMin ?? 0;
+  const thetaMax = el.thetaMax ?? 2 * Math.PI;
+  const showGrid = el.showPolarGrid !== false;
+
+  const rFn = parseMathExprWithVar(el.expression, 'theta');
+  if (!rFn) return result;
+
+  // Determine max r for grid scaling by sampling the curve
+  const dTheta = (thetaMax - thetaMin) / (steps - 1);
+  const sampledPoints: Array<{ r: number; theta: number }> = [];
+  let maxR = 0;
+  for (let i = 0; i < steps; i++) {
+    const theta = thetaMin + i * dTheta;
+    try {
+      const r = rFn(theta);
+      if (Number.isFinite(r)) {
+        sampledPoints.push({ r, theta });
+        maxR = Math.max(maxR, Math.abs(r));
+      } else {
+        sampledPoints.push({ r: NaN, theta });
+      }
+    } catch {
+      sampledPoints.push({ r: NaN, theta });
+    }
+  }
+
+  if (maxR === 0) maxR = 1;
+  const scale = radius / maxR;
+
+  // Polar grid
+  if (showGrid) {
+    const gridColor = '#cbd5e1';
+    // Concentric circles at integer r values
+    const maxCircles = Math.min(Math.ceil(maxR), 6);
+    for (let ri = 1; ri <= maxCircles; ri++) {
+      const gridR = ri * scale;
+      const gridSteps = 60;
+      for (let j = 0; j < gridSteps; j++) {
+        const a0 = (2 * Math.PI * j) / gridSteps;
+        const a1 = (2 * Math.PI * (j + 1)) / gridSteps;
+        result.push({
+          id: `${el.id}-grid-r${ri}-${j}`,
+          type: 'line',
+          from: { x: cx + gridR * Math.cos(a0), y: cy - gridR * Math.sin(a0) },
+          to: { x: cx + gridR * Math.cos(a1), y: cy - gridR * Math.sin(a1) },
+          color: gridColor,
+          stroke_width: 0.5,
+          lineStyle: 'dashed',
+        });
+      }
+    }
+    // Radial lines at every 30°
+    for (let deg = 0; deg < 360; deg += 30) {
+      const a = (deg * Math.PI) / 180;
+      result.push({
+        id: `${el.id}-grid-a${deg}`,
+        type: 'line',
+        from: { x: cx, y: cy },
+        to: { x: cx + radius * Math.cos(a), y: cy - radius * Math.sin(a) },
+        color: gridColor,
+        stroke_width: 0.5,
+        lineStyle: 'dashed',
+      });
+    }
+  }
+
+  // Convert sampled polar points to canvas coords and produce line segments
+  const segments: Array<Array<{ x: number; y: number }>> = [];
+  let current: Array<{ x: number; y: number }> = [];
+  for (const sp of sampledPoints) {
+    if (!Number.isFinite(sp.r)) {
+      if (current.length > 0) {
+        segments.push(current);
+        current = [];
+      }
+      continue;
+    }
+    current.push({
+      x: cx + sp.r * Math.cos(sp.theta) * scale,
+      y: cy - sp.r * Math.sin(sp.theta) * scale,
+    });
+  }
+  if (current.length > 0) segments.push(current);
+
+  let segIdx = 0;
+  for (const seg of segments) {
+    for (let i = 0; i < seg.length - 1; i++) {
+      const from = seg[i]!;
+      const to = seg[i + 1]!;
+      result.push({
+        id: `${el.id}-seg${segIdx}-${i}`,
+        type: 'line',
+        from: { x: from.x, y: from.y },
+        to: { x: to.x, y: to.y },
+        color: curveColor,
+        stroke_width: curveWidth,
+      });
+    }
+    segIdx++;
+  }
+
+  // Label
+  if (el.label) {
+    result.push({
+      id: `${el.id}-label`,
+      type: 'text',
+      x: cx + radius + 8,
+      y: cy - radius,
       text: el.label,
       size: 14,
       color: curveColor,
@@ -899,7 +1125,8 @@ function expandTriangleWithAngles(el: TriangleWithAnglesElement): DrawElement[] 
 /**
  * Expand composite math primitives into basic DrawElements.
  * angle_arc, integral_region, function_curve, cartesian_axes,
- * number_line, vector_arrow, circle_with_radius, and triangle_with_angles
+ * number_line, vector_arrow, circle_with_radius, triangle_with_angles,
+ * parametric_curve, and polar_plot
  * are decomposed into line + arrow + text + ellipse
  * elements so the rest of the pipeline can handle them uniformly.
  */
@@ -922,6 +1149,10 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
       result.push(...expandCircleWithRadius(el));
     } else if (el.type === 'triangle_with_angles') {
       result.push(...expandTriangleWithAngles(el));
+    } else if (el.type === 'parametric_curve') {
+      result.push(...expandParametricCurve(el));
+    } else if (el.type === 'polar_plot') {
+      result.push(...expandPolarPlot(el));
     } else {
       result.push(el);
     }
@@ -935,7 +1166,7 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement,
 ): DrawElement[] {
   switch (el.type) {
     case 'cartesian_axes':
@@ -954,6 +1185,10 @@ export function lowerMathPrimitive(
       return expandCircleWithRadius(el);
     case 'triangle_with_angles':
       return expandTriangleWithAngles(el);
+    case 'parametric_curve':
+      return expandParametricCurve(el);
+    case 'polar_plot':
+      return expandPolarPlot(el);
   }
 }
 

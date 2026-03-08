@@ -34,7 +34,7 @@ export const DRAW_TOOL_DEFINITION = {
   type: 'function' as const,
   name: 'emit_draw_batch',
   description:
-    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, circle_with_radius, triangle_with_angles). Use when a visual explanation helps.',
+    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles). Use when a visual explanation helps.',
   strict: false,
   parameters: {
     type: 'object',
@@ -55,7 +55,7 @@ export const DRAW_TOOL_DEFINITION = {
             type: {
               type: 'string',
               enum: [...DRAW_ELEMENT_TYPES],
-              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits.',
+              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits.',
             },
             x: { type: 'number', description: 'X position in canvas pixels. Safe range: [50, 1350].' },
             y: { type: 'number', description: 'Y position in canvas pixels. Safe range: [50, 650]. Y is inverted: smaller = higher on screen.' },
@@ -111,8 +111,18 @@ export const DRAW_TOOL_DEFINITION = {
             label: { type: 'string', description: 'Text label for vector_arrow or number_line elements.' },
             style: { type: 'string' },
             // function_curve fields
-            expression: { type: 'string', description: 'Math expression for function_curve. Use clean notation: "sin(x)", "x^2+1", "1/x", "exp(-x^2/2)", "sqrt(x)". Preferred over points.' },
+            expression: { type: 'string', description: 'Math expression for function_curve (variable: x) or polar_plot (variable: theta). Use clean notation: "sin(x)", "x^2+1", "1 + cos(theta)". Preferred over points.' },
             points: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] }, description: 'Pre-sampled points [{x,y},...] in math coordinates. Fallback when expression is too complex.' },
+            // parametric_curve fields
+            tMin: { type: 'number', description: 'Parameter range start for parametric_curve. Example: 0.' },
+            tMax: { type: 'number', description: 'Parameter range end for parametric_curve. Example: 6.28 for 2π.' },
+            xExpression: { type: 'string', description: 'x(t) expression for parametric_curve. Variable is "t". Example: "cos(t)".' },
+            yExpression: { type: 'string', description: 'y(t) expression for parametric_curve. Variable is "t". Example: "sin(t)".' },
+            steps: { type: 'number', description: 'Number of sample points for parametric_curve or polar_plot. Default: 200.' },
+            // polar_plot fields
+            thetaMin: { type: 'number', description: 'Start angle for polar_plot in radians. Default: 0.' },
+            thetaMax: { type: 'number', description: 'End angle for polar_plot in radians. Default: 6.28 (2π).' },
+            showPolarGrid: { type: 'boolean', description: 'Show polar grid (r-circles and θ-lines) for polar_plot. Default: true.' },
             // circle_with_radius fields
             r: { type: 'number' },
             showCenter: { type: 'boolean' },
@@ -294,12 +304,15 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Scenario | Tool | Key Elements | Why |
 |---|---|---|---|
 | Plot math functions (sin, cos, x²) | emit_draw_batch | cartesian_axes + function_curve | Pixel-exact axes with auto-ticks + curve overlay |
+| Parametric curves (Lissajous, spirals) | emit_draw_batch | cartesian_axes + parametric_curve | Curves defined by x(t), y(t) with auto-sampling |
+| Polar curves (roses, cardioids) | emit_draw_batch | polar_plot | r(θ) curves with optional polar grid |
 | Vectors, forces, velocity diagrams | emit_draw_batch | vector_arrow (+ line for components) | Precise dx/dy control and labeled arrows |
 | Number lines, intervals, inequalities | emit_draw_batch | number_line (+ ellipse for points) | Horizontal line with domain bounds |
 | Unit circle, geometric constructions | emit_draw_batch | circle_with_radius + line + latex | Circle with labeled radius and center dot |
 | Equation derivation, proof steps | emit_semantic_batch | template: "equation_derivation_vertical" | Auto-layout handles spacing and alignment |
 | Labeled conceptual diagram (flow, comparison) | emit_semantic_batch | template: "freeform_semantic" or "diagram" | Template-driven positioning |
 | Matrix equations, determinants | emit_semantic_batch | equation_stack with pmatrix | Auto-aligned multi-line equations |
+| Node-and-edge graphs (DFA, networks, state machines) | emit_semantic_batch | template: "graph_diagram" | Auto-layout with node shapes and directed/undirected edges |
 | Complex multi-panel text-based diagram | emit_graph_script | graph + node + edge DSL | Rich DSL with references and connections |
 
 - You may alternate text and drawings multiple times in a single turn
@@ -373,6 +386,8 @@ For graphs with cartesian_axes, use these defaults:
 | number_line | x, y, length, min, max, label | Horizontal number line |
 | vector_arrow | x, y, dx, dy, label, color | Directed vector with label |
 | function_curve | x, y, width, height, xRange, yRange, points, expression, label | Plot a math function as a curve |
+| parametric_curve | x, y, width, height, xRange, yRange, tMin, tMax, xExpression, yExpression, steps, label | Parametric curve x(t), y(t) |
+| polar_plot | cx, cy, radius, expression, thetaMin, thetaMax, steps, showPolarGrid, label | Polar curve r(θ) with optional grid |
 | matrix_bracket | x, y, rows[][], bracketStyle ('[]', '()', '||', '{}') | Matrix notation with brackets |
 | angle_arc | x, y, radius, startAngle, endAngle, label | Angle annotation arc |
 | integral_region | x, y, width, height, xRange, yRange, topPoints[] | Shaded area under curve |
@@ -408,6 +423,25 @@ Recommended ranges: sin/cos → xRange [-6.28,6.28] yRange [-1.5,1.5]; x^2 → x
 ### circle_with_radius Details
 Draws a circle centered at (cx, cy) with radius r pixels. Shows center dot (showCenter, default true), radius line (showRadius, default true) at radiusAngle radians (default π/4). Use label for annotation (e.g. "r = 5").
 
+### parametric_curve Details
+Plot a parametric curve x(t), y(t) inside a bounding box (x, y, width, height).
+Use \`xExpression\` and \`yExpression\` with variable \`t\`:
+  - Circle: xExpression="cos(t)", yExpression="sin(t)", tMin=0, tMax=6.28
+  - Lissajous: xExpression="sin(3*t)", yExpression="sin(2*t)", tMin=0, tMax=6.28
+  - Spiral: xExpression="t*cos(t)", yExpression="t*sin(t)", tMin=0, tMax=12.56
+xRange/yRange define the math viewport for coordinate mapping.
+steps controls sample density (default 200). Pair with cartesian_axes for labeled axes.
+
+### polar_plot Details
+Plot a polar curve r(θ) centered at (cx, cy) with scale \`radius\` pixels per unit.
+Use \`expression\` with variable \`theta\`:
+  - Rose: expression="cos(2*theta)"
+  - Cardioid: expression="1 + cos(theta)"
+  - Limaçon: expression="1 + 2*cos(theta)"
+thetaMin/thetaMax control the angle range (default 0 to 2π).
+showPolarGrid (default true) adds dashed r-circles and θ-lines.
+steps controls sample density (default 200).
+
 ### triangle_with_angles Details
 Draws a triangle from 3 vertices [{x,y,label},...]. Shows angle arcs at each vertex (showAngles, default true) and side length labels (showSides, default true). Use sideLabels ["a","b","c"] and angleLabels ["α","β","γ"] for custom annotations. Vertex labels are placed outside the triangle.
 
@@ -440,9 +474,51 @@ Draws a triangle from 3 vertices [{x,y,label},...]. Shows angle arcs at each ver
 ## SEMANTIC BATCH RULES
 - Budget per batch: ≤2 diagram panels, ≤1 equation_stack, ≤5 equation lines
 - Captions ≤6 words
-- Templates: freeform_semantic (default), equation_derivation_vertical, jacobian_mapping_2panel
+- Templates: freeform_semantic (default), equation_derivation_vertical, jacobian_mapping_2panel, graph_diagram
 - Region hints: left, right, center, bottom, auto
 - Equation roles: step (size 24), result (size 28, boxed), note (size 20)
+
+## GRAPH DIAGRAM TEMPLATE (emit_semantic_batch, template: "graph_diagram")
+Use this template for node-and-edge diagrams: DFAs, directed/undirected graphs, network topologies, state machines.
+Blocks are \`kind: "node"\` and \`kind: "edge"\`. Nodes auto-layout in a circle (≤6) or grid (7+) if no x/y given.
+
+Node shapes: "circle" (default), "rect", "square", "diamond", "double_circle" (for DFA accept states).
+Edge options: \`directed\` (default true), \`curved\` (Bézier arc to the right), self-loop (from===to).
+
+Example — 3-state DFA accepting strings ending in "ab":
+\`\`\`json
+{"batch_id":"dfa-ab","template":"graph_diagram","intent":"teach",
+  "blocks":[
+    {"kind":"node","id":"q0","label":"q₀","shape":"circle","x":200,"y":350},
+    {"kind":"node","id":"q1","label":"q₁","shape":"circle","x":500,"y":350},
+    {"kind":"node","id":"q2","label":"q₂","shape":"double_circle","x":800,"y":350},
+    {"kind":"edge","id":"e0","from":"q0","to":"q1","label":"a","directed":true},
+    {"kind":"edge","id":"e1","from":"q1","to":"q2","label":"b","directed":true},
+    {"kind":"edge","id":"e2","from":"q1","to":"q1","label":"a","directed":true},
+    {"kind":"edge","id":"e3","from":"q0","to":"q0","label":"b","directed":true},
+    {"kind":"edge","id":"e4","from":"q2","to":"q0","label":"b","directed":true}
+  ]
+}
+\`\`\`
+
+Example — 4-node directed graph (algorithms/discrete math):
+\`\`\`json
+{"batch_id":"digraph-4","template":"graph_diagram",
+  "blocks":[
+    {"kind":"node","id":"A","label":"A","x":300,"y":200},
+    {"kind":"node","id":"B","label":"B","x":600,"y":200},
+    {"kind":"node","id":"C","label":"C","x":600,"y":450},
+    {"kind":"node","id":"D","label":"D","x":300,"y":450},
+    {"kind":"edge","id":"ab","from":"A","to":"B","label":"3"},
+    {"kind":"edge","id":"bc","from":"B","to":"C","label":"2"},
+    {"kind":"edge","id":"cd","from":"C","to":"D","label":"5"},
+    {"kind":"edge","id":"ad","from":"A","to":"D","label":"7"},
+    {"kind":"edge","id":"ac","from":"A","to":"C","label":"4","curved":true}
+  ]
+}
+\`\`\`
+
+When to use graph_diagram vs emit_draw_batch: Use graph_diagram when you need node+edge structure with labels and auto-layout. Use emit_draw_batch with raw arrows/ellipses when you need pixel-exact control or non-graph visuals.
 
 ## WHITEBOARD PRINCIPLES
 - Whiteboard is a visual aid, not a transcript — keep it sparse and diagram-first

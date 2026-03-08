@@ -696,6 +696,88 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // parametric_curve: pass through with validation (lowered later)
+    if (type === 'parametric_curve') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      const tMin = asNumber(raw.tMin);
+      const tMax = asNumber(raw.tMax);
+      const xExpression = asString(raw.xExpression);
+      const yExpression = asString(raw.yExpression);
+      if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange || tMin == null || tMax == null || !xExpression || !yExpression) {
+        warnings.push(`ParametricCurve ${id} has invalid coordinates, ranges, or expressions`);
+        continue;
+      }
+      const xr0 = asNumber(rawXRange[0]);
+      const xr1 = asNumber(rawXRange[1]);
+      const yr0 = asNumber(rawYRange[0]);
+      const yr1 = asNumber(rawYRange[1]);
+      if (xr0 == null || xr1 == null || yr0 == null || yr1 == null) {
+        warnings.push(`ParametricCurve ${id} has invalid range values`);
+        continue;
+      }
+      const steps = asNumber(raw.steps) ?? undefined;
+      const label = asString(raw.label) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        xRange: [xr0, xr1] as [number, number],
+        yRange: [yr0, yr1] as [number, number],
+        tMin,
+        tMax,
+        xExpression,
+        yExpression,
+        ...(steps ? { steps } : {}),
+        ...(label ? { label } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // polar_plot: pass through with validation (lowered later)
+    if (type === 'polar_plot') {
+      const cx = asNumber(raw.cx);
+      const cy = asNumber(raw.cy);
+      const radius = asNumber(raw.radius);
+      const expression = asString(raw.expression);
+      if (cx == null || cy == null || radius == null || !expression) {
+        warnings.push(`PolarPlot ${id} has invalid center, radius, or expression`);
+        continue;
+      }
+      const thetaMin = asNumber(raw.thetaMin) ?? undefined;
+      const thetaMax = asNumber(raw.thetaMax) ?? undefined;
+      const steps = asNumber(raw.steps) ?? undefined;
+      const showPolarGrid = typeof raw.showPolarGrid === 'boolean' ? raw.showPolarGrid : undefined;
+      const label = asString(raw.label) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        cx,
+        cy,
+        radius: Math.max(1, Math.abs(radius)),
+        expression,
+        ...(thetaMin != null ? { thetaMin } : {}),
+        ...(thetaMax != null ? { thetaMax } : {}),
+        ...(steps ? { steps } : {}),
+        ...(showPolarGrid != null ? { showPolarGrid } : {}),
+        ...(label ? { label } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     // angle_arc: pass through with validation
     if (type === 'angle_arc') {
       const x = asNumber(raw.x);
@@ -888,7 +970,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption'] as const;
 

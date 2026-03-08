@@ -54,7 +54,7 @@ function makeFetchResponse(body: ReadableStream<Uint8Array>, status = 200): Resp
   } as unknown as Response;
 }
 
-function baseArgs(handlers: { onEvent: (e: unknown) => void; onError: (msg: string) => void }) {
+function baseArgs(handlers: { onEvent: (e: unknown) => void; onError: (msg: string, meta?: { code: string; retryable: boolean }) => void }) {
   return {
     sessionId: 'test-session',
     userMessage: 'hello',
@@ -163,7 +163,7 @@ describe('useAgentStream', () => {
       await result.current.run(baseArgs({ onEvent, onError }));
     });
 
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('500'));
+    expect(onError).toHaveBeenCalledWith('Server error — please try again', expect.objectContaining({ code: 'http_500' }));
     expect(onEvent).not.toHaveBeenCalled();
   });
 
@@ -194,7 +194,7 @@ describe('useAgentStream', () => {
       await result.current.run(baseArgs({ onEvent, onError }));
     });
 
-    expect(onError).toHaveBeenCalledWith('Invalid SSE JSON payload received');
+    expect(onError).toHaveBeenCalledWith('Connection was interrupted — please try again', expect.objectContaining({ code: 'PARSE_ERROR' }));
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'turn.done' }));
   });
 
@@ -209,7 +209,7 @@ describe('useAgentStream', () => {
       await result.current.run(baseArgs({ onEvent, onError }));
     });
 
-    expect(onError).toHaveBeenCalledWith('Network failure');
+    expect(onError).toHaveBeenCalledWith('Network error — please check your connection', expect.objectContaining({ code: 'NETWORK_ERROR' }));
     expect(onEvent).not.toHaveBeenCalled();
   });
 
@@ -304,7 +304,8 @@ describe('useAgentStream error paths', () => {
     );
 
     expect(onError).toHaveBeenCalledWith(
-      'Stream request failed with status 500',
+      'Server error — please try again',
+      expect.objectContaining({ code: 'http_500' }),
     );
     expect(onEvent).not.toHaveBeenCalled();
   });
@@ -326,7 +327,7 @@ describe('useAgentStream error paths', () => {
       result.current.run(makeArgs({ onEvent, onError })),
     );
 
-    expect(onError).toHaveBeenCalledWith('Invalid SSE JSON payload received');
+    expect(onError).toHaveBeenCalledWith('Connection was interrupted — please try again', expect.objectContaining({ code: 'PARSE_ERROR' }));
     expect(onEvent).not.toHaveBeenCalled();
   });
 
@@ -342,7 +343,7 @@ describe('useAgentStream error paths', () => {
       result.current.run(makeArgs({ onError })),
     );
 
-    expect(onError).toHaveBeenCalledWith('Failed to fetch');
+    expect(onError).toHaveBeenCalledWith('Network error — please check your connection', expect.objectContaining({ code: 'NETWORK_ERROR' }));
   });
 
   it('AbortError does NOT call onError', async () => {
@@ -419,7 +420,7 @@ describe('useAgentStream (lane-07 extended)', () => {
       }),
     );
 
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('500'));
+    expect(onError).toHaveBeenCalledWith('Server error — please try again', expect.objectContaining({ code: 'http_500' }));
     expect(onEvent).not.toHaveBeenCalled();
   });
 
@@ -517,7 +518,7 @@ describe('useAgentStream (lane-07 extended)', () => {
     );
 
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('Invalid SSE JSON'));
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('interrupted'), expect.objectContaining({ code: 'PARSE_ERROR' }));
     expect(onEvent).toHaveBeenCalledTimes(1);
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'turn.done' }),
@@ -565,7 +566,7 @@ describe('useAgentStream (lane-07 extended)', () => {
       }),
     );
 
-    expect(onError).toHaveBeenCalledWith('Failed to fetch');
+    expect(onError).toHaveBeenCalledWith('Network error — please check your connection', expect.objectContaining({ code: 'NETWORK_ERROR' }));
     expect(onEvent).not.toHaveBeenCalled();
   });
 
@@ -584,7 +585,7 @@ describe('useAgentStream (lane-07 extended)', () => {
         maxRetries: 0,
       }),
     );
-    expect(onError1).toHaveBeenCalledWith('Network down');
+    expect(onError1).toHaveBeenCalledWith('Network error — please check your connection', expect.objectContaining({ code: 'NETWORK_ERROR' }));
 
     const body2 = chunkedStream([
       'data: {"type":"assistant.text.delta","turnId":"t1","delta":"ok"}\n\n',

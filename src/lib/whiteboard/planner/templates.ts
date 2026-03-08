@@ -21,6 +21,8 @@ const MAX_BLOCKS = 8;
 const MAX_EQUATION_LINES = 6;
 const MAX_PANEL_SHAPES = 5;
 const MAX_PANEL_CAPTIONS = 2;
+const DEFAULT_NODE_RADIUS = 30;
+const DEFAULT_NODE_SIZE = 60;
 
 function choosePreset(style: StylePreset | undefined): StylePreset {
   return style ?? 'clean_pen_sketch';
@@ -246,6 +248,7 @@ export function measureBlock(
   if (block.kind === 'equation_stack') return measureEquationStack(block, regionWidth);
   if (block.kind === 'diagram_panel') return measureDiagramPanel(block, regionWidth);
   if (block.kind === 'annotation') return measureAnnotationBlock(block, regionWidth);
+  if (block.kind === 'node' || block.kind === 'edge') return { width: DEFAULT_NODE_SIZE, height: DEFAULT_NODE_SIZE };
   return measureCaptionBlock(block, regionWidth);
 }
 
@@ -638,6 +641,12 @@ function compactSemanticBatchForLegibility(
       continue;
     }
 
+    // Pass through graph_diagram blocks (node/edge) without text compaction
+    if (block.kind === 'node' || block.kind === 'edge') {
+      compactedBlocks.push({ ...block });
+      continue;
+    }
+
     const text = compactText(block.text, 74);
     if (!text) continue;
     compactedBlocks.push({
@@ -845,7 +854,7 @@ function buildAdaptiveLayout(
   const annotationBlocks = semanticBatch.blocks
     .filter((block): block is SemanticAnnotationBlock => block.kind === 'annotation');
   const textBlocks = semanticBatch.blocks.filter(
-    (block) => block.kind !== 'diagram_panel' && block.kind !== 'annotation',
+    (block) => block.kind !== 'diagram_panel' && block.kind !== 'annotation' && block.kind !== 'node' && block.kind !== 'edge',
   );
 
   const panelPlacements = new Map<string, PanelPlacement>();
@@ -982,8 +991,9 @@ function buildAdaptiveLayout(
 // graph_diagram template — node-and-edge diagrams
 // ---------------------------------------------------------------------------
 
-const DEFAULT_NODE_RADIUS = 30;
-const DEFAULT_NODE_SIZE = 60; // width/height for rect/square/diamond
+// ---------------------------------------------------------------------------
+// graph_diagram template — node-and-edge diagrams
+// ---------------------------------------------------------------------------
 
 interface ResolvedNode {
   id: string;
@@ -1324,7 +1334,13 @@ export function planSemanticBatch(
     : compactSemanticBatchForLegibility(repaired, state.warnings);
 
   // Single adaptive planner path: no hardcoded situation templates, only semantic content + region hints.
-  if (trace) {
+  if (normalizedSemantic.template === 'graph_diagram') {
+    if (trace) {
+      trace.span('template', 'buildGraphDiagramLayout', () => { buildGraphDiagramLayout(normalizedSemantic, state); return undefined; });
+    } else {
+      buildGraphDiagramLayout(normalizedSemantic, state);
+    }
+  } else if (trace) {
     trace.span('template', 'buildAdaptiveLayout', () => { buildAdaptiveLayout(normalizedSemantic, regions, state); return undefined; });
   } else {
     buildAdaptiveLayout(normalizedSemantic, regions, state);
