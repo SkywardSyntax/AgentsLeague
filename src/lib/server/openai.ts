@@ -34,7 +34,7 @@ export const DRAW_TOOL_DEFINITION = {
   type: 'function' as const,
   name: 'emit_draw_batch',
   description:
-    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles). Use when a visual explanation helps.',
+    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, circle_with_radius, triangle_with_angles, slope_field, vector_field_2d). Use when a visual explanation helps.',
   strict: false,
   parameters: {
     type: 'object',
@@ -55,7 +55,7 @@ export const DRAW_TOOL_DEFINITION = {
             type: {
               type: 'string',
               enum: [...DRAW_ELEMENT_TYPES],
-              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits.',
+              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y.',
             },
             x: { type: 'number', description: 'X position in canvas pixels. Safe range: [50, 1350].' },
             y: { type: 'number', description: 'Y position in canvas pixels. Safe range: [50, 650]. Y is inverted: smaller = higher on screen.' },
@@ -111,7 +111,7 @@ export const DRAW_TOOL_DEFINITION = {
             label: { type: 'string', description: 'Text label for vector_arrow or number_line elements.' },
             style: { type: 'string' },
             // function_curve fields
-            expression: { type: 'string', description: 'Math expression for function_curve (variable: x) or polar_plot (variable: theta). Use clean notation: "sin(x)", "x^2+1", "1 + cos(theta)". Preferred over points.' },
+            expression: { type: 'string', description: 'Math expression for function_curve (variable: x), polar_plot (variable: theta), or slope_field (variables: x, y). Use clean notation: "sin(x)", "x^2+1", "x - y". Preferred over points.' },
             points: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] }, description: 'Pre-sampled points [{x,y},...] in math coordinates. Fallback when expression is too complex.' },
             // parametric_curve fields
             tMin: { type: 'number', description: 'Parameter range start for parametric_curve. Example: 0.' },
@@ -134,6 +134,16 @@ export const DRAW_TOOL_DEFINITION = {
             showSides: { type: 'boolean' },
             sideLabels: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 3 },
             angleLabels: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 3 },
+            // slope_field fields
+            gridRows: { type: 'number', description: 'Number of grid rows for slope_field (default 12) or vector_field_2d (default 8).' },
+            gridCols: { type: 'number', description: 'Number of grid columns for slope_field (default 16) or vector_field_2d (default 10).' },
+            strokeColor: { type: 'string', description: 'Stroke color for slope_field or vector_field_2d ticks/arrows.' },
+            strokeWidth: { type: 'number', description: 'Stroke width for slope_field tick marks.' },
+            solutionCurve: { type: 'object', properties: { x0: { type: 'number' }, y0: { type: 'number' }, steps: { type: 'number' } }, required: ['x0', 'y0'], description: 'Initial condition for Euler method solution curve on slope_field.' },
+            // vector_field_2d fields
+            Px: { type: 'string', description: 'x-component expression F_x(x,y) for vector_field_2d. Variables: x, y. Example: "-y".' },
+            Py: { type: 'string', description: 'y-component expression F_y(x,y) for vector_field_2d. Variables: x, y. Example: "x".' },
+            normalize: { type: 'boolean', description: 'If true, normalize all vector_field_2d arrows to same length. Default: false.' },
           },
           required: ['id', 'type'],
         },
@@ -306,6 +316,8 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Plot math functions (sin, cos, x²) | emit_draw_batch | cartesian_axes + function_curve | Pixel-exact axes with auto-ticks + curve overlay |
 | Parametric curves (Lissajous, spirals) | emit_draw_batch | cartesian_axes + parametric_curve | Curves defined by x(t), y(t) with auto-sampling |
 | Polar curves (roses, cardioids) | emit_draw_batch | polar_plot | r(θ) curves with optional polar grid |
+| Slope / direction fields (ODE) | emit_draw_batch | slope_field | ODE direction field dy/dx = f(x,y) with optional Euler solution |
+| 2D vector fields (flow, E&M) | emit_draw_batch | vector_field_2d | Vector field F(x,y) with arrows at grid points |
 | Vectors, forces, velocity diagrams | emit_draw_batch | vector_arrow (+ line for components) | Precise dx/dy control and labeled arrows |
 | Number lines, intervals, inequalities | emit_draw_batch | number_line (+ ellipse for points) | Horizontal line with domain bounds |
 | Unit circle, geometric constructions | emit_draw_batch | circle_with_radius + line + latex | Circle with labeled radius and center dot |
@@ -323,6 +335,8 @@ You are an interactive teaching agent for a chat + whiteboard product.
 - ALWAYS pair cartesian_axes with function_curve at the same x, y, width, height
 
 ## CANVAS COORDINATE GUIDE
+When you draw multiple elements in one batch, ALL elements share the same canvas coordinate space (0,0 is top-left, max ~1400×700). CartesianAxes handles its own coordinate mapping internally — you specify the math range (xRange/yRange), not pixel positions for data points within axes.
+
 | Property | Value |
 |---|---|
 | Canvas size | ~1400 × 700 px |
@@ -399,6 +413,28 @@ For graphs with cartesian_axes, use these defaults:
 | triangle_with_angles | vertices[3], showAngles, showSides, sideLabels, angleLabels | Triangle with angle arcs and labels |
 | histogram | x, y, width, height, bins[{label,value,color?}], showValues, showAxes, yMax, xLabel, yLabel | Bar chart / histogram |
 | normal_distribution | x, y, width, height, mu, sigma, shadeFrom, shadeTo, shadeColor, showMeanLine, showSigmaLines, showLabels | Normal distribution bell curve |
+| slope_field | x, y, width, height, expression, xRange, yRange, gridRows, gridCols, strokeColor, solutionCurve | Direction field for ODE dy/dx = f(x,y) |
+| vector_field_2d | x, y, width, height, Px, Py, xRange, yRange, gridRows, gridCols, strokeColor, normalize | 2D vector field F(x,y) = (Px, Py) |
+
+### Quick Type Selection — what to use for common requests
+| Want to show | Use these types |
+|---|---|
+| Function graph (y = f(x)) | cartesian_axes + function_curve |
+| Area under a curve (integrals) | cartesian_axes + function_curve + integral_region |
+| Derivative / tangent at a point | cartesian_axes + function_curve + tangent_line |
+| Comparing two functions | cartesian_axes + 2× function_curve (different colors) |
+| Parametric curve (Lissajous, spiral) | cartesian_axes + parametric_curve |
+| Polar curve (rose, cardioid) | polar_plot |
+| Data distribution / bar chart | histogram (+ normal_distribution overlay if bell curve) |
+| Matrix equation | matrix_bracket (multiple, with arrow and text between) |
+| Vector field or vector addition | multiple vector_arrow elements |
+| Slope / direction field (ODE) | slope_field (optionally with solutionCurve) |
+| 2D vector field (flow, E&M) | vector_field_2d |
+| Geometric shape with angles | triangle_with_angles or lines + angle_arc |
+| Unit circle / labeled circle | circle_with_radius + angle_arc + latex labels |
+| Linear transformation | linear_transform (with matrix and basis vectors) |
+| Number line / interval | number_line (+ ellipse dots for specific points) |
+| Multi-diagram layout ("show X and Y") | Place diagrams in separate placement zones (see below) |
 
 ### cartesian_axes Details
 Place a full coordinate system. x,y = top-left of plot area. width/height = pixel size.
@@ -476,6 +512,19 @@ Example: {"type":"histogram","id":"grades","x":100,"y":50,"width":500,"height":3
 ### normal_distribution Details
 Draws a Gaussian bell curve N(μ, σ²). The curve is sampled over [μ-4σ, μ+4σ]. Use shadeFrom/shadeTo to highlight a probability region (e.g. P(X > 1)). showMeanLine (default true) adds a dashed vertical line at μ. showSigmaLines adds dashed lines at μ±σ and μ±2σ. showLabels labels those positions.
 Example: {"type":"normal_distribution","id":"bell","x":100,"y":50,"width":600,"height":300,"mu":0,"sigma":1,"shadeFrom":-1,"shadeTo":1,"shadeColor":"rgba(100,149,237,0.25)","showMeanLine":true,"showSigmaLines":true,"showLabels":true}
+
+### slope_field Details
+Draws a direction field for an ODE dy/dx = f(x,y). The \`expression\` uses variables x and y (e.g. "x - y", "sin(x)*cos(y)").
+At each grid point, a short tick mark is drawn at the angle arctan(slope). Grid density is controlled by gridRows (default 12) and gridCols (default 16).
+Add \`solutionCurve: {x0, y0, steps?}\` to overlay an Euler-method solution curve from an initial condition.
+Pair with cartesian_axes at the same position for labeled axes.
+Example: {"type":"slope_field","id":"sf1","x":100,"y":50,"width":600,"height":400,"expression":"x - y","xRange":[-3,3],"yRange":[-3,3],"solutionCurve":{"x0":0,"y0":1}}
+
+### vector_field_2d Details
+Draws a 2D vector field F(x,y) = (Px(x,y), Py(x,y)). Provide \`Px\` and \`Py\` as expressions with variables x and y.
+Arrows are drawn at grid points, scaled by magnitude. Set \`normalize: true\` for uniform arrow lengths.
+Grid density: gridRows (default 8), gridCols (default 10). Pair with cartesian_axes for labeled axes.
+Example: {"type":"vector_field_2d","id":"vf1","x":100,"y":50,"width":600,"height":400,"Px":"-y","Py":"x","xRange":[-3,3],"yRange":[-3,3],"normalize":true}
 
 ### Dos and Don'ts for Math Drawings
 ✅ DO: Use cartesian_axes for any graph with a coordinate system — it auto-generates ticks
@@ -577,6 +626,7 @@ Example:
 - Ensure blocks have clear reading order; avoid overlap
 - Do not use null for required tool fields
 - Never output markdown code fences for drawing instructions
+- Use \`colorTheme\` at the batch level to set visual style: 'default', 'dark', 'colorful', 'pastel', 'monochrome'. 'colorful' is recommended for visually appealing diagrams
 
 ## GRAPH SCRIPT DSL (emit_graph_script)
 - graph id=<id> region=<left|right|center|auto> title="..." axes=<xLabel>,<yLabel>
@@ -827,4 +877,32 @@ BAD — curve and axes show different coordinate spaces:
 {"id":"curve","type":"function_curve","x":400,"y":100,"width":600,"height":400,"xRange":[-10,10],"yRange":[-10,10],"expression":"sin(x)"}
 \`\`\`
 Why wrong: Axes show [-5,5] but curve is plotted in [-10,10]. The curve will appear squished/shifted relative to the grid.
-FIX: xRange and yRange MUST be identical between paired cartesian_axes and function_curve elements.`;
+FIX: xRange and yRange MUST be identical between paired cartesian_axes and function_curve elements.
+
+### ❌ Mistake 7: function_curve without cartesian_axes in the same batch
+BAD — curve has no axes to provide context:
+\`\`\`json
+{"batch_id":"lonely-curve","elements":[
+  {"id":"curve","type":"function_curve","x":400,"y":100,"width":600,"height":400,"xRange":[-5,5],"yRange":[-1,25],"expression":"x^2"}
+]}
+\`\`\`
+Why wrong: No cartesian_axes element in the batch. The curve renders but readers cannot interpret values without tick marks, labels, or gridlines.
+FIX: Always create cartesian_axes FIRST, then add function_curve in the same batch with matching position and ranges.
+
+### ❌ Mistake 8: Pixel coordinates outside canvas bounds
+BAD — elements placed beyond visible area:
+\`\`\`json
+{"id":"far-away","type":"text","x":1500,"y":800,"text":"Can't see me","size":16}
+\`\`\`
+Why wrong: x=1500 > 1400 and y=800 > 700. The element is completely off-screen.
+FIX: Keep all x/y pixel values within the canvas — x ∈ [50, 1350], y ∈ [50, 650].
+
+### ❌ Mistake 9: Too many text elements cluttering the canvas
+BAD — 12 text labels crammed into one batch:
+Why wrong: More than 8 text/latex elements in a single batch makes the canvas unreadable and cluttered.
+FIX: Limit text elements to ≤ 8 per batch. If you need more labels, split across multiple batches or use a semantic template.
+
+### ❌ Mistake 10: Multi-diagram request drawn in one overlapping region
+BAD — "show sine and cosine" drawn on top of each other without separation:
+Why wrong: When asked to show multiple distinct diagrams, placing them all at the same coordinates creates an unreadable mess.
+FIX: For multi-diagram requests ("show me X and Y"), use separate placement zones — e.g. left half (x: 80–620) for diagram A, right half (x: 720–1320) for diagram B. Or use top/bottom split.`;

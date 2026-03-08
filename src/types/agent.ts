@@ -427,6 +427,54 @@ export interface NormalDistributionCurveElement extends BaseDrawElement {
   style?: StylePreset;
 }
 
+export interface SlopeFieldElement extends BaseDrawElement {
+  type: 'slope_field';
+  /** Top-left corner of the plot area */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** The ODE: dy/dx = expression(x, y), e.g. "x - y", "sin(x)*cos(y)" */
+  expression: string;
+  /** Math-domain X bounds */
+  xRange: [number, number];
+  /** Math-domain Y bounds */
+  yRange: [number, number];
+  /** Number of grid rows (default 12) */
+  gridRows?: number;
+  /** Number of grid columns (default 16) */
+  gridCols?: number;
+  strokeColor?: string;
+  /** Tick mark stroke width */
+  strokeWidth?: number;
+  /** Optional solution curve traced via Euler's method */
+  solutionCurve?: { x0: number; y0: number; steps?: number };
+}
+
+export interface VectorField2dElement extends BaseDrawElement {
+  type: 'vector_field_2d';
+  /** Top-left corner of the plot area */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** x-component expression F_x(x,y), e.g. "-y" */
+  Px: string;
+  /** y-component expression F_y(x,y), e.g. "x" */
+  Py: string;
+  /** Math-domain X bounds */
+  xRange: [number, number];
+  /** Math-domain Y bounds */
+  yRange: [number, number];
+  /** Number of grid rows (default 8) */
+  gridRows?: number;
+  /** Number of grid columns (default 10) */
+  gridCols?: number;
+  strokeColor?: string;
+  /** If true, normalize all arrows to the same length */
+  normalize?: boolean;
+}
+
 export type DrawElement =
   | RectElement
   | EllipseElement
@@ -450,7 +498,9 @@ export type DrawElement =
   | RiemannSumElement
   | TangentLineElement
   | HistogramElement
-  | NormalDistributionCurveElement;
+  | NormalDistributionCurveElement
+  | SlopeFieldElement
+  | VectorField2dElement;
 
 /**
  * Exhaustive-check helper for the DrawElement discriminated union.

@@ -421,6 +421,7 @@ export const SUPPORTED_CONSTANTS = Object.keys(EXPR_CONSTANTS) as readonly strin
 type ExprNode =
   | { kind: 'number'; value: number }
   | { kind: 'var' }
+  | { kind: 'var_y' }
   | { kind: 'unary'; op: '-'; arg: ExprNode }
   | { kind: 'binary'; op: '+' | '-' | '*' | '/' | '^'; left: ExprNode; right: ExprNode }
   | { kind: 'call'; fn: (v: number) => number; arg: ExprNode }
@@ -587,6 +588,7 @@ function buildExprAST(tokens: string[]): ExprNode | null {
     }
     const lower = tok.toLowerCase();
     if (lower === 'x' || lower === 't') { advance(); return { kind: 'var' }; }
+    if (lower === 'y') { advance(); return { kind: 'var_y' }; }
     const c = EXPR_CONSTANTS[lower];
     if (c !== undefined) { advance(); return { kind: 'number', value: c }; }
     return null;
@@ -600,6 +602,7 @@ function evalExprNode(node: ExprNode, x: number): number {
   switch (node.kind) {
     case 'number': return node.value;
     case 'var': return x;
+    case 'var_y': return x; // single-variable mode: y maps to x
     case 'unary': return -evalExprNode(node.arg, x);
     case 'call': return node.fn(evalExprNode(node.arg, x));
     case 'call2': return node.fn(evalExprNode(node.left, x), evalExprNode(node.right, x));
@@ -650,7 +653,7 @@ export function validateExpression(expr: string): { valid: boolean; error?: stri
   for (const tok of tokens) {
     if (/^[a-zA-Z_]/.test(tok)) {
       const l = tok.toLowerCase();
-      if (l !== 'x' && l !== 't'
+      if (l !== 'x' && l !== 't' && l !== 'y'
         && EXPR_CONSTANTS[l] === undefined
         && EXPR_FUNCTIONS[l] === undefined
         && EXPR_FUNCTIONS_2ARG[l] === undefined) {
@@ -703,6 +706,52 @@ export function parseMathExpression(expr: string): ((x: number) => number) | nul
   const ast = buildExprAST(withImplicitMul);
   if (!ast) return null;
   return (x: number) => evalExprNode(ast, x);
+}
+
+// ---------------------------------------------------------------------------
+// Two-variable expression evaluator for slope fields and vector fields
+// ---------------------------------------------------------------------------
+
+function evalExprNode2Var(node: ExprNode, x: number, y: number): number {
+  switch (node.kind) {
+    case 'number': return node.value;
+    case 'var': return x;
+    case 'var_y': return y;
+    case 'unary': return -evalExprNode2Var(node.arg, x, y);
+    case 'call': return node.fn(evalExprNode2Var(node.arg, x, y));
+    case 'call2': return node.fn(evalExprNode2Var(node.left, x, y), evalExprNode2Var(node.right, x, y));
+    case 'binary': {
+      const l = evalExprNode2Var(node.left, x, y);
+      const r = evalExprNode2Var(node.right, x, y);
+      switch (node.op) {
+        case '+': return l + r;
+        case '-': return l - r;
+        case '*': return l * r;
+        case '/': return l / r;
+        case '^': return Math.pow(l, r);
+      }
+    }
+  }
+}
+
+/**
+ * Parse a math expression with two variables (x, y) into a callable function.
+ * Used for slope fields (dy/dx = f(x,y)) and vector field components.
+ */
+export function parseMathExpression2Var(expr: string): ((x: number, y: number) => number) | null {
+  const trimmed = expr.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  const bareFn = EXPR_FUNCTIONS[lower];
+  if (bareFn && !trimmed.includes('(')) {
+    return (x: number) => bareFn(x);
+  }
+  const tokens = tokenizeExpr(trimmed);
+  if (tokens.length === 0) return null;
+  const withImplicitMul = insertImplicitMul(tokens);
+  const ast = buildExprAST(withImplicitMul);
+  if (!ast) return null;
+  return (x: number, y: number) => evalExprNode2Var(ast, x, y);
 }
 
 // ---------------------------------------------------------------------------

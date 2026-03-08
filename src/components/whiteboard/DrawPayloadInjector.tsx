@@ -778,6 +778,157 @@ const TEMPLATES: Record<string, MathTemplate> = {
       return { batch_id: batchId('probtree'), style_preset: 'clean_pen_sketch' as const, elements };
     },
   },
+
+  /* ── Calculus: Mean Value Theorem ── */
+  mvt: {
+    label: 'Calculus: Mean Value Theorem',
+    category: 'Calculus',
+    description: 'MVT: chord, parallel tangent, and labeled points',
+    build: () => {
+      const elements: DrawElement[] = [
+        // Axes and curve f(x) = x³ − 3x + 2 on [−1, 3]
+        { id: uid('mvt-ax'), type: 'cartesian_axes', x: 100, y: 60, width: 600, height: 420, xRange: [-1.5, 3.5] as [number, number], yRange: [-2, 10] as [number, number], xLabel: 'x', yLabel: 'y', gridlines: true },
+        { id: uid('mvt-fn'), type: 'function_curve', x: 100, y: 60, width: 600, height: 420, xRange: [-1.5, 3.5] as [number, number], yRange: [-2, 10] as [number, number], expression: 'x^3 - 3*x + 2', color: '#2563eb' },
+        // Chord from f(−1) = 4 to f(3) = 20 mapped to canvas
+        // f(-1) = -1 - (-3) + 2 = 4, f(3) = 27 - 9 + 2 = 20
+        // canvas x for -1: 100 + ((-1+1.5)/5)*600 = 160
+        // canvas y for 4: 60 + ((10-4)/12)*420 = 270
+        // canvas x for 3: 100 + ((3+1.5)/5)*600 = 640
+        // canvas y for 20: off range, clip to f(2.5)=11.125 for visual
+        // Use a = 0, b = 2 instead for nicer MVT demo:
+        // f(0)=2, f(2)=8-6+2=4, slope=(4-2)/2=1, f'(c)=3c²-3=1 → c²=4/3 → c≈1.155
+        // canvas x for 0: 100 + ((0+1.5)/5)*600 = 280
+        // canvas y for 2: 60 + ((10-2)/12)*420 = 340
+        // canvas x for 2: 100 + ((2+1.5)/5)*600 = 520
+        // canvas y for 4: 60 + ((10-4)/12)*420 = 270
+        { id: uid('mvt-chord'), type: 'line', from: { x: 280, y: 340 }, to: { x: 520, y: 270 }, color: '#9333ea', stroke_width: 2 },
+        // Point dots at a and b
+        { id: uid('mvt-pta'), type: 'ellipse', cx: 280, cy: 340, rx: 5, ry: 5, color: '#9333ea' },
+        { id: uid('mvt-ptb'), type: 'ellipse', cx: 520, cy: 270, rx: 5, ry: 5, color: '#9333ea' },
+        // Tangent line at c ≈ 1.155, f(c) ≈ 1.155³ − 3(1.155) + 2 ≈ 0.075
+        // Actually f(c) = c³ - 3c + 2 = 1.54 - 3.47 + 2 ≈ 0.075 ... let's use c=1.15
+        // canvas x for 1.15: 100 + ((1.15+1.5)/5)*600 = 418
+        // canvas y for f(1.15): f(1.15) ≈ 1.52 - 3.45 + 2 = 0.07 → 60 + ((10-0.07)/12)*420 = 408
+        // Tangent with slope 1, extend ±100px in x
+        // Δy in canvas for Δx=100: slope_canvas = -slope_math * (420/12) / (600/5) = -1 * 35/120 = -0.29
+        { id: uid('mvt-tan'), type: 'line', from: { x: 318, y: 437 }, to: { x: 518, y: 379 }, color: '#dc2626', stroke_width: 2 },
+        { id: uid('mvt-ptc'), type: 'ellipse', cx: 418, cy: 408, rx: 5, ry: 5, color: '#dc2626' },
+        // Labels
+        { id: uid('mvt-la'), type: 'text', x: 255, y: 355, text: 'a=0', size: 14, color: '#9333ea' },
+        { id: uid('mvt-lb'), type: 'text', x: 525, y: 258, text: 'b=2', size: 14, color: '#9333ea' },
+        { id: uid('mvt-lc'), type: 'latex', x: 425, y: 418, tex: 'c \\approx 1.15', fontSize: 14, color: '#dc2626' },
+        { id: uid('mvt-title'), type: 'latex', x: 780, y: 80, tex: '\\text{Mean Value Theorem}', fontSize: 22, color: '#111827' },
+        { id: uid('mvt-eq'), type: 'latex', x: 780, y: 130, tex: "f'(c) = \\frac{f(b)-f(a)}{b-a}", fontSize: 18, displayMode: true, color: '#111827' },
+        { id: uid('mvt-fn-lbl'), type: 'latex', x: 780, y: 200, tex: 'f(x) = x^3 - 3x + 2', fontSize: 16, color: '#2563eb' },
+        { id: uid('mvt-slope'), type: 'latex', x: 780, y: 240, tex: '\\text{slope} = 1', fontSize: 16, color: '#dc2626' },
+        { id: uid('mvt-legend1'), type: 'text', x: 780, y: 290, text: '— Chord (purple)', size: 14, color: '#9333ea' },
+        { id: uid('mvt-legend2'), type: 'text', x: 780, y: 314, text: '— Tangent (red)', size: 14, color: '#dc2626' },
+      ];
+      return { batch_id: batchId('mvt'), style_preset: 'blueprint_neat' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Linear Algebra: Eigenvalue Demo ── */
+  eigenvalue: {
+    label: 'Linear Algebra: Eigenvalue Demo',
+    category: 'Linear Algebra',
+    description: 'Matrix with two eigenvectors and annotations',
+    build: () => {
+      const elements: DrawElement[] = [
+        // Matrix A = [[2, 1], [1, 2]]
+        // Eigenvalues: λ₁ = 3, λ₂ = 1
+        // Eigenvector for λ₁=3: [1,1], for λ₂=1: [1,-1]
+        { id: uid('eig-mat'), type: 'matrix_bracket', x: 120, y: 100, rows: '2 1; 1 2' as unknown as string[][], bracketStyle: '[]' },
+        { id: uid('eig-a'), type: 'latex', x: 80, y: 80, tex: 'A =', fontSize: 22, color: '#111827' },
+        // Eigenvector visualization — origin at center of right half
+        // v₁ = [1,1] → direction (1,1): arrow from origin going right-down
+        // v₂ = [1,-1] → direction (1,-1): arrow from origin going right-up
+        // Origin point
+        { id: uid('eig-origin'), type: 'ellipse', cx: 750, cy: 350, rx: 5, ry: 5, color: '#111827' },
+        // v₁ eigenvector: (1,1) normalized, scaled to 150px. dx=106, dy=106 (down = positive canvas y)
+        { id: uid('eig-v1'), type: 'vector_arrow', x: 750, y: 350, dx: 106, dy: 106, label: 'v₁', color: '#2563eb' },
+        // Av₁ = 3v₁: same direction, longer. dx=180, dy=180
+        { id: uid('eig-av1'), type: 'vector_arrow', x: 750, y: 350, dx: 180, dy: 180, label: 'Av₁ = 3v₁', color: '#60a5fa' },
+        // v₂ eigenvector: (1,-1) normalized, scaled to 150px. dx=106, dy=-106
+        { id: uid('eig-v2'), type: 'vector_arrow', x: 750, y: 350, dx: 106, dy: -106, label: 'v₂', color: '#dc2626' },
+        // Av₂ = 1·v₂: same direction, same length. dx=106, dy=-106
+        { id: uid('eig-av2'), type: 'vector_arrow', x: 750, y: 350, dx: 106, dy: -106, label: 'Av₂ = v₂', color: '#f87171' },
+        // Annotations
+        { id: uid('eig-title'), type: 'latex', x: 80, y: 240, tex: '\\text{Eigenvalues \\& Eigenvectors}', fontSize: 20, color: '#111827' },
+        { id: uid('eig-l1'), type: 'latex', x: 80, y: 290, tex: '\\lambda_1 = 3, \\quad v_1 = \\begin{pmatrix} 1 \\\\ 1 \\end{pmatrix}', fontSize: 16, color: '#2563eb' },
+        { id: uid('eig-l2'), type: 'latex', x: 80, y: 340, tex: '\\lambda_2 = 1, \\quad v_2 = \\begin{pmatrix} 1 \\\\ -1 \\end{pmatrix}', fontSize: 16, color: '#dc2626' },
+        { id: uid('eig-note'), type: 'latex', x: 80, y: 400, tex: 'Av = \\lambda v', fontSize: 18, displayMode: true, color: '#111827' },
+        { id: uid('eig-exp'), type: 'text', x: 80, y: 460, text: 'Eigenvectors only scale — they don\'t rotate.', size: 14, color: '#6b7280' },
+      ];
+      return { batch_id: batchId('eigenvalue'), style_preset: 'mathematical' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Stats: Central Limit Theorem ── */
+  clt: {
+    label: 'Stats: Central Limit Theorem',
+    category: 'Statistics',
+    description: '3 histograms showing CLT convergence (n=1, n=5, n=30)',
+    build: () => {
+      const elements: DrawElement[] = [
+        // Title
+        { id: uid('clt-title'), type: 'latex', x: 400, y: 55, tex: '\\text{Central Limit Theorem: } \\bar{X}_n \\to N(\\mu,\\, \\sigma^2/n)', fontSize: 20, color: '#111827' },
+        // Three histograms side by side showing sampling distribution
+        // of sample mean from uniform distribution as n increases
+
+        // Histogram 1: n=1 (uniform-ish)
+        { id: uid('clt-h1'), type: 'histogram', x: 80, y: 120, width: 360, height: 240,
+          bins: [
+            { label: '1', value: 10, color: '#f87171' },
+            { label: '2', value: 11, color: '#f87171' },
+            { label: '3', value: 9, color: '#f87171' },
+            { label: '4', value: 10, color: '#f87171' },
+            { label: '5', value: 12, color: '#f87171' },
+            { label: '6', value: 10, color: '#f87171' },
+          ] as Array<{ label: string; value: number; color?: string }>,
+          showValues: true, showAxes: true, xLabel: 'Value', yLabel: 'Freq' },
+        { id: uid('clt-l1'), type: 'text', x: 180, y: 375, text: 'n = 1 (Uniform)', size: 15, color: '#dc2626' },
+
+        // Histogram 2: n=5 (slightly bell-shaped)
+        { id: uid('clt-h2'), type: 'histogram', x: 500, y: 120, width: 360, height: 240,
+          bins: [
+            { label: '1.5', value: 3, color: '#60a5fa' },
+            { label: '2.0', value: 7, color: '#60a5fa' },
+            { label: '2.5', value: 14, color: '#60a5fa' },
+            { label: '3.0', value: 18, color: '#60a5fa' },
+            { label: '3.5', value: 20, color: '#60a5fa' },
+            { label: '4.0', value: 15, color: '#60a5fa' },
+            { label: '4.5', value: 8, color: '#60a5fa' },
+            { label: '5.0', value: 3, color: '#60a5fa' },
+          ] as Array<{ label: string; value: number; color?: string }>,
+          showValues: true, showAxes: true, xLabel: 'Mean', yLabel: 'Freq' },
+        { id: uid('clt-l2'), type: 'text', x: 600, y: 375, text: 'n = 5', size: 15, color: '#2563eb' },
+
+        // Histogram 3: n=30 (clearly normal)
+        { id: uid('clt-h3'), type: 'histogram', x: 920, y: 120, width: 360, height: 240,
+          bins: [
+            { label: '2.5', value: 2, color: '#34d399' },
+            { label: '2.8', value: 5, color: '#34d399' },
+            { label: '3.0', value: 12, color: '#34d399' },
+            { label: '3.2', value: 22, color: '#34d399' },
+            { label: '3.5', value: 28, color: '#34d399' },
+            { label: '3.8', value: 20, color: '#34d399' },
+            { label: '4.0', value: 10, color: '#34d399' },
+            { label: '4.2', value: 4, color: '#34d399' },
+          ] as Array<{ label: string; value: number; color?: string }>,
+          showValues: true, showAxes: true, xLabel: 'Mean', yLabel: 'Freq' },
+        { id: uid('clt-l3'), type: 'text', x: 1020, y: 375, text: 'n = 30', size: 15, color: '#059669' },
+
+        // Arrow showing convergence
+        { id: uid('clt-arr1'), type: 'arrow', from: { x: 450, y: 410 }, to: { x: 490, y: 410 }, color: '#6b7280', stroke_width: 2 },
+        { id: uid('clt-arr2'), type: 'arrow', from: { x: 870, y: 410 }, to: { x: 910, y: 410 }, color: '#6b7280', stroke_width: 2 },
+
+        // Bottom annotation
+        { id: uid('clt-note'), type: 'latex', x: 350, y: 440, tex: '\\text{As } n \\to \\infty, \\text{ the sampling distribution approaches } N(\\mu,\\, \\sigma^2/n)', fontSize: 16, color: '#374151' },
+      ];
+      return { batch_id: batchId('clt'), style_preset: 'blueprint_neat' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------

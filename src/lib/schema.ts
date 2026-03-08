@@ -1251,6 +1251,111 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // slope_field: pass through with validation (lowered later)
+    if (type === 'slope_field') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      const expression = asString(raw.expression);
+      if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange || !expression) {
+        warnings.push(`SlopeField ${id} has invalid coordinates, ranges, or expression`);
+        continue;
+      }
+      const xr0 = asNumber(rawXRange[0]);
+      const xr1 = asNumber(rawXRange[1]);
+      const yr0 = asNumber(rawYRange[0]);
+      const yr1 = asNumber(rawYRange[1]);
+      if (xr0 == null || xr1 == null || yr0 == null || yr1 == null) {
+        warnings.push(`SlopeField ${id} has invalid range values`);
+        continue;
+      }
+      const gridRows = asNumber(raw.gridRows) ?? undefined;
+      const gridCols = asNumber(raw.gridCols) ?? undefined;
+      const strokeColor = asString(raw.strokeColor) ?? undefined;
+      const strokeWidth = asNumber(raw.strokeWidth) ?? undefined;
+      let solutionCurve: { x0: number; y0: number; steps?: number } | undefined;
+      const rawSC = asRecord(raw.solutionCurve);
+      if (rawSC) {
+        const x0 = asNumber(rawSC.x0);
+        const y0 = asNumber(rawSC.y0);
+        if (x0 != null && y0 != null) {
+          const steps = asNumber(rawSC.steps) ?? undefined;
+          solutionCurve = { x0, y0, ...(steps != null ? { steps } : {}) };
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        xRange: [xr0, xr1] as [number, number],
+        yRange: [yr0, yr1] as [number, number],
+        expression,
+        ...(gridRows != null ? { gridRows } : {}),
+        ...(gridCols != null ? { gridCols } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(strokeWidth != null ? { strokeWidth } : {}),
+        ...(solutionCurve ? { solutionCurve } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // vector_field_2d: pass through with validation (lowered later)
+    if (type === 'vector_field_2d') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const width = asNumber(raw.width) ?? asNumber(raw.w);
+      const height = asNumber(raw.height) ?? asNumber(raw.h);
+      const rawXRange = Array.isArray(raw.xRange) ? raw.xRange : null;
+      const rawYRange = Array.isArray(raw.yRange) ? raw.yRange : null;
+      const Px = asString(raw.Px);
+      const Py = asString(raw.Py);
+      if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange || !Px || !Py) {
+        warnings.push(`VectorField2d ${id} has invalid coordinates, ranges, or expressions`);
+        continue;
+      }
+      const xr0 = asNumber(rawXRange[0]);
+      const xr1 = asNumber(rawXRange[1]);
+      const yr0 = asNumber(rawYRange[0]);
+      const yr1 = asNumber(rawYRange[1]);
+      if (xr0 == null || xr1 == null || yr0 == null || yr1 == null) {
+        warnings.push(`VectorField2d ${id} has invalid range values`);
+        continue;
+      }
+      const gridRows = asNumber(raw.gridRows) ?? undefined;
+      const gridCols = asNumber(raw.gridCols) ?? undefined;
+      const strokeColor = asString(raw.strokeColor) ?? undefined;
+      const normalize = typeof raw.normalize === 'boolean' ? raw.normalize : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        x,
+        y,
+        width: Math.max(1, Math.abs(width)),
+        height: Math.max(1, Math.abs(height)),
+        xRange: [xr0, xr1] as [number, number],
+        yRange: [yr0, yr1] as [number, number],
+        Px,
+        Py,
+        ...(gridRows != null ? { gridRows } : {}),
+        ...(gridCols != null ? { gridCols } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(normalize != null ? { normalize } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     warnings.push(`Unsupported element type at ${idx}`);
   }
 
@@ -1274,7 +1379,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'histogram', 'normal_distribution'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch'] as const;
 

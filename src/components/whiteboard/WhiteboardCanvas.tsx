@@ -23,6 +23,8 @@ import {
   exportStrokesToSVG,
   DEFAULT_EXPORT_OPTIONS,
 } from '@/lib/whiteboard/canvas-export';
+import { computeAlignmentGuides } from '@/lib/whiteboard/alignment';
+import type { AlignGuide } from '@/lib/whiteboard/alignment';
 import { ExportButton } from '@/components/whiteboard/ExportButton';
 import { KeyboardShortcutsHelp } from '@/components/whiteboard/KeyboardShortcutsHelp';
 
@@ -276,6 +278,15 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
   const lastFrameTimeRef = useRef(0);
   const drawCallCounterRef = useRef(createDrawCallCounter());
 
+  // Alignment guides for injection batches (drawn on active canvas, cleared after animation)
+  const alignGuidesRef = useRef<AlignGuide[]>([]);
+
+  // Mouse coordinate tracking for readout display
+  const mouseCanvasRef = useRef<{ x: number; y: number } | null>(null);
+  const coordElRef = useRef<HTMLDivElement>(null);
+  // Track whether a cartesian_axes element is present for math coordinate display
+  const cartesianAxesRef = useRef<{ x: number; y: number; width: number; height: number; xRange: [number, number]; yRange: [number, number] } | null>(null);
+
   const resetCamera = useCallback(() => {
     cameraRef.current = { x: 40, y: 40, zoom: 1 };
     committedDirtyRef.current = true;
@@ -469,6 +480,11 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
               for (const s of animatedStrokes) {
                 (s as ActiveStroke & { _batchId?: string })._batchId = batch.batch_id;
               }
+
+              // Compute alignment guides for injection batches during animation
+              if (isInjection) {
+                alignGuidesRef.current = computeAlignmentGuides(batch.elements);
+              }
             } else {
               // All strokes were instant — batch is already complete
               onBatchAnimationCompleteRef.current?.(batch.batch_id);
@@ -516,6 +532,13 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
           for (const el of b.elements) {
             typeCounts[el.type] = (typeCounts[el.type] ?? 0) + 1;
             total++;
+            // Track cartesian_axes for math coordinate display
+            if (el.type === 'cartesian_axes') {
+              cartesianAxesRef.current = {
+                x: el.x, y: el.y, width: el.width, height: el.height,
+                xRange: el.xRange, yRange: el.yRange,
+              };
+            }
           }
         }
         const types = Object.keys(typeCounts).join(', ');
@@ -723,6 +746,30 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         } else {
           nextActive.push(stroke);
         }
+      }
+
+      // Draw alignment guides on active canvas (visible only during animation)
+      if (alignGuidesRef.current.length > 0 && nextActive.length > 0) {
+        activeCtx.save();
+        activeCtx.strokeStyle = 'rgba(74, 144, 217, 0.4)';
+        activeCtx.lineWidth = 1 / scale;
+        activeCtx.setLineDash([4 / scale, 4 / scale]);
+        for (const guide of alignGuidesRef.current) {
+          activeCtx.beginPath();
+          if (guide.axis === 'x') {
+            activeCtx.moveTo(guide.value, vpMinY);
+            activeCtx.lineTo(guide.value, vpMaxY);
+          } else {
+            activeCtx.moveTo(vpMinX, guide.value);
+            activeCtx.lineTo(vpMaxX, guide.value);
+          }
+          activeCtx.stroke();
+        }
+        activeCtx.restore();
+      }
+      // Clear alignment guides when animation completes
+      if (nextActive.length === 0) {
+        alignGuidesRef.current = [];
       }
 
       // Fix N5: discard completed strokes if a clear happened mid-frame (zombie stroke fix)
@@ -1137,6 +1184,43 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
     container.addEventListener('pointercancel', onPointerCancel);
     container.addEventListener('wheel', onWheel, { passive: false });
 
+    // Coordinate readout: throttle to ~60fps via rAF
+    let coordRaf: number | null = null;
+    const onMouseMove = (e: MouseEvent) => {
+      if (coordRaf !== null) return;
+      coordRaf = requestAnimationFrame(() => {
+        coordRaf = null;
+        const r = container.getBoundingClientRect();
+        const sx = e.clientX - r.left;
+        const sy = e.clientY - r.top;
+        const c = cameraRef.current;
+        const worldX = (sx - c.x) / c.zoom;
+        const worldY = (sy - c.y) / c.zoom;
+        mouseCanvasRef.current = { x: worldX, y: worldY };
+        const el = coordElRef.current;
+        if (el) {
+          const axes = cartesianAxesRef.current;
+          if (axes) {
+            const xSpan = axes.xRange[1] - axes.xRange[0] || 1;
+            const ySpan = axes.yRange[1] - axes.yRange[0] || 1;
+            const mx = axes.xRange[0] + (worldX - axes.x) / axes.width * xSpan;
+            const my = axes.yRange[0] + (axes.y + axes.height - worldY) / axes.height * ySpan;
+            el.textContent = `x: ${mx.toFixed(1)}, y: ${my.toFixed(1)} (math)`;
+          } else {
+            el.textContent = `x: ${Math.round(worldX)}, y: ${Math.round(worldY)}`;
+          }
+          el.style.opacity = '1';
+        }
+      });
+    };
+    const onMouseLeave = () => {
+      mouseCanvasRef.current = null;
+      const el = coordElRef.current;
+      if (el) el.style.opacity = '0';
+    };
+    container.addEventListener('mousemove', onMouseMove);
+    container.addEventListener('mouseleave', onMouseLeave);
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
       const mod = e.metaKey || e.ctrlKey;
@@ -1173,6 +1257,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerCancel);
       container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('mousemove', onMouseMove);
+      container.removeEventListener('mouseleave', onMouseLeave);
+      if (coordRaf !== null) cancelAnimationFrame(coordRaf);
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [fitToContent, zoomIn, zoomOut, handleClearWithConfirm]);
@@ -1251,6 +1338,15 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         <div data-testid="whiteboard-committed" ref={statsCommittedElRef}>Committed: {statsRef.current.committed}</div>
         <div data-testid="whiteboard-active" ref={statsActiveElRef}>Active: {statsRef.current.active}</div>
       </div>
+
+      {/* Coordinate readout — bottom-right, above toolbar */}
+      <div
+        ref={coordElRef}
+        className="pointer-events-none absolute bottom-12 right-3 rounded-lg bg-[var(--color-surface)] px-2 py-1 text-[11px] tabular-nums text-[var(--color-text-secondary)] shadow-sm transition-opacity duration-150"
+        style={{ opacity: 0 }}
+        aria-hidden="true"
+        data-testid="coord-readout"
+      />
 
       {/* Floating pill toolbar — bottom-right */}
       <div
@@ -1364,7 +1460,7 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         )}
 
         {/* Export group */}
-        <ExportButton whiteboardRef={selfExportRef} disabled={sceneEmpty} />
+        <ExportButton whiteboardRef={selfExportRef} disabled={sceneEmpty} batches={batches} />
         <KeyboardShortcutsHelp />
       </div>
 

@@ -248,5 +248,17 @@ export function computeElementBounds(
     return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
   }
 
+  // slope_field: bounding box is the plot area
+  if (el.type === 'slope_field') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
+  }
+
+  // vector_field_2d: bounding box is the plot area
+  if (el.type === 'vector_field_2d') {
+    if (!allFinite(el.x, el.y, el.width, el.height) || !isFinitePositive(el.width) || !isFinitePositive(el.height)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
+  }
+
   return null;
 }

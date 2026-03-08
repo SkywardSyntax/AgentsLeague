@@ -75,6 +75,8 @@ function elementPosition(el: DrawElement): string {
     case 'matrix_bracket':
     case 'angle_arc':
     case 'integral_region':
+    case 'slope_field':
+    case 'vector_field_2d':
     default:
       return el.type;
   }

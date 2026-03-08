@@ -17,6 +17,8 @@ import type {
   NormalDistributionCurveElement,
   RiemannSumElement,
   TangentLineElement,
+  SlopeFieldElement,
+  VectorField2dElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -24,11 +26,20 @@ import type { PlannedSemanticLayout } from './types';
 import type { PlannerTraceContext } from './trace';
 import { boundsOf } from './bounds';
 import { tickMarksForRange, computeArrowHead } from '../math-sampling';
-import { parseMathExpression } from '../graph-script';
+import { parseMathExpression, parseMathExpression2Var } from '../graph-script';
 import type { ColorTheme } from '../color-theme';
 import { getCurveColor, getThemeColors } from '../color-theme';
 
 export const DEFAULT_MAX_LOWERED_ELEMENTS = 500;
+
+// ---------------------------------------------------------------------------
+// Grid-snap utility for blueprint-style layouts
+// ---------------------------------------------------------------------------
+
+/** Round a value to the nearest multiple of `gridSize`. */
+export function snapToGrid(value: number, gridSize: number): number {
+  return Math.round(value / gridSize) * gridSize;
+}
 
 /** Returns true when a string contains LaTeX-like markup (`\`, `^`, `_`, `{`, `}`). */
 export function shouldUseLaTeX(str: string): boolean {
@@ -96,6 +107,8 @@ function drawOrderPriority(el: DrawElement): number {
     case 'normal_distribution':
     case 'riemann_sum':
     case 'tangent_line':
+    case 'slope_field':
+    case 'vector_field_2d':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -2008,6 +2021,180 @@ function expandLinearTransform(el: LinearTransformElement, theme?: ColorTheme): 
 
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Slope field expander
+// ---------------------------------------------------------------------------
+
+function expandSlopeField(el: SlopeFieldElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const rows = el.gridRows ?? 12;
+  const cols = el.gridCols ?? 16;
+  const [xMin, xMax] = el.xRange;
+  const [yMin, yMax] = el.yRange;
+  const mapper = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
+
+  const fn = parseMathExpression2Var(el.expression);
+  if (!fn) return result;
+
+  const tickLen = 15;
+  const halfTick = tickLen / 2;
+  const lineColor = el.strokeColor ?? el.color ?? '#1f2a44';
+  const lineWidth = el.strokeWidth ?? el.stroke_width ?? 1;
+
+  for (let r = 0; r <= rows; r++) {
+    for (let c = 0; c <= cols; c++) {
+      const mx = xMin + (c / cols) * (xMax - xMin);
+      const my = yMin + (r / rows) * (yMax - yMin);
+      const slope = fn(mx, my);
+      if (!Number.isFinite(slope)) continue;
+
+      const angle = Math.atan(slope);
+      const dx = halfTick * Math.cos(angle);
+      const dy = halfTick * Math.sin(angle);
+
+      const cx = mapper.toCanvasX(mx);
+      const cy = mapper.toCanvasY(my);
+
+      result.push({
+        id: `${el.id}-tick-${r}-${c}`,
+        type: 'line',
+        from: { x: cx - dx, y: cy + dy },
+        to: { x: cx + dx, y: cy - dy },
+        color: lineColor,
+        stroke_width: lineWidth,
+      });
+    }
+  }
+
+  // Solution curve via Euler's method
+  if (el.solutionCurve) {
+    const { x0, y0 } = el.solutionCurve;
+    const steps = el.solutionCurve.steps ?? 200;
+    const dt = (xMax - xMin) / steps;
+    const curveColor = '#dc2626';
+
+    // Forward integration
+    const forwardPts: Point[] = [];
+    let sx = x0, sy = y0;
+    for (let i = 0; i <= steps; i++) {
+      if (sx < xMin || sx > xMax || sy < yMin - (yMax - yMin) || sy > yMax + (yMax - yMin)) break;
+      forwardPts.push({ x: mapper.toCanvasX(sx), y: mapper.toCanvasY(sy) });
+      const s = fn(sx, sy);
+      if (!Number.isFinite(s)) break;
+      sx += dt;
+      sy += s * dt;
+    }
+
+    // Backward integration
+    const backPts: Point[] = [];
+    sx = x0; sy = y0;
+    for (let i = 0; i < steps; i++) {
+      const s = fn(sx, sy);
+      if (!Number.isFinite(s)) break;
+      sx -= dt;
+      sy -= s * dt;
+      if (sx < xMin || sx > xMax || sy < yMin - (yMax - yMin) || sy > yMax + (yMax - yMin)) break;
+      backPts.unshift({ x: mapper.toCanvasX(sx), y: mapper.toCanvasY(sy) });
+    }
+
+    const allPts = [...backPts, ...forwardPts];
+    for (let i = 0; i < allPts.length - 1; i++) {
+      result.push({
+        id: `${el.id}-sol-${i}`,
+        type: 'line',
+        from: allPts[i]!,
+        to: allPts[i + 1]!,
+        color: curveColor,
+        stroke_width: 2,
+      });
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Vector field 2D expander
+// ---------------------------------------------------------------------------
+
+function expandVectorField2d(el: VectorField2dElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const rows = el.gridRows ?? 8;
+  const cols = el.gridCols ?? 10;
+  const [xMin, xMax] = el.xRange;
+  const [yMin, yMax] = el.yRange;
+  const mapper = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
+
+  const fnPx = parseMathExpression2Var(el.Px);
+  const fnPy = parseMathExpression2Var(el.Py);
+  if (!fnPx || !fnPy) return result;
+
+  const lineColor = el.strokeColor ?? el.color ?? '#2563eb';
+  const arrowLen = Math.min(el.width / (cols + 1), el.height / (rows + 1)) * 0.7;
+
+  // Compute magnitudes for scaling
+  const magnitudes: number[] = [];
+  const vectors: Array<{ cx: number; cy: number; vx: number; vy: number }> = [];
+
+  for (let r = 0; r <= rows; r++) {
+    for (let c = 0; c <= cols; c++) {
+      const mx = xMin + (c / cols) * (xMax - xMin);
+      const my = yMin + (r / rows) * (yMax - yMin);
+      const vx = fnPx(mx, my);
+      const vy = fnPy(mx, my);
+      if (!Number.isFinite(vx) || !Number.isFinite(vy)) continue;
+
+      const mag = Math.sqrt(vx * vx + vy * vy);
+      magnitudes.push(mag);
+      vectors.push({
+        cx: mapper.toCanvasX(mx),
+        cy: mapper.toCanvasY(my),
+        vx, vy,
+      });
+    }
+  }
+
+  const maxMag = Math.max(...magnitudes, 1e-10);
+
+  for (let i = 0; i < vectors.length; i++) {
+    const { cx, cy, vx, vy } = vectors[i]!;
+    const mag = magnitudes[i]!;
+    if (mag < 1e-10) continue;
+
+    let scale: number;
+    if (el.normalize) {
+      scale = arrowLen;
+    } else {
+      scale = (mag / maxMag) * arrowLen;
+    }
+
+    const nx = (vx / mag) * scale;
+    // Negate vy because canvas Y is inverted relative to math Y
+    const ny = -(vy / mag) * scale;
+
+    const tipX = cx + nx;
+    const tipY = cy + ny;
+
+    result.push({
+      id: `${el.id}-vec-${i}`,
+      type: 'arrow',
+      from: { x: cx, y: cy },
+      to: { x: tipX, y: tipY },
+      color: lineColor,
+      stroke_width: el.stroke_width ?? 1,
+    });
+  }
+
+  return result;
+}
+
 function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   let curveIndex = 0;
@@ -2050,6 +2237,10 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandHistogram(el, theme));
     } else if (el.type === 'normal_distribution') {
       result.push(...expandNormalDistribution(el, theme));
+    } else if (el.type === 'slope_field') {
+      result.push(...expandSlopeField(el));
+    } else if (el.type === 'vector_field_2d') {
+      result.push(...expandVectorField2d(el));
     } else {
       result.push(el);
     }
@@ -2063,7 +2254,7 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement,
   theme?: ColorTheme,
 ): DrawElement[] {
   switch (el.type) {
@@ -2099,6 +2290,10 @@ export function lowerMathPrimitive(
       return expandHistogram(el, theme);
     case 'normal_distribution':
       return expandNormalDistribution(el, theme);
+    case 'slope_field':
+      return expandSlopeField(el);
+    case 'vector_field_2d':
+      return expandVectorField2d(el);
   }
 }
 
@@ -2146,6 +2341,39 @@ export function lowerPlannedLayoutToDrawBatch(
     if (deduped.length > maxElements) {
       deduped = deduped.slice(0, maxElements);
       layout.warnings.push('element_count_capped');
+    }
+
+    // Blueprint-neat: snap all coordinates to a 10px grid for crisp alignment
+    if (layout.stylePreset === 'blueprint_neat') {
+      const G = 10;
+      for (const el of deduped) {
+        switch (el.type) {
+          case 'rect':
+            el.x = snapToGrid(el.x, G);
+            el.y = snapToGrid(el.y, G);
+            el.w = snapToGrid(el.w, G);
+            el.h = snapToGrid(el.h, G);
+            break;
+          case 'ellipse':
+            el.cx = snapToGrid(el.cx, G);
+            el.cy = snapToGrid(el.cy, G);
+            el.rx = snapToGrid(el.rx, G);
+            el.ry = snapToGrid(el.ry, G);
+            break;
+          case 'line':
+          case 'arrow':
+            el.from = { x: snapToGrid(el.from.x, G), y: snapToGrid(el.from.y, G) };
+            el.to = { x: snapToGrid(el.to.x, G), y: snapToGrid(el.to.y, G) };
+            break;
+          case 'text':
+          case 'latex':
+            el.x = snapToGrid(el.x, G);
+            el.y = snapToGrid(el.y, G);
+            break;
+          default:
+            break;
+        }
+      }
     }
 
     // Sort for optimal draw order: shapes → lines/arrows → text/latex

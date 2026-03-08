@@ -33,6 +33,7 @@ import { DrawingStatusPill, type DrawingPillState } from '@/components/whiteboar
 import { DrawingStatistics, type DrawSource } from '@/components/whiteboard/DrawingStatistics';
 import type { StreamPhase, DrawingProgressInfo } from '@/components/chat/StreamProgress';
 import { friendlyEventErrorMessage } from '@/lib/client/error-messages';
+import { useScenePersistence } from '@/hooks/useScenePersistence';
 
 interface AgentAPI {
   submitQuery: (text: string) => Promise<void>;
@@ -178,6 +179,75 @@ export function AppShell() {
   pushHistoryRef.current = pushHistoryState;
   const activeBatchesRef = useRef<DrawBatch[]>(activeChat?.batches ?? []);
   if (activeChat) activeBatchesRef.current = activeChat.batches;
+
+  // --- Scene persistence ---
+  const {
+    savedSceneExists,
+    restoreScene,
+    clearSavedScene,
+    snapshots,
+    saveSnapshot,
+    restoreSnapshot,
+    deleteSnapshot,
+  } = useScenePersistence(activeChat?.batches ?? []);
+
+  const [showRestoreBanner, setShowRestoreBanner] = useState(false);
+  const [showSharedToast, setShowSharedToast] = useState(false);
+  const sceneRestoredRef = useRef(false);
+
+  // Show restore banner when a saved scene exists on mount
+  useEffect(() => {
+    if (didRestoreSession && savedSceneExists && !sceneRestoredRef.current) {
+      setShowRestoreBanner(true);
+    }
+  }, [didRestoreSession, savedSceneExists]);
+
+  // Load scene from ?scene= URL param on mount
+  useEffect(() => {
+    if (!didRestoreSession) return;
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const sceneParam = params.get('scene');
+    if (!sceneParam) return;
+
+    try {
+      const json = atob(sceneParam);
+      const batches = JSON.parse(json) as DrawBatch[];
+      if (!Array.isArray(batches) || batches.length === 0) return;
+
+      setShowSharedToast(true);
+      setTimeout(() => setShowSharedToast(false), 3000);
+
+      // Inject each batch into the active chat
+      setChatSessions((prev) =>
+        prev.map((chat) => {
+          if (chat.id !== activeChat.id) return chat;
+          let scene = [...chat.scene];
+          const allBatches = [...chat.batches];
+          for (const batch of batches) {
+            if (batch.elements.some((el) => el.type === 'clear')) {
+              scene = [];
+            }
+            for (const el of batch.elements) {
+              if (el.type !== 'clear') scene.push(el);
+            }
+            allBatches.push(batch);
+          }
+          return { ...chat, updatedAt: Date.now(), scene, batches: allBatches };
+        }),
+      );
+
+      // Clean URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete('scene');
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // invalid base64 or JSON — ignore
+    }
+    // Run only once after session restore
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [didRestoreSession]);
 
   // STATE-001: Buffering for deterministic cross-channel batch ordering
   const nextExpectedSeqRef = useRef(1);
@@ -621,7 +691,8 @@ export function AppShell() {
           : chat,
       ),
     );
-  }, [activeChat, pushHistoryState, resetStreamState, status]);
+    clearSavedScene();
+  }, [activeChat, clearSavedScene, pushHistoryState, resetStreamState, status]);
 
   const clearForAgent = useCallback(() => {
     clearActiveChat();
@@ -918,6 +989,53 @@ export function AppShell() {
       <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
         <AppHeader status={status} canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
 
+        {/* Restore saved scene banner */}
+        {showRestoreBanner && (
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-accent-faint)] px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+            <span>You have a saved scene.</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-white hover:opacity-90"
+                onClick={() => {
+                  const batches = restoreScene();
+                  if (batches && activeChat) {
+                    const scene = rebuildSceneFromBatches(batches);
+                    setChatSessions((prev) =>
+                      prev.map((chat) =>
+                        chat.id === activeChat.id
+                          ? { ...chat, updatedAt: Date.now(), scene, batches }
+                          : chat,
+                      ),
+                    );
+                  }
+                  setShowRestoreBanner(false);
+                  sceneRestoredRef.current = true;
+                }}
+              >
+                Restore
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
+                onClick={() => {
+                  setShowRestoreBanner(false);
+                  sceneRestoredRef.current = true;
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Shared scene loading toast */}
+        {showSharedToast && (
+          <div className="absolute left-1/2 top-16 z-50 -translate-x-1/2 rounded-lg border border-[var(--color-accent-soft)] bg-[var(--color-surface)] px-4 py-2 text-xs font-medium text-[var(--color-accent)] shadow-lg">
+            Loading shared scene…
+          </div>
+        )}
+
         <div
           className="relative flex min-h-0 flex-1 flex-col gap-2 p-2 md:flex-row"
           style={{ ['--left-width' as string]: `${panelSizes[0]}%` }}
@@ -939,6 +1057,23 @@ export function AppShell() {
               batches={activeChat.batches}
               lastDrawSource={lastDrawSource}
               onCopyScene={handleCopySceneJson}
+              snapshots={snapshots}
+              onSaveSnapshot={() => saveSnapshot(activeChat.batches)}
+              onRestoreSnapshot={(id) => {
+                const batches = restoreSnapshot(id);
+                if (batches && activeChat) {
+                  pushHistoryState(activeChat.batches);
+                  const scene = rebuildSceneFromBatches(batches);
+                  setChatSessions((prev) =>
+                    prev.map((chat) =>
+                      chat.id === activeChat.id
+                        ? { ...chat, updatedAt: Date.now(), scene, batches }
+                        : chat,
+                    ),
+                  );
+                }
+              }}
+              onDeleteSnapshot={deleteSnapshot}
             />
             {!isAgentMode && (
               <DrawPayloadInjector onInject={handleDrawInject} sessionId={activeChat.id} forceOpen={mobileActivePanel === 'draw'} toggleRef={injectorToggleRef} />

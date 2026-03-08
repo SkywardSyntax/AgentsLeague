@@ -466,7 +466,8 @@ async function compileOneElement(
     || element.type === 'parametric_curve' || element.type === 'polar_plot'
     || element.type === 'matrix_bracket' || element.type === 'linear_transform'
     || element.type === 'riemann_sum' || element.type === 'tangent_line'
-    || element.type === 'histogram' || element.type === 'normal_distribution') {
+    || element.type === 'histogram' || element.type === 'normal_distribution'
+    || element.type === 'slope_field' || element.type === 'vector_field_2d') {
     const lowered = lowerMathPrimitive(element);
     for (const lowEl of lowered) {
       const sub = await compileOneElement(lowEl, preset);

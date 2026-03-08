@@ -5,6 +5,8 @@ import type { WhiteboardExportHandle } from '@/lib/whiteboard/canvas-export';
 import { triggerBlobDownload } from '@/lib/whiteboard/canvas-export';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
+import type { DrawBatch } from '@/types/agent';
+
 type ExportFormat = 'png' | 'svg' | 'clipboard';
 type ExportScale = 1 | 2 | 4;
 
@@ -12,9 +14,10 @@ export interface ExportButtonProps {
   whiteboardRef: React.RefObject<WhiteboardExportHandle | null>;
   className?: string;
   disabled?: boolean;
+  batches?: DrawBatch[];
 }
 
-export function ExportButton({ whiteboardRef, className, disabled }: ExportButtonProps) {
+export function ExportButton({ whiteboardRef, className, disabled, batches }: ExportButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [format, setFormat] = useState<ExportFormat>('png');
@@ -106,6 +109,23 @@ export function ExportButton({ whiteboardRef, className, disabled }: ExportButto
     }
   }, [format, scale, whiteBackground, whiteboardRef, showFeedback]);
 
+  const handleCopyShareLink = useCallback(async () => {
+    if (!batches || batches.length === 0) {
+      showFeedback('Nothing to share');
+      return;
+    }
+    try {
+      const json = JSON.stringify(batches);
+      const base64 = btoa(json);
+      const url = `${window.location.origin}${window.location.pathname}?scene=${base64}`;
+      await navigator.clipboard.writeText(url);
+      showFeedback('Share link copied ✓');
+    } catch {
+      showFeedback('Error: Failed to copy link');
+    }
+    setIsOpen(false);
+  }, [batches, showFeedback]);
+
   // ---- Shared options panel content ----
   const optionsContent = (
     <>
@@ -191,6 +211,24 @@ export function ExportButton({ whiteboardRef, className, disabled }: ExportButto
       >
         {isExporting ? 'Exporting…' : format === 'clipboard' ? 'Copy to clipboard' : `Download ${format.toUpperCase()}`}
       </button>
+
+      {/* Share link */}
+      {batches && batches.length > 0 && (
+        <button
+          type="button"
+          onClick={handleCopyShareLink}
+          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--color-border)]
+                     bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)]
+                     transition-all duration-150 hover:bg-[var(--color-surface)] hover:text-[var(--color-text-primary)]
+                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+          Copy Share Link
+        </button>
+      )}
     </>
   );
 

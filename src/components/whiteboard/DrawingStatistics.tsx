@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useState } from 'react';
 import type { DrawBatch, DrawElement } from '@/types/agent';
+import type { SceneSnapshot } from '@/hooks/useScenePersistence';
 
 export type DrawSource = 'AI' | 'Injected' | 'Template' | 'None';
 
@@ -10,6 +11,10 @@ interface DrawingStatisticsProps {
   batches: DrawBatch[];
   lastDrawSource: DrawSource;
   onCopyScene?: () => void;
+  snapshots?: SceneSnapshot[];
+  onSaveSnapshot?: () => void;
+  onRestoreSnapshot?: (id: string) => void;
+  onDeleteSnapshot?: (id: string) => void;
 }
 
 function computeTypeCounts(scene: DrawElement[]): Record<string, number> {
@@ -43,6 +48,15 @@ const SOURCE_STYLES: Record<DrawSource, string> = {
   None: 'text-[var(--color-text-muted)]',
 };
 
+function formatSnapshotTime(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 /**
  * Collapsible mini-panel showing drawing statistics.
  * Positioned in the bottom-right of the whiteboard area.
@@ -52,9 +66,14 @@ export const DrawingStatistics = memo(function DrawingStatistics({
   batches,
   lastDrawSource,
   onCopyScene,
+  snapshots,
+  onSaveSnapshot,
+  onRestoreSnapshot,
+  onDeleteSnapshot,
 }: DrawingStatisticsProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [snapshotSaved, setSnapshotSaved] = useState(false);
   const typeCounts = computeTypeCounts(scene);
   const typeEntries = Object.entries(typeCounts).sort(([, a], [, b]) => b - a);
   const totalElements = scene.length;
@@ -69,6 +88,14 @@ export const DrawingStatistics = memo(function DrawingStatistics({
       setTimeout(() => setCopied(false), 2000);
     }
   }, [onCopyScene]);
+
+  const handleSaveSnapshot = useCallback(() => {
+    if (onSaveSnapshot) {
+      onSaveSnapshot();
+      setSnapshotSaved(true);
+      setTimeout(() => setSnapshotSaved(false), 2000);
+    }
+  }, [onSaveSnapshot]);
 
   return (
     <div className="absolute bottom-3 right-3 z-10">
@@ -98,7 +125,7 @@ export const DrawingStatistics = memo(function DrawingStatistics({
       </button>
 
       {expanded && (
-        <div className="mt-1.5 w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-md backdrop-blur-md">
+        <div className="mt-1.5 w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-md backdrop-blur-md">
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
             Drawing Stats
           </div>
@@ -159,6 +186,75 @@ export const DrawingStatistics = memo(function DrawingStatistics({
                     </>
                   )}
                 </button>
+              </div>
+            )}
+
+            {/* Snapshots section */}
+            {onSaveSnapshot && (
+              <div className="border-t border-[var(--color-border)] pt-2">
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                  Snapshots
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveSnapshot}
+                  disabled={totalElements === 0}
+                  aria-label="Save snapshot"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:opacity-40"
+                >
+                  {snapshotSaved ? (
+                    <>
+                      <span className="text-emerald-600 dark:text-emerald-400" aria-hidden="true">✓</span>
+                      Saved!
+                    </>
+                  ) : (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                        <polyline points="17 21 17 13 7 13 7 21" />
+                        <polyline points="7 3 7 8 15 8" />
+                      </svg>
+                      Save Snapshot
+                    </>
+                  )}
+                </button>
+
+                {snapshots && snapshots.length > 0 && (
+                  <div className="mt-1.5 max-h-32 space-y-1 overflow-y-auto">
+                    {snapshots.map((snap) => (
+                      <div
+                        key={snap.id}
+                        className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-1.5 py-1"
+                      >
+                        <span className="truncate text-[10px] text-[var(--color-text-muted)]" title={snap.name}>
+                          {formatSnapshotTime(snap.timestamp)}
+                        </span>
+                        <div className="flex shrink-0 gap-1">
+                          {onRestoreSnapshot && (
+                            <button
+                              type="button"
+                              onClick={() => onRestoreSnapshot(snap.id)}
+                              aria-label={`Restore snapshot ${snap.name}`}
+                              className="rounded px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent-faint)]"
+                            >
+                              Restore
+                            </button>
+                          )}
+                          {onDeleteSnapshot && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteSnapshot(snap.id)}
+                              aria-label={`Delete snapshot ${snap.name}`}
+                              className="rounded px-1 py-0.5 text-[9px] text-[var(--color-text-muted)] hover:text-red-500"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
