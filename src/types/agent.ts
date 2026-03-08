@@ -419,6 +419,13 @@ export interface StrokeTrajectory {
   lineStyle?: LineStyle;
   /** When true, skip sinusoidal width modulation for precise mathematical lines. */
   mathematical?: boolean;
+  /** Fallback text rendering when LaTeX/SVG stroke extraction fails. */
+  textFallback?: {
+    text: string;
+    x: number;
+    y: number;
+    fontSize: number;
+  };
 }
 
 export interface ActiveStroke extends StrokeTrajectory {

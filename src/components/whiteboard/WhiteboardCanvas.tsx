@@ -14,7 +14,7 @@ import {
   clamp,
   strokesBoundingBox,
 } from '@/lib/whiteboard/geometry';
-import { drawSmoothStroke, drawStroke as drawStrokeImported } from '@/lib/whiteboard/canvas-draw';
+import { drawSmoothStroke, drawStroke as drawStrokeImported, drawTextFallback } from '@/lib/whiteboard/canvas-draw';
 import { computeFps, isDebugShortcut, createDrawCallCounter, formatFps } from '@/lib/whiteboard/canvas-debug';
 import type { WhiteboardExportHandle } from '@/lib/whiteboard/canvas-export';
 import {
@@ -597,6 +597,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
           }
           drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr,
             { lineStyle: stroke.lineStyle, mathematical: stroke.mathematical });
+          if (stroke.textFallback) {
+            drawTextFallback(committedCtx, stroke.textFallback.text, stroke.textFallback.x, stroke.textFallback.y, stroke.textFallback.fontSize, stroke.color, camera, dpr);
+          }
           drawCallCounterRef.current.increment();
         }
         committedDirtyRef.current = false;
@@ -637,6 +640,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
 
         drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr,
             { lineStyle: stroke.lineStyle, mathematical: stroke.mathematical });
+          if (stroke.textFallback && rawT >= 1) {
+            drawTextFallback(activeCtx, stroke.textFallback.text, stroke.textFallback.x, stroke.textFallback.y, stroke.textFallback.fontSize, stroke.color, camera, dpr);
+          }
           drawCallCounterRef.current.increment();
 
         if (rawT >= 1) {

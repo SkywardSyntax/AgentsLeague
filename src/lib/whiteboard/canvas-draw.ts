@@ -163,3 +163,27 @@ export function drawSmoothStroke(
   }
   resetLineDash(ctx);
 }
+
+/**
+ * Render fallback text when SVG stroke extraction fails.
+ * Uses `fillText` with a clean system font for readable output.
+ */
+export function drawTextFallback(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  color: string,
+  camera: Camera,
+  dpr: number,
+) {
+  const scaledSize = fontSize / (camera.zoom * dpr);
+  ctx.save();
+  ctx.font = `${scaledSize}px "Inter", system-ui, sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}

@@ -17,6 +17,7 @@ describe('Public API surface — schema', () => {
         "EQUATION_ROLES",
         "INTENTS",
         "LATEX_ALIGN",
+        "LINE_STYLES",
         "PANEL_REGION_HINTS",
         "PANEL_SHAPE_TYPES",
         "REGION_HINTS",

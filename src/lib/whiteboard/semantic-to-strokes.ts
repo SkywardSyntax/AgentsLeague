@@ -403,6 +403,17 @@ async function compileOneElement(
     }
 
     if (!recovered) {
+      const fontSize = element.size ?? 18;
+      const fallbackPoint: Point = { x: element.x, y: element.y };
+      strokes.push({
+        id: `${element.id}-text-fallback`,
+        elementId: element.id,
+        points: [fallbackPoint, { x: element.x + 1, y: element.y }],
+        color,
+        baseWidth,
+        textFallback: { text: element.text, x: element.x, y: element.y, fontSize },
+        mathematical: isMathematical,
+      });
       warnings.push(`Text render fallback for element ${element.id}`);
     }
     return { strokes, warnings, clear: false };

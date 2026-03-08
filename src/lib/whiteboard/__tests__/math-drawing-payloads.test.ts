@@ -476,9 +476,9 @@ describe('expandAngleArc', () => {
     const lbl = texts(batch.elements).find((e) => e.id === 'arc-lbl-label')!;
     expect(lbl).toBeDefined();
     expect(lbl.text).toBe('90°');
-    // Label should be at radius * 1.3 from the vertex at midAngle=45°
+    // Label should be at radius * 1.4 from the vertex at midAngle=45°
     const dist = Math.hypot(lbl.x - 300, lbl.y - 300);
-    expect(dist).toBeCloseTo(52, 0); // 40 * 1.3
+    expect(dist).toBeCloseTo(56, 0); // 40 * 1.4
   });
 
   it('handles 360° full circle', () => {

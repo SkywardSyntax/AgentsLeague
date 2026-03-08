@@ -14,6 +14,7 @@ import type { PlannedSemanticLayout } from './types';
 import type { PlannerTraceContext } from './trace';
 import { boundsOf } from './bounds';
 import { tickMarksForRange, computeArrowHead } from '../math-sampling';
+import { parseMathExpression } from '../graph-script';
 
 export const DEFAULT_MAX_LOWERED_ELEMENTS = 60;
 
@@ -223,22 +224,26 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
     { xMin, xMax, yMin, yMax },
   );
 
-  // Build segments from pre-sampled points (or evaluate expression)
+  // Build raw points from pre-sampled data or expression evaluation
   let rawPoints: Array<{ x: number; y: number }> = [];
   if (el.points && el.points.length > 0) {
     rawPoints = el.points;
   } else if (el.expression) {
     const steps = 80;
     const dx = (xMax - xMin) / (steps - 1);
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const fn = new Function('x', `"use strict"; return (${el.expression});`) as (x: number) => number;
-    for (let i = 0; i < steps; i++) {
-      const x = xMin + i * dx;
-      try {
-        const y = fn(x);
-        rawPoints.push({ x, y });
-      } catch {
-        rawPoints.push({ x, y: NaN });
+    // Try safe custom parser first, fall back to Function constructor for Math.* expressions
+    const parsedFn = parseMathExpression(el.expression);
+    if (parsedFn) {
+      for (let i = 0; i < steps; i++) {
+        const x = xMin + i * dx;
+        try { rawPoints.push({ x, y: parsedFn(x) }); } catch { rawPoints.push({ x, y: NaN }); }
+      }
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      const fn = new Function('x', `"use strict"; return (${el.expression});`) as (x: number) => number;
+      for (let i = 0; i < steps; i++) {
+        const x = xMin + i * dx;
+        try { rawPoints.push({ x, y: fn(x) }); } catch { rawPoints.push({ x, y: NaN }); }
       }
     }
   }
