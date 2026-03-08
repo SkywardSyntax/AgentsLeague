@@ -1,5 +1,19 @@
 import { z } from 'zod';
 import { COORD_MIN, COORD_MAX } from '@/lib/whiteboard/coord-bounds';
+import { parseMathExpression } from '@/lib/whiteboard/graph-script';
+
+/** Validate a math expression string without evaluating it. */
+function validateExpression(expr: string): { valid: boolean; error?: string } {
+  try {
+    // Normalize JS-style Math.fn() calls to bare fn() for the parser
+    const normalized = expr.replace(/\bMath\./g, '');
+    const fn = parseMathExpression(normalized);
+    if (!fn) return { valid: false, error: `Invalid expression: "${expr}"` };
+    return { valid: true };
+  } catch {
+    return { valid: false, error: `Parse error in expression: "${expr}"` };
+  }
+}
 
 const PointSchema = z.object({
   x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
@@ -273,6 +287,27 @@ export const DrawBatchSchema = z.object({
   elements: z.array(DrawElementSchema).max(200),
   source: BatchSourceSchema,
   schemaVersion: z.number().int().default(1),
+}).superRefine((data, ctx) => {
+  for (let i = 0; i < data.elements.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const el = data.elements[i] as any;
+    if (el?.type === 'function_curve' && el.expression) {
+      const v = validateExpression(el.expression as string);
+      if (!v.valid) {
+        ctx.addIssue({ code: 'custom', message: v.error ?? 'Invalid expression', path: ['elements', i, 'expression'] });
+      }
+    }
+    if (el?.type === 'parametric_curve') {
+      const vx = validateExpression(el.xExpression as string);
+      if (!vx.valid) {
+        ctx.addIssue({ code: 'custom', message: vx.error ?? 'Invalid xExpression', path: ['elements', i, 'xExpression'] });
+      }
+      const vy = validateExpression(el.yExpression as string);
+      if (!vy.valid) {
+        ctx.addIssue({ code: 'custom', message: vy.error ?? 'Invalid yExpression', path: ['elements', i, 'yExpression'] });
+      }
+    }
+  }
 });
 
 const ChatMessageSchema = z.object({
@@ -735,6 +770,12 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         continue;
       }
       const expression = asString(raw.expression) ?? undefined;
+      if (expression) {
+        const exprValidation = validateExpression(expression);
+        if (!exprValidation.valid) {
+          warnings.push(`FunctionCurve ${id}: ${exprValidation.error}`);
+        }
+      }
       const label = asString(raw.label) ?? undefined;
       const rawPoints = Array.isArray(raw.points) ? raw.points : undefined;
       let points: Array<{ x: number; y: number }> | undefined;
@@ -780,6 +821,14 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       if (x == null || y == null || width == null || height == null || !rawXRange || !rawYRange || tMin == null || tMax == null || !xExpression || !yExpression) {
         warnings.push(`ParametricCurve ${id} has invalid coordinates, ranges, or expressions`);
         continue;
+      }
+      const xExprV = validateExpression(xExpression);
+      if (!xExprV.valid) {
+        warnings.push(`ParametricCurve ${id} xExpression: ${xExprV.error}`);
+      }
+      const yExprV = validateExpression(yExpression);
+      if (!yExprV.valid) {
+        warnings.push(`ParametricCurve ${id} yExpression: ${yExprV.error}`);
       }
       const xr0 = asNumber(rawXRange[0]);
       const xr1 = asNumber(rawXRange[1]);

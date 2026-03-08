@@ -162,7 +162,7 @@ export const MiniPreviewCanvas = memo(function MiniPreviewCanvas({
 }: MiniPreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [strokes, setStrokes] = useState<StrokeTrajectory[] | null>(null);
-  const [compileError, setCompileError] = useState(false);
+  const [compileError, setCompileError] = useState<string | false>(false);
   const compilationIdRef = useRef(0);
 
   // Count stats (memoized from the raw batch, before async compilation)
@@ -190,9 +190,10 @@ export const MiniPreviewCanvas = memo(function MiniPreviewCanvas({
         setStrokes(result.strokes);
         setCompileError(false);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (cancelled || compilationIdRef.current !== id) return;
-        setCompileError(true);
+        const msg = err instanceof Error ? err.message : 'Render failed';
+        setCompileError(msg);
         setStrokes(null);
       });
 
@@ -315,6 +316,11 @@ export const MiniPreviewCanvas = memo(function MiniPreviewCanvas({
           </div>
         )}
       </div>
+      {compileError && (
+        <p className="mt-1 max-w-full truncate text-[10px] font-medium text-red-500" title={compileError}>
+          {compileError}
+        </p>
+      )}
     </div>
   );
 });

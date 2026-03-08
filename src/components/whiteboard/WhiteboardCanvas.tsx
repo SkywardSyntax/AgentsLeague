@@ -3,7 +3,7 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { ActiveStroke, DrawBatch, DrawElement, LineStyle, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
-import { createActiveBatch, easeOutCubic, easeInOutCubic, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
+import { createActiveBatch, easeOutCubic, easeInOutCubic, easingForStroke, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import type { BatchCompleteCallback } from '@/lib/whiteboard/stroke-scheduler';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
@@ -368,6 +368,17 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         processedBatchIdsRef.current.add(batch.batch_id);
         pendingCompilesRef.current += 1;
 
+        // Apply dark canvas mode when colorTheme is 'dark'
+        if (batch.colorTheme === 'dark') {
+          gridColorsRef.current = {
+            bg: '#1a1a2e',
+            stroke: 'rgba(200, 200, 255, 0.12)',
+          };
+          gridDirtyRef.current = true;
+        } else if (batch.colorTheme) {
+          readGridColors();
+        }
+
         // Prune to prevent unbounded growth
         if (processedBatchIdsRef.current.size > MAX_PROCESSED_BATCH_IDS) {
           const ids = processedBatchIdsRef.current.values();
@@ -398,6 +409,8 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
           // Fix N5: bump generation so RAF loop discards pre-clear completed strokes
           clearGenerationRef.current += 1;
           committedDirtyRef.current = true;
+          // Revert dark canvas mode on clear
+          readGridColors();
         }
 
         compiled.warnings.forEach((w) => onWarningRef.current(w));
@@ -681,7 +694,8 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       const completed: StrokeTrajectory[] = [];
 
       for (const stroke of activeStrokesRef.current) {
-        const rawT = easeOutCubic((now - stroke.startedAt) / stroke.durationMs);
+        const easeFn = easingForStroke(stroke);
+        const rawT = easeFn((now - stroke.startedAt) / stroke.durationMs);
         const visibleLength =
           stroke.speedFactors && stroke.speedFactors.length === stroke.cumulativeLengths.length
             ? weightedVisibleLength(stroke.cumulativeLengths, stroke.speedFactors, rawT)

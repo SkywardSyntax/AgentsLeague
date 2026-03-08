@@ -6,6 +6,104 @@ export type { DrawingSpeed };
 /** Drawing speed used to derive animation duration from stroke path length. */
 export const STROKE_SPEED_PX_PER_SECOND = 180;
 
+// ---------------------------------------------------------------------------
+// Stroke prioritisation for math diagrams
+// ---------------------------------------------------------------------------
+
+/** Draw-order priority for `meta.elementType`. Lower number = drawn first. */
+const ELEMENT_TYPE_PRIORITY: Record<string, number> = {
+  // 0 — background
+  grid: 0, fill: 0, region: 0, integral_region: 0,
+  // 1 — axes
+  cartesian_axes: 1, number_line: 1, axis: 1,
+  // 2 — tick marks
+  tick: 2,
+  // 3 — curves / bars / shapes
+  function_curve: 3, parametric_curve: 3, polar_plot: 3,
+  histogram: 3, normal_distribution: 3, riemann_sum: 3,
+  bar: 3, line: 3, rect: 3, ellipse: 3, arrow: 3,
+  angle_arc: 3, circle_with_radius: 3, triangle_with_angles: 3,
+  vector_arrow: 3, tangent_line: 3, linear_transform: 3,
+  matrix_bracket: 3,
+  // 4 — labels & annotations
+  text: 4, latex: 4, label: 4,
+};
+
+const DEFAULT_PRIORITY = 3;
+
+function strokePriority(stroke: StrokeTrajectory): number {
+  const et = stroke.meta?.elementType;
+  if (et && et in ELEMENT_TYPE_PRIORITY) return ELEMENT_TYPE_PRIORITY[et]!;
+  // Fall back to ID-based heuristics
+  const id = stroke.id.toLowerCase();
+  if (id.includes('grid') || id.includes('fill') || id.includes('region')) return 0;
+  if (id.includes('axis') || id.includes('axes')) return 1;
+  if (id.includes('tick')) return 2;
+  if (id.includes('label') || id.includes('text') || id.includes('latex')) return 4;
+  return DEFAULT_PRIORITY;
+}
+
+/**
+ * Reorder strokes for correct math-diagram draw order:
+ *   1. Grid lines (background)
+ *   2. Axes
+ *   3. Tick marks
+ *   4. Function curves / bars / regions
+ *   5. Labels and annotations
+ *
+ * Stable sort — strokes of equal priority keep their original order.
+ */
+export function prioritizeStrokes(strokes: StrokeTrajectory[]): StrokeTrajectory[] {
+  return [...strokes].sort((a, b) => strokePriority(a) - strokePriority(b));
+}
+
+// ---------------------------------------------------------------------------
+// Speed inference for mathematical batches
+// ---------------------------------------------------------------------------
+
+/**
+ * Infer the drawing speed for a stroke when the batch has a specific style.
+ * For `'mathematical'` batches:
+ *   - axes → FAST
+ *   - function curves → SLOW (so the grow effect is visible)
+ *   - labels/text → INSTANT
+ *   - everything else → NATURAL
+ *
+ * For non-mathematical batches, falls through to `inferDrawingSpeed`.
+ */
+export function inferStrokeSpeed(
+  stroke: StrokeTrajectory,
+  batchStyle?: string,
+): DrawingSpeed | undefined {
+  if (stroke.drawingSpeed) return stroke.drawingSpeed;
+
+  if (batchStyle === 'mathematical') {
+    const et = stroke.meta?.elementType;
+    const id = stroke.id.toLowerCase();
+
+    // Labels / text → instant
+    if (et === 'text' || et === 'latex' || id.includes('label') || id.includes('text') || id.includes('latex')) {
+      return 'instant';
+    }
+    // Axes → fast
+    if (et === 'cartesian_axes' || et === 'number_line' ||
+        id.includes('axis') || id.includes('axes')) {
+      return 'fast';
+    }
+    // Curves → slow
+    if (stroke.meta?.curveSegment ||
+        et === 'function_curve' || et === 'parametric_curve' || et === 'polar_plot' ||
+        id.includes('curve') || id.includes('func')) {
+      return 'slow';
+    }
+    // Default for mathematical
+    return 'natural';
+  }
+
+  // Non-mathematical: caller should use inferDrawingSpeed
+  return undefined;
+}
+
 /** Duration bounds per drawing-speed mode (min, max) in ms. */
 const SPEED_DURATION_BOUNDS: Record<Exclude<DrawingSpeed, 'instant'>, { min: number; max: number; pxPerSec: number }> = {
   fast:    { min: 60,  max: 400,  pxPerSec: 600 },
@@ -175,11 +273,15 @@ export function createActiveBatch(
   stagger: boolean | Clock = false,
   reducedMotion = false,
   batchSource?: string,
+  batchStyle?: string,
 ): ActiveStroke[] {
   const clock = typeof stagger === 'function' ? stagger : defaultClock;
   const doStagger = typeof stagger === 'boolean' ? stagger : false;
   const start = startedAt ?? clock();
-  const valid = strokes.filter((s) => s.points.length >= 2);
+
+  // Prioritize strokes so math diagrams draw in the correct order
+  const prioritized = prioritizeStrokes(strokes);
+  const valid = prioritized.filter((s) => s.points.length >= 2);
 
   // Partition into instant vs animated strokes
   const instantStrokes: StrokeTrajectory[] = [];
@@ -187,7 +289,9 @@ export function createActiveBatch(
 
   for (const stroke of valid) {
     const length = totalLength(stroke.points);
-    const speed = inferDrawingSpeed(stroke, length, batchSource);
+    // Use style-aware speed inference, falling back to existing heuristic
+    const styleSpeed = inferStrokeSpeed(stroke, batchStyle);
+    const speed = styleSpeed ?? inferDrawingSpeed(stroke, length, batchSource);
     if (speed === 'instant' || reducedMotion) {
       instantStrokes.push(stroke);
     } else {
@@ -287,6 +391,29 @@ export function easeInOutCubic(t: number): number {
     : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
 }
 
+/**
+ * Quadratic ease-in-out: smooth start and end.
+ * `t < 0.5 ? 2*t*t : -1+(4-2*t)*t`
+ * Applied to function-curve animation so curves grow smoothly.
+ * NOT applied to straight lines (they use uniform or easeOutCubic).
+ */
+export function easeInOut(t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  return clamped < 0.5
+    ? 2 * clamped * clamped
+    : -1 + (4 - 2 * clamped) * clamped;
+}
+
+/**
+ * Choose the appropriate easing function for a stroke.
+ * Curve segments use easeInOut for smooth grow effect;
+ * straight lines / everything else uses easeOutCubic.
+ */
+export function easingForStroke(stroke: StrokeTrajectory): EasingFn {
+  if (stroke.meta?.curveSegment) return easeInOut;
+  return easeOutCubic;
+}
+
 export type EasingFn = (t: number) => number;
 
 export const EASING_MAP: Record<string, EasingFn> = {
@@ -294,6 +421,7 @@ export const EASING_MAP: Record<string, EasingFn> = {
   easeInOutQuad,
   easeOutQuart,
   easeInOutCubic,
+  easeInOut,
 };
 
 /**

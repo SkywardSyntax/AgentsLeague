@@ -25,8 +25,15 @@ import type { PlannerTraceContext } from './trace';
 import { boundsOf } from './bounds';
 import { tickMarksForRange, computeArrowHead } from '../math-sampling';
 import { parseMathExpression } from '../graph-script';
+import type { ColorTheme } from '../color-theme';
+import { getCurveColor, getThemeColors } from '../color-theme';
 
 export const DEFAULT_MAX_LOWERED_ELEMENTS = 500;
+
+/** Returns true when a string contains LaTeX-like markup (`\`, `^`, `_`, `{`, `}`). */
+export function shouldUseLaTeX(str: string): boolean {
+  return /[\\^_{}]/.test(str);
+}
 
 // ---------------------------------------------------------------------------
 // Color utilities
@@ -146,7 +153,7 @@ function expandAngleArc(el: AngleArcElement): DrawElement[] {
   return result;
 }
 
-function expandIntegralRegion(el: IntegralRegionElement): DrawElement[] {
+function expandIntegralRegion(el: IntegralRegionElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const strokeColor = el.strokeColor ?? el.color ?? '#1f2a44';
   const fillColor = el.fillColor ?? 'rgba(100,149,237,0.3)';
@@ -294,15 +301,27 @@ function expandIntegralRegion(el: IntegralRegionElement): DrawElement[] {
     color: strokeColor,
     stroke_width: el.stroke_width,
   });
-  result.push({
-    id: `${el.id}-label-a`,
-    type: 'text',
-    x: toCanvasX(a),
-    y: canvasBaseY + TICK_HALF + 14,
-    text: aLabel,
-    size: 14,
-    color: strokeColor,
-  });
+  if (shouldUseLaTeX(aLabel)) {
+    result.push({
+      id: `${el.id}-label-a`,
+      type: 'latex' as const,
+      x: toCanvasX(a),
+      y: canvasBaseY + TICK_HALF + 14,
+      tex: aLabel,
+      fontSize: 14,
+      displayMode: false,
+    });
+  } else {
+    result.push({
+      id: `${el.id}-label-a`,
+      type: 'text' as const,
+      x: toCanvasX(a),
+      y: canvasBaseY + TICK_HALF + 14,
+      text: aLabel,
+      size: 14,
+      color: strokeColor,
+    });
+  }
 
   result.push({
     id: `${el.id}-tick-b`,
@@ -312,35 +331,59 @@ function expandIntegralRegion(el: IntegralRegionElement): DrawElement[] {
     color: strokeColor,
     stroke_width: el.stroke_width,
   });
-  result.push({
-    id: `${el.id}-label-b`,
-    type: 'text',
-    x: toCanvasX(b),
-    y: canvasBaseY + TICK_HALF + 14,
-    text: bLabel,
-    size: 14,
-    color: strokeColor,
-  });
-
-  // Optional centered label
-  if (el.label) {
-    const cx = el.x + el.width / 2;
-    const cy = el.y + el.height / 2;
+  if (shouldUseLaTeX(bLabel)) {
     result.push({
-      id: `${el.id}-label`,
+      id: `${el.id}-label-b`,
+      type: 'latex' as const,
+      x: toCanvasX(b),
+      y: canvasBaseY + TICK_HALF + 14,
+      tex: bLabel,
+      fontSize: 14,
+      displayMode: false,
+    });
+  } else {
+    result.push({
+      id: `${el.id}-label-b`,
       type: 'text',
-      x: cx,
-      y: cy,
-      text: el.label,
+      x: toCanvasX(b),
+      y: canvasBaseY + TICK_HALF + 14,
+      text: bLabel,
       size: 14,
       color: strokeColor,
     });
   }
 
+  // Optional centered label
+  if (el.label) {
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
+    if (shouldUseLaTeX(el.label)) {
+      result.push({
+        id: `${el.id}-label`,
+        type: 'latex' as const,
+        x: cx,
+        y: cy,
+        tex: el.label,
+        fontSize: 14,
+        displayMode: false,
+      });
+    } else {
+      result.push({
+        id: `${el.id}-label`,
+        type: 'text',
+        x: cx,
+        y: cy,
+        text: el.label,
+        size: 14,
+        color: strokeColor,
+      });
+    }
+  }
+
   return result;
 }
 
-function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
+function expandFunctionCurve(el: FunctionCurveElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const [xMin, xMax] = el.xRange;
   const [yMin, yMax] = el.yRange;
@@ -454,15 +497,27 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
 
   // Label
   if (el.label) {
-    result.push({
-      id: `${el.id}-label`,
-      type: 'text',
-      x: el.x + el.width + 8,
-      y: el.y + 4,
-      text: el.label,
-      size: 14,
-      color: curveColor,
-    });
+    if (shouldUseLaTeX(el.label)) {
+      result.push({
+        id: `${el.id}-label`,
+        type: 'latex' as const,
+        x: el.x + el.width + 8,
+        y: el.y + 4,
+        tex: el.label,
+        fontSize: 14,
+        displayMode: false,
+      });
+    } else {
+      result.push({
+        id: `${el.id}-label`,
+        type: 'text',
+        x: el.x + el.width + 8,
+        y: el.y + 4,
+        text: el.label,
+        size: 14,
+        color: curveColor,
+      });
+    }
   }
 
   return result;
@@ -483,7 +538,7 @@ function parseMathExprWithVar(expr: string, varName: string): ((v: number) => nu
   return parseMathExpression(normalized);
 }
 
-function expandParametricCurve(el: ParametricCurveElement): DrawElement[] {
+function expandParametricCurve(el: ParametricCurveElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const [xMin, xMax] = el.xRange;
   const [yMin, yMax] = el.yRange;
@@ -566,7 +621,7 @@ function expandParametricCurve(el: ParametricCurveElement): DrawElement[] {
   return result;
 }
 
-function expandPolarPlot(el: PolarPlotElement): DrawElement[] {
+function expandPolarPlot(el: PolarPlotElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const { cx, cy, radius } = el;
   const curveColor = el.color ?? '#1f2a44';
@@ -694,7 +749,7 @@ function expandPolarPlot(el: PolarPlotElement): DrawElement[] {
 // CartesianAxes / NumberLine / VectorArrow expansion
 // ---------------------------------------------------------------------------
 
-function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
+function expandCartesianAxes(el: CartesianAxesElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const { x, y, width, height, xRange, yRange } = el;
   const color = el.color ?? '#1f2a44';
@@ -844,32 +899,56 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
 
   // --- Axis labels (near arrowheads) ---
   if (el.xLabel) {
-    result.push({
-      id: `${el.id}-x-label`,
-      type: 'text' as const,
-      x: x + width + ARROW_EXT + 4,
-      y: originY + 4,
-      text: el.xLabel,
-      size: 13,
-      color,
-    });
+    if (shouldUseLaTeX(el.xLabel)) {
+      result.push({
+        id: `${el.id}-x-label`,
+        type: 'latex' as const,
+        x: x + width + ARROW_EXT + 4,
+        y: originY + 4,
+        tex: el.xLabel,
+        fontSize: 13,
+        displayMode: false,
+      });
+    } else {
+      result.push({
+        id: `${el.id}-x-label`,
+        type: 'text' as const,
+        x: x + width + ARROW_EXT + 4,
+        y: originY + 4,
+        text: el.xLabel,
+        size: 13,
+        color,
+      });
+    }
   }
   if (el.yLabel) {
-    result.push({
-      id: `${el.id}-y-label`,
-      type: 'text' as const,
-      x: originX + 8,
-      y: y - ARROW_EXT - 2,
-      text: el.yLabel,
-      size: 13,
-      color,
-    });
+    if (shouldUseLaTeX(el.yLabel)) {
+      result.push({
+        id: `${el.id}-y-label`,
+        type: 'latex' as const,
+        x: originX + 8,
+        y: y - ARROW_EXT - 2,
+        tex: el.yLabel,
+        fontSize: 13,
+        displayMode: false,
+      });
+    } else {
+      result.push({
+        id: `${el.id}-y-label`,
+        type: 'text' as const,
+        x: originX + 8,
+        y: y - ARROW_EXT - 2,
+        text: el.yLabel,
+        size: 13,
+        color,
+      });
+    }
   }
 
   return result;
 }
 
-function expandNumberLine(el: NumberLineElement): DrawElement[] {
+function expandNumberLine(el: NumberLineElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const { x, y, length, min, max } = el;
   const color = el.color ?? '#1f2a44';
@@ -1437,7 +1516,7 @@ function expandTangentLine(el: TangentLineElement): DrawElement[] {
 // Histogram expansion
 // ---------------------------------------------------------------------------
 
-function expandHistogram(el: HistogramElement): DrawElement[] {
+function expandHistogram(el: HistogramElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const bins = el.bins;
   if (bins.length === 0) return result;
@@ -1575,7 +1654,7 @@ function expandHistogram(el: HistogramElement): DrawElement[] {
 // Normal distribution curve expansion
 // ---------------------------------------------------------------------------
 
-function expandNormalDistribution(el: NormalDistributionCurveElement): DrawElement[] {
+function expandNormalDistribution(el: NormalDistributionCurveElement, _theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const { mu, sigma } = el;
   const curveColor = el.color ?? '#1f2a44';
@@ -1679,28 +1758,28 @@ function expandNormalDistribution(el: NormalDistributionCurveElement): DrawEleme
     }
   }
 
-  // Labels
+  // Labels — use LaTeX for proper Greek letter rendering
   if (el.showLabels) {
     result.push({
       id: `${el.id}-mu-label`,
-      type: 'text',
+      type: 'latex' as const,
       x: toCanvasX(mu),
       y: toCanvasY(0) + 16,
-      text: 'μ',
-      size: 14,
-      color: curveColor,
+      tex: '\\mu',
+      fontSize: 14,
+      displayMode: false,
     });
     for (const k of [-2, -1, 1, 2]) {
       const sx = mu + k * sigma;
       const sign = k > 0 ? '+' : '';
       result.push({
         id: `${el.id}-sigma-label-${k}`,
-        type: 'text',
+        type: 'latex' as const,
         x: toCanvasX(sx),
         y: toCanvasY(0) + 16,
-        text: `μ${sign}${k}σ`,
-        size: 11,
-        color: '#666',
+        tex: `\\mu${sign}${k}\\sigma`,
+        fontSize: 11,
+        displayMode: false,
       });
     }
   }
@@ -1776,8 +1855,7 @@ function expandMatrixBracket(el: MatrixBracketElement): DrawElement[] {
       const cx = contentX + colOffsets[c] + colWidths[c] / 2;
       const cy = contentY + rowOffsets[r] + rowHeights[r] / 2;
       const cell = rows[r][c];
-      const isLatex = cell.includes('\\') || cell.includes('^') || cell.includes('_');
-      if (isLatex) {
+      if (shouldUseLaTeX(cell)) {
         result.push({ id: `${el.id}-cell-${r}-${c}`, type: 'latex', x: cx, y: cy, tex: cell, displayMode: false, fontSize });
       } else {
         result.push({ id: `${el.id}-cell-${r}-${c}`, type: 'text', x: cx, y: cy, text: cell, size: fontSize, align: 'center' });
@@ -1821,13 +1899,15 @@ function expandMatrixBracket(el: MatrixBracketElement): DrawElement[] {
 // Linear transform expansion
 // ---------------------------------------------------------------------------
 
-function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
+function expandLinearTransform(el: LinearTransformElement, theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   const range = el.gridRange ?? 3;
   const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
   const gridStroke = isMathStyle ? 0.5 : 0.7;
   const transformedGridStroke = isMathStyle ? 1 : 1.2;
   const basisStroke = isMathStyle ? 1.5 : 2;
+  const tc = theme ? getThemeColors(theme) : undefined;
+  const origGridColor = tc?.grid ?? '#d1d5db';
 
   const { toCanvasX, toCanvasY } = makeCoordMapper(
     { x: el.x, y: el.y, width: el.width, height: el.height },
@@ -1849,7 +1929,7 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
         type: 'line',
         from: { x: toCanvasX(i), y: toCanvasY(-range) },
         to: { x: toCanvasX(i), y: toCanvasY(range) },
-        color: '#d1d5db',
+        color: origGridColor,
         stroke_width: gridStroke,
       });
       // Horizontal grid line
@@ -1858,7 +1938,7 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
         type: 'line',
         from: { x: toCanvasX(-range), y: toCanvasY(i) },
         to: { x: toCanvasX(range), y: toCanvasY(i) },
-        color: '#d1d5db',
+        color: origGridColor,
         stroke_width: gridStroke,
       });
     }
@@ -1923,24 +2003,28 @@ function expandLinearTransform(el: LinearTransformElement): DrawElement[] {
 
   // Label
   if (el.label) {
-    result.push({ id: `${el.id}-lbl`, type: 'text', x: el.x + el.width / 2, y: el.y - 16, text: el.label, size: 14, color: '#222', align: 'center' });
+    result.push({ id: `${el.id}-lbl`, type: 'text', x: el.x + el.width / 2, y: el.y - 16, text: el.label, size: 14, color: tc?.text ?? '#222', align: 'center' });
   }
 
   return result;
 }
-function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
+function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
+  let curveIndex = 0;
   for (const el of elements) {
     if (el.type === 'function_curve') {
-      result.push(...expandFunctionCurve(el));
+      if (theme && !el.color) {
+        el.color = getCurveColor(theme, curveIndex++);
+      }
+      result.push(...expandFunctionCurve(el, theme));
     } else if (el.type === 'angle_arc') {
       result.push(...expandAngleArc(el));
     } else if (el.type === 'integral_region') {
-      result.push(...expandIntegralRegion(el));
+      result.push(...expandIntegralRegion(el, theme));
     } else if (el.type === 'cartesian_axes') {
-      result.push(...expandCartesianAxes(el));
+      result.push(...expandCartesianAxes(el, theme));
     } else if (el.type === 'number_line') {
-      result.push(...expandNumberLine(el));
+      result.push(...expandNumberLine(el, theme));
     } else if (el.type === 'vector_arrow') {
       result.push(...expandVectorArrow(el));
     } else if (el.type === 'circle_with_radius') {
@@ -1948,9 +2032,12 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
     } else if (el.type === 'triangle_with_angles') {
       result.push(...expandTriangleWithAngles(el));
     } else if (el.type === 'parametric_curve') {
-      result.push(...expandParametricCurve(el));
+      if (theme && !el.color) {
+        el.color = getCurveColor(theme, curveIndex++);
+      }
+      result.push(...expandParametricCurve(el, theme));
     } else if (el.type === 'polar_plot') {
-      result.push(...expandPolarPlot(el));
+      result.push(...expandPolarPlot(el, theme));
     } else if (el.type === 'riemann_sum') {
       result.push(...expandRiemannSum(el));
     } else if (el.type === 'tangent_line') {
@@ -1958,11 +2045,11 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
     } else if (el.type === 'matrix_bracket') {
       result.push(...expandMatrixBracket(el));
     } else if (el.type === 'linear_transform') {
-      result.push(...expandLinearTransform(el));
+      result.push(...expandLinearTransform(el, theme));
     } else if (el.type === 'histogram') {
-      result.push(...expandHistogram(el));
+      result.push(...expandHistogram(el, theme));
     } else if (el.type === 'normal_distribution') {
-      result.push(...expandNormalDistribution(el));
+      result.push(...expandNormalDistribution(el, theme));
     } else {
       result.push(el);
     }
@@ -1977,28 +2064,29 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
  */
 export function lowerMathPrimitive(
   el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement,
+  theme?: ColorTheme,
 ): DrawElement[] {
   switch (el.type) {
     case 'cartesian_axes':
-      return expandCartesianAxes(el);
+      return expandCartesianAxes(el, theme);
     case 'number_line':
-      return expandNumberLine(el);
+      return expandNumberLine(el, theme);
     case 'vector_arrow':
       return expandVectorArrow(el);
     case 'function_curve':
-      return expandFunctionCurve(el);
+      return expandFunctionCurve(el, theme);
     case 'angle_arc':
       return expandAngleArc(el);
     case 'integral_region':
-      return expandIntegralRegion(el);
+      return expandIntegralRegion(el, theme);
     case 'circle_with_radius':
       return expandCircleWithRadius(el);
     case 'triangle_with_angles':
       return expandTriangleWithAngles(el);
     case 'parametric_curve':
-      return expandParametricCurve(el);
+      return expandParametricCurve(el, theme);
     case 'polar_plot':
-      return expandPolarPlot(el);
+      return expandPolarPlot(el, theme);
     case 'riemann_sum':
       return expandRiemannSum(el);
     case 'tangent_line':
@@ -2006,16 +2094,17 @@ export function lowerMathPrimitive(
     case 'matrix_bracket':
       return expandMatrixBracket(el);
     case 'linear_transform':
-      return expandLinearTransform(el);
+      return expandLinearTransform(el, theme);
     case 'histogram':
-      return expandHistogram(el);
+      return expandHistogram(el, theme);
     case 'normal_distribution':
-      return expandNormalDistribution(el);
+      return expandNormalDistribution(el, theme);
   }
 }
 
 export interface LowerOptions {
   maxElements?: number;
+  colorTheme?: ColorTheme;
 }
 
 export function lowerPlannedLayoutToDrawBatch(
@@ -2027,7 +2116,7 @@ export function lowerPlannedLayoutToDrawBatch(
     const maxElements = options?.maxElements ?? DEFAULT_MAX_LOWERED_ELEMENTS;
 
     // Expand composite math primitives before dedup/validation
-    const expanded = expandMathPrimitives(layout.elements);
+    const expanded = expandMathPrimitives(layout.elements, options?.colorTheme);
 
     // Deduplicate elements by id (keep last occurrence)
     const seen = new Map<string, DrawElement>();
@@ -2066,6 +2155,7 @@ export function lowerPlannedLayoutToDrawBatch(
       batch_id: layout.batchId,
       style_preset: layout.stylePreset,
       elements: sorted,
+      ...(options?.colorTheme ? { colorTheme: options.colorTheme } : {}),
     };
   };
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { lowerMathPrimitive } from '../planner/lowerer';
-import { parseMathExpression } from '../graph-script';
-import { sampleFunction } from '../math-sampling';
+import { parseMathExpression, validateExpression } from '../graph-script';
+import { sampleFunction, sampleFunctionWithWarnings } from '../math-sampling';
 import type { FunctionCurveElement } from '@/types/agent';
 
 /** Helper to build a FunctionCurveElement with sensible defaults. */
@@ -263,5 +263,157 @@ describe('expandFunctionCurve (via lowerMathPrimitive)', () => {
     const result = lowerMathPrimitive(el);
     const labels = result.filter((e) => e.type === 'text');
     expect(labels.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Implicit multiplication
+// ---------------------------------------------------------------------------
+describe('parseMathExpression — implicit multiplication', () => {
+  it('parses 2x as 2*x', () => {
+    const fn = parseMathExpression('2x');
+    expect(fn).not.toBeNull();
+    expect(fn!(3)).toBeCloseTo(6);
+    expect(fn!(-1)).toBeCloseTo(-2);
+  });
+
+  it('parses 2(x+1) as 2*(x+1)', () => {
+    const fn = parseMathExpression('2(x+1)');
+    expect(fn).not.toBeNull();
+    expect(fn!(0)).toBeCloseTo(2);
+    expect(fn!(4)).toBeCloseTo(10);
+  });
+
+  it('parses (x+1)(x-1) as (x+1)*(x-1)', () => {
+    const fn = parseMathExpression('(x+1)(x-1)');
+    expect(fn).not.toBeNull();
+    // (x+1)(x-1) = x^2 - 1
+    expect(fn!(3)).toBeCloseTo(8);
+    expect(fn!(1)).toBeCloseTo(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inverse-trig and hyperbolic functions
+// ---------------------------------------------------------------------------
+describe('parseMathExpression — asin/acos/atan', () => {
+  it('parses asin(x)', () => {
+    const fn = parseMathExpression('asin(x)');
+    expect(fn).not.toBeNull();
+    expect(fn!(0)).toBeCloseTo(0);
+    expect(fn!(1)).toBeCloseTo(Math.PI / 2);
+  });
+
+  it('parses acos(x)', () => {
+    const fn = parseMathExpression('acos(x)');
+    expect(fn).not.toBeNull();
+    expect(fn!(1)).toBeCloseTo(0);
+    expect(fn!(0)).toBeCloseTo(Math.PI / 2);
+  });
+
+  it('parses atan(x)', () => {
+    const fn = parseMathExpression('atan(x)');
+    expect(fn).not.toBeNull();
+    expect(fn!(0)).toBeCloseTo(0);
+    expect(fn!(1)).toBeCloseTo(Math.PI / 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// min/max two-argument functions
+// ---------------------------------------------------------------------------
+describe('parseMathExpression — min/max', () => {
+  it('parses min(x, 0)', () => {
+    const fn = parseMathExpression('min(x, 0)');
+    expect(fn).not.toBeNull();
+    expect(fn!(5)).toBeCloseTo(0);
+    expect(fn!(-3)).toBeCloseTo(-3);
+  });
+
+  it('parses max(x, 0)', () => {
+    const fn = parseMathExpression('max(x, 0)');
+    expect(fn).not.toBeNull();
+    expect(fn!(5)).toBeCloseTo(5);
+    expect(fn!(-3)).toBeCloseTo(0);
+  });
+
+  it('parses min(sin(x), cos(x))', () => {
+    const fn = parseMathExpression('min(sin(x), cos(x))');
+    expect(fn).not.toBeNull();
+    expect(fn!(0)).toBeCloseTo(0); // min(0, 1) = 0
+    expect(fn!(Math.PI / 2)).toBeCloseTo(0); // min(1, 0) = 0
+  });
+
+  it('parses pow(x, 3) as x^3', () => {
+    const fn = parseMathExpression('pow(x, 3)');
+    expect(fn).not.toBeNull();
+    expect(fn!(2)).toBeCloseTo(8);
+    expect(fn!(-2)).toBeCloseTo(-8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateExpression — good and bad expressions
+// ---------------------------------------------------------------------------
+describe('validateExpression', () => {
+  it('reports valid for well-formed expressions', () => {
+    expect(validateExpression('sin(x)').valid).toBe(true);
+    expect(validateExpression('x^2 + 1').valid).toBe(true);
+    expect(validateExpression('2x + 3').valid).toBe(true);
+    expect(validateExpression('max(x, 0)').valid).toBe(true);
+  });
+
+  it('reports invalid with descriptive error for unknown identifiers', () => {
+    const result = validateExpression('foo(x)');
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Unknown identifier');
+    expect(result.error).toContain('foo');
+  });
+
+  it('reports invalid for empty expressions', () => {
+    const result = validateExpression('');
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('reports invalid for unbalanced parentheses', () => {
+    const result = validateExpression('sin(x');
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('parenthes');
+  });
+
+  it('reports invalid for unexpected characters', () => {
+    const result = validateExpression('x & 2');
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Unexpected character');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sampleFunctionWithWarnings — mostly-NaN and all-NaN warnings
+// ---------------------------------------------------------------------------
+describe('sampleFunctionWithWarnings — domain warnings', () => {
+  it('returns warning when all points are NaN', () => {
+    // sqrt(x) on [-10, -1] → all NaN
+    const fn = parseMathExpression('sqrt(x)')!;
+    const result = sampleFunctionWithWarnings(fn, -10, -1, 100);
+    expect(result.segments).toHaveLength(0);
+    expect(result.warnings.length).toBeGreaterThanOrEqual(1);
+    expect(result.warnings[0]).toContain('undefined on this domain');
+  });
+
+  it('returns warning when >50% of points are NaN', () => {
+    // log(x) over [-5, 1] → most points are NaN (x<=0 is undefined)
+    const fn = parseMathExpression('log(x)')!;
+    const result = sampleFunctionWithWarnings(fn, -5, 1, 100);
+    expect(result.warnings.length).toBeGreaterThanOrEqual(1);
+    expect(result.warnings[0]).toContain('mostly undefined');
+  });
+
+  it('returns no warnings for fully defined function', () => {
+    const fn = parseMathExpression('sin(x)')!;
+    const result = sampleFunctionWithWarnings(fn, -Math.PI, Math.PI, 200);
+    expect(result.warnings).toHaveLength(0);
+    expect(result.segments.length).toBe(1);
   });
 });

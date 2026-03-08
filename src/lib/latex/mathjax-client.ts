@@ -498,6 +498,31 @@ function getCumulativeMatrix(el: Element): Matrix2D {
   return matrix;
 }
 
+// ---------------------------------------------------------------------------
+// LRU cache for extracted strokes (avoids re-parsing SVG on every redraw)
+// ---------------------------------------------------------------------------
+const MAX_STROKE_CACHE = 100;
+const strokeCache = new Map<string, StrokeTrajectory[]>();
+
+function strokeCacheKey(svg: string, opts: { offsetX: number; offsetY: number; scale: number; strokeIdPrefix: string; color: string; baseWidth: number }): string {
+  return `${opts.strokeIdPrefix}:${opts.scale}:${opts.offsetX}:${opts.offsetY}:${opts.color}:${opts.baseWidth}:${svg.length}:${svg.slice(0, 64)}`;
+}
+
+function deepCopyStrokes(strokes: StrokeTrajectory[]): StrokeTrajectory[] {
+  return strokes.map((s) => ({
+    ...s,
+    points: s.points.map((p) => ({ x: p.x, y: p.y })),
+  }));
+}
+
+export function strokeCacheStats(): { size: number; maxSize: number } {
+  return { size: strokeCache.size, maxSize: MAX_STROKE_CACHE };
+}
+
+export function clearStrokeCache(): void {
+  strokeCache.clear();
+}
+
 export function extractSvgStrokes(
   svg: string,
   options: {
@@ -507,13 +532,26 @@ export function extractSvgStrokes(
     strokeIdPrefix: string;
     color: string;
     baseWidth: number;
+    /** Device pixel ratio multiplier for retina sharpness (default 2). */
+    dpr?: number;
   },
 ): StrokeTrajectory[] {
+  const cKey = strokeCacheKey(svg, options);
+  const cached = strokeCache.get(cKey);
+  if (cached) {
+    strokeCache.delete(cKey);
+    strokeCache.set(cKey, cached);
+    return deepCopyStrokes(cached);
+  }
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(svg, 'image/svg+xml');
   const drawables = Array.from(doc.querySelectorAll('path, rect, line, polyline, polygon'));
   const rootSvg = doc.querySelector('svg');
   const viewportMatrix = rootSvg ? getSvgViewportMatrix(rootSvg) : identityMatrix();
+  // Higher DPR → finer sampling for sharper curves on retina displays
+  const dprScale = options.dpr ?? 2;
+  const sampleSpacing = Math.max(0.5, 2 / dprScale);
   const placementMatrix: Matrix2D = {
     a: options.scale,
     b: 0,
@@ -523,7 +561,7 @@ export function extractSvgStrokes(
     f: options.offsetY,
   };
 
-  return drawables
+  const result = drawables
     .flatMap((el, index) => {
       const tag = el.tagName.toLowerCase();
 
@@ -537,7 +575,7 @@ export function extractSvgStrokes(
         if (!d) return [];
         return splitPathSubpaths(d)
           .map((subpath, subpathIndex) => {
-            const points = parsePathPoints(subpath, transformMatrix, 2);
+            const points = parsePathPoints(subpath, transformMatrix, sampleSpacing);
             if (points.length < 2) return null;
             return {
               id: `${options.strokeIdPrefix}-latex-${index}-${subpathIndex}`,
@@ -556,7 +594,7 @@ export function extractSvgStrokes(
       if (tag === 'polyline') points = pointsForPolyline(el, false);
       if (tag === 'polygon') points = pointsForPolyline(el, true);
 
-      const transformed = applyMatrixToPolyline(points, transformMatrix, 2);
+      const transformed = applyMatrixToPolyline(points, transformMatrix, sampleSpacing);
       if (transformed.length < 2) return [];
 
       return [
@@ -570,4 +608,11 @@ export function extractSvgStrokes(
       ];
     })
     .filter((stroke) => stroke.points.length >= 2);
+
+  if (strokeCache.size > 200) {
+    const oldest = strokeCache.keys().next().value;
+    if (oldest !== undefined) strokeCache.delete(oldest);
+  }
+  strokeCache.set(cKey, deepCopyStrokes(result));
+  return result;
 }

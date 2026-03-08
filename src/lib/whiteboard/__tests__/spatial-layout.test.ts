@@ -3,6 +3,7 @@ import {
   computeSpatialSummary,
   mergeOccupiedRegions,
   whiteboardBoundsToRects,
+  suggestRegions,
   CANVAS_W,
   CANVAS_H,
   GRID_CELL_W,
@@ -152,5 +153,81 @@ describe('Spatial Layout — whiteboardBoundsToRects', () => {
       { x: 50, y: 50, w: 100, h: 0 },
     ]);
     expect(result).toHaveLength(1);
+  });
+});
+
+describe('Spatial Layout — suggestRegions', () => {
+  it('returns n non-overlapping regions on an empty canvas', () => {
+    const regions = suggestRegions(3, CANVAS_W, CANVAS_H, []);
+    expect(regions).toHaveLength(3);
+
+    // All regions should have positive area
+    for (const r of regions) {
+      expect(r.w).toBeGreaterThan(0);
+      expect(r.h).toBeGreaterThan(0);
+    }
+
+    // No pair should overlap
+    for (let i = 0; i < regions.length; i++) {
+      for (let j = i + 1; j < regions.length; j++) {
+        const a = regions[i];
+        const b = regions[j];
+        const overlapX = a.x < b.x + b.w && a.x + a.w > b.x;
+        const overlapY = a.y < b.y + b.h && a.y + a.h > b.y;
+        expect(overlapX && overlapY).toBe(false);
+      }
+    }
+  });
+
+  it('returns 2 regions split into left and right halves', () => {
+    const regions = suggestRegions(2, CANVAS_W, CANVAS_H, []);
+    expect(regions).toHaveLength(2);
+
+    const [left, right] = regions;
+    // Left region should be in the left half
+    expect(left.x + left.w).toBeLessThanOrEqual(CANVAS_W / 2 + 50);
+    // Right region should be in the right half
+    expect(right.x).toBeGreaterThanOrEqual(CANVAS_W / 2 - 50);
+  });
+
+  it('returns 4 quadrant regions', () => {
+    const regions = suggestRegions(4, CANVAS_W, CANVAS_H, []);
+    expect(regions).toHaveLength(4);
+
+    // Each region should have positive dimensions
+    for (const r of regions) {
+      expect(r.w).toBeGreaterThan(0);
+      expect(r.h).toBeGreaterThan(0);
+    }
+
+    // Should be arranged in a 2×2 grid — top-left, top-right, bottom-left, bottom-right
+    expect(regions[0].x).toBeLessThan(regions[1].x); // TL < TR horizontally
+    expect(regions[2].y).toBeGreaterThan(regions[0].y); // BL below TL
+  });
+
+  it('avoids occupied areas by shrinking regions', () => {
+    // Occupy the entire left third of the canvas
+    const occupied = [{ x: 0, y: 0, w: 500, h: CANVAS_H }];
+    const regions = suggestRegions(2, CANVAS_W, CANVAS_H, occupied);
+    expect(regions).toHaveLength(2);
+
+    // The left region should be shrunk or shifted to avoid the occupied area
+    const leftRegion = regions[0];
+    // It should not start at x=50 since that area is occupied
+    // Either its area is reduced or it's offset rightward
+    const leftEnd = leftRegion.x + leftRegion.w;
+    const rightStart = regions[1].x;
+    expect(leftEnd).toBeLessThanOrEqual(rightStart + 1);
+  });
+
+  it('returns zero-area regions when canvas is fully occupied', () => {
+    const occupied = [{ x: 0, y: 0, w: CANVAS_W, h: CANVAS_H }];
+    const regions = suggestRegions(3, CANVAS_W, CANVAS_H, occupied);
+    expect(regions).toHaveLength(3);
+
+    // All regions should be zero-area since the entire canvas is occupied
+    for (const r of regions) {
+      expect(r.w * r.h).toBe(0);
+    }
   });
 });

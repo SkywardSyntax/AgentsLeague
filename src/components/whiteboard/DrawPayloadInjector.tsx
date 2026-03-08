@@ -970,7 +970,226 @@ const QUICK_FIELDS: Record<QuickElementType, FieldDef[]> = {
 
 const BRACKET_PAIRS: Record<string, string> = { '{': '}', '[': ']', '"': '"' };
 
-type TabId = 'json' | 'templates' | 'history';
+type TabId = 'json' | 'templates' | 'history' | 'build';
+// ---------------------------------------------------------------------------
+// AI-assisted JSON generation — client-side keyword matching
+// ---------------------------------------------------------------------------
+
+function generateBatchFromDescription(description: string): DrawBatch {
+  const d = description.toLowerCase().trim();
+  const elements: DrawElement[] = [];
+  const ts = Date.now().toString(36);
+
+  if (/\b(sin|cos|tan)\b/.test(d)) {
+    const match = d.match(/\b(sin|cos|tan)\b/);
+    const fn = match![1];
+    const hasAxes = /\b(ax[ei]s|coordinate)\b/.test(d);
+    if (hasAxes) {
+      elements.push({
+        id: `ai-axes-${ts}`, type: 'cartesian_axes',
+        x: 100, y: 60, width: 800, height: 600,
+        xRange: [-7, 7], yRange: [-2, 2],
+        xLabel: 'x', yLabel: 'y', gridlines: true,
+      });
+    }
+    elements.push({
+      id: `ai-curve-${ts}`, type: 'function_curve',
+      x: 100, y: 60, width: 800, height: 600,
+      expression: `${fn}(x)`,
+      xRange: [-6.28, 6.28], yRange: [-2, 2],
+      label: `f(x) = ${fn}(x)`, color: '#0a84ff',
+    });
+  } else if (/\bcircle\b/.test(d)) {
+    const radiusMatch = d.match(/radius\s*[=:]?\s*(\d+)/);
+    const r = radiusMatch ? parseInt(radiusMatch[1], 10) : 120;
+    elements.push({
+      id: `ai-circ-${ts}`, type: 'ellipse',
+      cx: 400, cy: 350, rx: r, ry: r, color: '#0a84ff', stroke_width: 2,
+    });
+  } else if (/\b(ax[ei]s|coordinate)\b/.test(d)) {
+    elements.push({
+      id: `ai-axes-${ts}`, type: 'cartesian_axes',
+      x: 100, y: 60, width: 800, height: 600,
+      xRange: [-5, 5], yRange: [-5, 5],
+      xLabel: 'x', yLabel: 'y', gridlines: true,
+    });
+  } else if (/\bintegral\b/.test(d)) {
+    const topPts = Array.from({ length: 41 }, (_, i) => {
+      const xv = 1 + (2 * i) / 40;
+      return { x: xv, y: xv * xv };
+    });
+    elements.push(
+      {
+        id: `ai-ig-axes-${ts}`, type: 'cartesian_axes',
+        x: 100, y: 50, width: 700, height: 500,
+        xRange: [-0.5, 4.5] as [number, number], yRange: [-0.5, 10] as [number, number],
+        xLabel: 'x', yLabel: 'y', gridlines: true,
+      },
+      {
+        id: `ai-ig-region-${ts}`, type: 'integral_region',
+        x: 100, y: 50, width: 700, height: 500,
+        xRange: [1, 3] as [number, number], yRange: [-0.5, 10] as [number, number],
+        topPoints: topPts,
+        fillColor: 'rgba(30, 64, 175, 0.2)', strokeColor: '#1e40af',
+        label: '\u222b\u2081\u00b3 x\u00b2dx',
+      },
+    );
+  } else if (/\b(normal|bell\s*curve)\b/.test(d)) {
+    elements.push({
+      id: `ai-norm-${ts}`, type: 'normal_distribution',
+      x: 100, y: 80, width: 600, height: 400,
+      mu: 0, sigma: 1,
+      showMeanLine: true, showSigmaLines: true, showLabels: true,
+    });
+  } else if (/\bhistogram\b/.test(d)) {
+    elements.push({
+      id: `ai-hist-${ts}`, type: 'histogram',
+      x: 100, y: 80, width: 600, height: 400,
+      bins: [
+        { label: 'A', value: 12 }, { label: 'B', value: 25 },
+        { label: 'C', value: 18 }, { label: 'D', value: 30 },
+        { label: 'E', value: 15 },
+      ],
+      showValues: true, showAxes: true,
+      xLabel: 'Category', yLabel: 'Count',
+    });
+  } else if (/\bmatrix\b/.test(d)) {
+    elements.push({
+      id: `ai-mat-${ts}`, type: 'matrix_bracket',
+      x: 200, y: 200, rows: [['1', '0'], ['0', '1']],
+      bracketStyle: '[]', cellWidth: 40, cellHeight: 32,
+    });
+  } else if (/\bvector\b/.test(d)) {
+    elements.push({
+      id: `ai-vec-${ts}`, type: 'vector_arrow',
+      x: 200, y: 400, dx: 250, dy: -200, label: 'v\u20d7', color: '#0a84ff',
+    });
+  } else {
+    const labelText = description.trim().substring(0, 60) || 'Element';
+    elements.push(
+      { id: `ai-rect-${ts}`, type: 'rect', x: 150, y: 150, w: 300, h: 200, color: '#0a84ff', stroke_width: 2 },
+      { id: `ai-txt-${ts}`, type: 'text', x: 170, y: 180, text: labelText, size: 16, color: '#111827' },
+    );
+  }
+
+  return {
+    batch_id: `ai-gen-${ts}`,
+    style_preset: 'clean_pen_sketch',
+    elements,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Build-tab element type configs
+// ---------------------------------------------------------------------------
+
+const BUILD_ELEMENT_TYPES = [
+  'rect', 'ellipse', 'line', 'arrow', 'text', 'function_curve', 'cartesian_axes',
+] as const;
+type BuildElementType = (typeof BUILD_ELEMENT_TYPES)[number];
+
+const BUILD_ELEMENT_LABELS: Record<BuildElementType, string> = {
+  rect: 'Rectangle',
+  ellipse: 'Ellipse',
+  line: 'Line',
+  arrow: 'Arrow',
+  text: 'Text',
+  function_curve: 'Function Curve',
+  cartesian_axes: 'Cartesian Axes',
+};
+
+interface BuildFieldDef { key: string; label: string; defaultValue: string; type?: 'text' | 'number' | 'color'; }
+
+const BUILD_FIELDS: Record<BuildElementType, BuildFieldDef[]> = {
+  rect: [
+    { key: 'x', label: 'X', defaultValue: '100', type: 'number' },
+    { key: 'y', label: 'Y', defaultValue: '100', type: 'number' },
+    { key: 'w', label: 'Width', defaultValue: '200', type: 'number' },
+    { key: 'h', label: 'Height', defaultValue: '150', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#0a84ff', type: 'color' },
+  ],
+  ellipse: [
+    { key: 'cx', label: 'Center X', defaultValue: '300', type: 'number' },
+    { key: 'cy', label: 'Center Y', defaultValue: '300', type: 'number' },
+    { key: 'rx', label: 'Radius X', defaultValue: '100', type: 'number' },
+    { key: 'ry', label: 'Radius Y', defaultValue: '80', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#0a84ff', type: 'color' },
+  ],
+  line: [
+    { key: 'x1', label: 'From X', defaultValue: '100', type: 'number' },
+    { key: 'y1', label: 'From Y', defaultValue: '100', type: 'number' },
+    { key: 'x2', label: 'To X', defaultValue: '400', type: 'number' },
+    { key: 'y2', label: 'To Y', defaultValue: '300', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
+  ],
+  arrow: [
+    { key: 'x1', label: 'From X', defaultValue: '100', type: 'number' },
+    { key: 'y1', label: 'From Y', defaultValue: '300', type: 'number' },
+    { key: 'x2', label: 'To X', defaultValue: '400', type: 'number' },
+    { key: 'y2', label: 'To Y', defaultValue: '100', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
+  ],
+  text: [
+    { key: 'x', label: 'X', defaultValue: '200', type: 'number' },
+    { key: 'y', label: 'Y', defaultValue: '200', type: 'number' },
+    { key: 'content', label: 'Text', defaultValue: 'Hello', type: 'text' },
+    { key: 'size', label: 'Font Size', defaultValue: '18', type: 'number' },
+    { key: 'color', label: 'Color', defaultValue: '#111827', type: 'color' },
+  ],
+  function_curve: [
+    { key: 'expression', label: 'f(x)', defaultValue: 'sin(x)', type: 'text' },
+    { key: 'xMin', label: 'X From', defaultValue: '-6.28', type: 'number' },
+    { key: 'xMax', label: 'X To', defaultValue: '6.28', type: 'number' },
+    { key: 'yMin', label: 'Y From', defaultValue: '-2', type: 'number' },
+    { key: 'yMax', label: 'Y To', defaultValue: '2', type: 'number' },
+    { key: 'label', label: 'Label', defaultValue: '', type: 'text' },
+    { key: 'color', label: 'Color', defaultValue: '#0a84ff', type: 'color' },
+  ],
+  cartesian_axes: [
+    { key: 'xMin', label: 'X Min', defaultValue: '-5', type: 'number' },
+    { key: 'xMax', label: 'X Max', defaultValue: '5', type: 'number' },
+    { key: 'yMin', label: 'Y Min', defaultValue: '-5', type: 'number' },
+    { key: 'yMax', label: 'Y Max', defaultValue: '5', type: 'number' },
+    { key: 'xLabel', label: 'X Label', defaultValue: 'x', type: 'text' },
+    { key: 'yLabel', label: 'Y Label', defaultValue: 'y', type: 'text' },
+  ],
+};
+
+function buildElementFromFields(type: BuildElementType, fields: Record<string, string>): DrawElement {
+  const color = fields.color || '#0a84ff';
+  const id = `build-${type}-${Date.now().toString(36)}`;
+
+  switch (type) {
+    case 'rect':
+      return { id, type: 'rect', x: num(fields.x, 100), y: num(fields.y, 100), w: num(fields.w, 200), h: num(fields.h, 150), color };
+    case 'ellipse':
+      return { id, type: 'ellipse', cx: num(fields.cx, 300), cy: num(fields.cy, 300), rx: num(fields.rx, 100), ry: num(fields.ry, 80), color };
+    case 'line':
+      return { id, type: 'line', from: { x: num(fields.x1, 100), y: num(fields.y1, 100) }, to: { x: num(fields.x2, 400), y: num(fields.y2, 300) }, color, stroke_width: 2 };
+    case 'arrow':
+      return { id, type: 'arrow', from: { x: num(fields.x1, 100), y: num(fields.y1, 300) }, to: { x: num(fields.x2, 400), y: num(fields.y2, 100) }, color, stroke_width: 2 };
+    case 'text':
+      return { id, type: 'text', x: num(fields.x, 200), y: num(fields.y, 200), text: fields.content || 'Hello', size: num(fields.size, 18), color };
+    case 'function_curve':
+      return {
+        id, type: 'function_curve', x: 100, y: 60, width: 800, height: 600,
+        expression: fields.expression || 'sin(x)',
+        xRange: [num(fields.xMin, -6.28), num(fields.xMax, 6.28)],
+        yRange: [num(fields.yMin, -2), num(fields.yMax, 2)],
+        label: fields.label || '', color,
+      };
+    case 'cartesian_axes':
+      return {
+        id, type: 'cartesian_axes', x: 100, y: 60, width: 800, height: 600,
+        xRange: [num(fields.xMin, -5), num(fields.xMax, 5)],
+        yRange: [num(fields.yMin, -5), num(fields.yMax, 5)],
+        xLabel: fields.xLabel || 'x', yLabel: fields.yLabel || 'y', gridlines: true,
+      };
+    default:
+      return { id, type: 'rect', x: 100, y: 100, w: 200, h: 150 };
+  }
+}
+
 
 const DEFAULT_JSON = JSON.stringify(
   {
@@ -1030,6 +1249,33 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
   // New state — format feedback
   const [formatFeedback, setFormatFeedback] = useState(false);
 
+  // Color theme selector handler
+  const handleThemeChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const theme = e.target.value;
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (theme === 'default') {
+        delete parsed.colorTheme;
+      } else {
+        parsed.colorTheme = theme;
+      }
+      setJsonText(JSON.stringify(parsed, null, 2));
+    } catch {
+      // JSON is invalid — can't inject theme
+    }
+  }, [jsonText]);
+
+  // Derive current theme from JSON for the dropdown
+  const currentTheme = useMemo(() => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (parsed.colorTheme && ['default', 'dark', 'colorful', 'pastel', 'monochrome'].includes(parsed.colorTheme)) {
+        return parsed.colorTheme as string;
+      }
+    } catch { /* ignore */ }
+    return 'default';
+  }, [jsonText]);
+
   // Docs panel toggle
   const [showDocs, setShowDocs] = useState(false);
 
@@ -1065,6 +1311,20 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
   const [quickType, setQuickType] = useState<QuickElementType | ''>('');
   const [quickFields, setQuickFields] = useState<Record<string, string>>({});
   const [quickSuccess, setQuickSuccess] = useState<string | null>(null);
+
+  // AI description → JSON
+  const [aiDescription, setAiDescription] = useState('');
+
+  // Diff toast after injection
+  const [diffToast, setDiffToast] = useState<string | null>(null);
+
+  // Tracks previously-seen batch IDs for update detection
+  const injectedBatchIdsRef = useRef<Set<string>>(new Set());
+
+  // Build tab state
+  const [buildType, setBuildType] = useState<BuildElementType | ''>('');
+  const [buildFields, setBuildFields] = useState<Record<string, string>>({});
+  const [buildElements, setBuildElements] = useState<DrawElement[]>([]);
 
   // Textarea ref for programmatic cursor manipulation
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1198,6 +1458,40 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     setQuickFields(defaults);
   }, [quickType]);
 
+  // ------- AI description → JSON handler -------
+  const handleAiGenerate = useCallback(() => {
+    if (!aiDescription.trim()) return;
+    const batch = generateBatchFromDescription(aiDescription);
+    setJsonText(JSON.stringify(batch, null, 2));
+    setTab('json');
+  }, [aiDescription]);
+
+  // ------- Build tab handlers -------
+  useEffect(() => {
+    if (!buildType) { setBuildFields({}); return; }
+    const defaults: Record<string, string> = {};
+    for (const f of BUILD_FIELDS[buildType]) defaults[f.key] = f.defaultValue;
+    setBuildFields(defaults);
+  }, [buildType]);
+
+  const handleAddToBatch = useCallback(() => {
+    if (!buildType) return;
+    const el = buildElementFromFields(buildType, buildFields);
+    const next = [...buildElements, el];
+    setBuildElements(next);
+    const batch: DrawBatch = {
+      batch_id: `build-${Date.now().toString(36)}`,
+      style_preset: 'clean_pen_sketch',
+      elements: next,
+    };
+    setJsonText(JSON.stringify(batch, null, 2));
+  }, [buildType, buildFields, buildElements]);
+
+  const handleClearBatch = useCallback(() => {
+    setBuildElements([]);
+    setJsonText(DEFAULT_JSON);
+  }, []);
+
   // Real-time Zod validation
   const parseResult = useMemo(() => {
     try {
@@ -1263,6 +1557,7 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     if (!parseResult.ok) return;
     clearError();
     setSuccessMsg(null);
+    setDiffToast(null);
 
     const result = await inject(parseResult.data);
     if (result) {
@@ -1271,6 +1566,17 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
       const firstType = result.batch.elements[0]?.type ?? 'unknown';
       saveToHistory(jsonText, result.diagnostics.elementCount, firstType);
       setHistory(loadHistory());
+
+      // Diff toast: detect add vs update
+      const bId = result.batch.batch_id;
+      const count = result.diagnostics.elementCount;
+      if (injectedBatchIdsRef.current.has(bId)) {
+        setDiffToast(`~ ${count} updated`);
+      } else {
+        setDiffToast(`+ ${count} element${count !== 1 ? 's' : ''} added`);
+      }
+      injectedBatchIdsRef.current.add(bId);
+      setTimeout(() => setDiffToast(null), 3000);
 
       setSuccessMsg(`Injected ${result.diagnostics.elementCount} elements`);
       // Auto-close after brief success display (desktop only)
@@ -1429,7 +1735,7 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
 
       {/* Tab switcher */}
       <div className="flex gap-1 border-b border-[var(--color-border)] px-3 py-1.5" role="tablist">
-        {(['json', 'templates', 'history'] as const).map((t) => (
+        {(['json', 'templates', 'history', 'build'] as const).map((t) => (
           <PillButton
             key={t}
             role="tab"
@@ -1438,7 +1744,7 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
             size="sm"
             onClick={() => setTab(t)}
           >
-            {t === 'json' ? 'JSON' : t === 'templates' ? 'Templates' : `History (${history.length})`}
+            {t === 'json' ? 'JSON' : t === 'templates' ? 'Templates' : t === 'build' ? 'Build' : `History (${history.length})`}
           </PillButton>
         ))}
       </div>
@@ -1449,6 +1755,20 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
           <div className="flex flex-col gap-2">
             {/* Toolbar */}
             <div className="flex items-center justify-end gap-1.5">
+              <label className="flex items-center gap-1 text-[10px] font-medium text-[var(--color-text-secondary)]">
+                Theme
+                <select
+                  value={currentTheme}
+                  onChange={handleThemeChange}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)] outline-none transition hover:bg-[var(--color-surface)]"
+                >
+                  <option value="default">Default</option>
+                  <option value="dark">Dark</option>
+                  <option value="colorful">Colorful</option>
+                  <option value="pastel">Pastel</option>
+                  <option value="monochrome">Monochrome</option>
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={handleFormatJson}
@@ -1570,6 +1890,24 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
               </div>
             )}
 
+            {/* Diff toast */}
+            {diffToast && (
+              <div
+                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-opacity duration-300"
+                style={{
+                  backgroundColor: diffToast.startsWith('+') ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.12)',
+                  border: `1px solid ${diffToast.startsWith('+') ? 'rgba(34,197,94,0.3)' : 'rgba(234,179,8,0.3)'}`,
+                }}
+              >
+                <span
+                  className="text-[11px] font-semibold"
+                  style={{ color: diffToast.startsWith('+') ? '#16a34a' : '#ca8a04' }}
+                >
+                  {diffToast}
+                </span>
+              </div>
+            )}
+
             {/* Mini preview */}
             {previewBatch ? (
               <MiniPreviewCanvas drawBatch={previewBatch} width={isMobile ? 280 : 352} height={200} />
@@ -1600,6 +1938,34 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
               )}
               {isInjecting ? 'Injecting…' : 'Inject'}
             </PillButton>
+
+            {/* ── AI-assisted JSON generation ── */}
+            <div className="mt-2 flex flex-col gap-2 border-t border-[var(--color-border)] pt-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Describe to Generate
+              </span>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={aiDescription}
+                  onChange={(e) => setAiDescription(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAiGenerate(); } }}
+                  placeholder='e.g. "sin(x) from -π to π with axes"'
+                  className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)]"
+                />
+                <PillButton
+                  variant="accent"
+                  size="sm"
+                  onClick={handleAiGenerate}
+                  disabled={!aiDescription.trim()}
+                >
+                  Generate
+                </PillButton>
+              </div>
+              <p className="text-[9px] leading-snug text-[var(--color-text-muted)]">
+                Keywords: sin/cos/tan, circle, axes, integral, normal, histogram, matrix, vector
+              </p>
+            </div>
 
             {/* ── Quick Inject ── */}
             <div className="mt-2 flex flex-col gap-2 border-t border-[var(--color-border)] pt-2">
@@ -1632,6 +1998,14 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
                       </label>
                     ))}
                   </div>
+                  {quickType === 'function_curve' && (
+                    <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1.5">
+                      <p className="text-[9px] font-semibold text-[var(--color-text-muted)]">Supported functions</p>
+                      <p className="mt-0.5 text-[9px] leading-relaxed text-[var(--color-text-secondary)]">
+                        sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, exp, log, ln, sqrt, abs, floor, ceil, round, sign, min(a,b), max(a,b), pow(a,b) · Constants: PI, E · Implicit multiplication: 2x, 2(x+1)
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <PillButton
                       variant="accent"
@@ -1729,6 +2103,103 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
                 </button>
               ))
             )}
+          </div>
+        )}
+
+        {tab === 'build' && (
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Build Batch — {buildElements.length} element{buildElements.length !== 1 ? 's' : ''}
+            </span>
+
+            {/* Element list */}
+            {buildElements.length > 0 && (
+              <div className="flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+                {buildElements.map((el, i) => (
+                  <div key={el.id} className="flex items-center justify-between">
+                    <span className="text-[10px] text-[var(--color-text-primary)]">
+                      <span className="font-mono text-[var(--color-accent)]">{i + 1}.</span>{' '}
+                      {el.type}
+                      <span className="ml-1 text-[var(--color-text-muted)]">({el.id})</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = buildElements.filter((_, j) => j !== i);
+                        setBuildElements(next);
+                        const batch: DrawBatch = {
+                          batch_id: `build-${Date.now().toString(36)}`,
+                          style_preset: 'clean_pen_sketch',
+                          elements: next,
+                        };
+                        setJsonText(JSON.stringify(batch, null, 2));
+                      }}
+                      className="text-[9px] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-danger)]"
+                      aria-label={`Remove element ${i + 1}`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add element form */}
+            <select
+              value={buildType}
+              onChange={(e) => setBuildType(e.target.value as BuildElementType | '')}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+            >
+              <option value="">Add element…</option>
+              {BUILD_ELEMENT_TYPES.map((t) => (
+                <option key={t} value={t}>{BUILD_ELEMENT_LABELS[t]}</option>
+              ))}
+            </select>
+
+            {buildType && (
+              <>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {BUILD_FIELDS[buildType].map((f) => (
+                    <label key={f.key} className="flex flex-col gap-0.5">
+                      <span className="text-[9px] font-medium text-[var(--color-text-muted)]">{f.label}</span>
+                      <input
+                        type={f.type === 'color' ? 'color' : f.type === 'number' ? 'number' : 'text'}
+                        value={buildFields[f.key] ?? f.defaultValue}
+                        onChange={(e) => setBuildFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        className={`rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] ${f.type === 'color' ? 'h-7 w-full cursor-pointer p-0' : ''}`}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <PillButton
+                  variant="accent"
+                  size="sm"
+                  onClick={handleAddToBatch}
+                >
+                  Add to batch
+                </PillButton>
+              </>
+            )}
+
+            <div className="flex items-center gap-2">
+              <PillButton
+                variant="default"
+                size="sm"
+                onClick={handleClearBatch}
+                disabled={buildElements.length === 0}
+              >
+                Clear batch
+              </PillButton>
+              {buildElements.length > 0 && (
+                <PillButton
+                  variant="accent"
+                  size="sm"
+                  onClick={() => setTab('json')}
+                >
+                  Edit in JSON →
+                </PillButton>
+              )}
+            </div>
           </div>
         )}
       </div>

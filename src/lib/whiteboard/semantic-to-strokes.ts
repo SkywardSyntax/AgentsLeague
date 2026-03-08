@@ -19,6 +19,7 @@ import {
 } from './shape-points';
 import { withJitter, withJitterAmount } from './stroke-jitter';
 import { lowerMathPrimitive } from './planner/lowerer';
+import type { ColorTheme } from '@/lib/whiteboard/color-theme';
 
 // Re-export for cross-lane backward compatibility
 export { rectPoints, ellipsePoints, linePoints, arrowHeadPoints } from './shape-points';
@@ -530,8 +531,11 @@ function speedForInjectionPriority(priority: number): DrawingSpeed {
 function expandAndSortForInjection(
   elements: DrawElement[],
   isInjection: boolean,
-): { sorted: DrawElement[]; speedHints: Map<string, DrawingSpeed> } {
+  colorTheme?: ColorTheme,
+): { sorted: DrawElement[]; speedHints: Map<string, DrawingSpeed>; originTypes: Map<string, string> } {
   const speedHints = new Map<string, DrawingSpeed>();
+  /** Maps expanded element IDs → original math primitive type (or own type). */
+  const originTypes = new Map<string, string>();
 
   // Expand math primitives at batch level
   const expanded: DrawElement[] = [];
@@ -554,14 +558,19 @@ function expandAndSortForInjection(
       el.type === 'histogram' ||
       el.type === 'normal_distribution'
     ) {
-      expanded.push(...lowerMathPrimitive(el));
+      const lowered = lowerMathPrimitive(el, colorTheme);
+      for (const child of lowered) {
+        originTypes.set(child.id, el.type);
+      }
+      expanded.push(...lowered);
     } else {
+      originTypes.set(el.id, el.type);
       expanded.push(el);
     }
   }
 
   if (!isInjection) {
-    return { sorted: expanded, speedHints };
+    return { sorted: expanded, speedHints, originTypes };
   }
 
   // Sort by injection priority
@@ -575,7 +584,63 @@ function expandAndSortForInjection(
     speedHints.set(el.id, speedForInjectionPriority(priority));
   }
 
-  return { sorted, speedHints };
+  return { sorted, speedHints, originTypes };
+}
+
+/** Detect curve segment IDs like "mycurve-seg0-3". */
+function isCurveSegmentId(id: string): boolean {
+  return /-seg\d+-\d+$/.test(id);
+}
+
+/** Extract the curve segment group key from an element ID (e.g. "mycurve-seg0"). */
+function curveSegmentGroup(id: string): string | null {
+  const match = id.match(/^(.*-seg\d+)-\d+$/);
+  return match ? match[1]! : null;
+}
+
+/**
+ * Merge consecutive 2-point line strokes from the same curve segment into a
+ * single multi-point stroke so the animation loop can progressively reveal
+ * the curve as one continuous "draw-as-you-go" stroke.
+ */
+export function consolidateCurveStrokes(strokes: StrokeTrajectory[]): StrokeTrajectory[] {
+  const result: StrokeTrajectory[] = [];
+  let i = 0;
+
+  while (i < strokes.length) {
+    const stroke = strokes[i]!;
+    const group = stroke.meta?.curveSegment ? curveSegmentGroup(stroke.id) : null;
+
+    if (!group) {
+      result.push(stroke);
+      i++;
+      continue;
+    }
+
+    // Collect consecutive strokes in the same curve segment group
+    const merged: StrokeTrajectory = {
+      ...stroke,
+      id: group,
+      points: [...stroke.points],
+    };
+
+    let j = i + 1;
+    while (j < strokes.length) {
+      const next = strokes[j]!;
+      const nextGroup = next.meta?.curveSegment ? curveSegmentGroup(next.id) : null;
+      if (nextGroup !== group) break;
+      // Append only the endpoint (avoid duplicating shared vertices)
+      if (next.points.length >= 2) {
+        merged.points.push(next.points[next.points.length - 1]!);
+      }
+      j++;
+    }
+
+    result.push(merged);
+    i = j;
+  }
+
+  return result;
 }
 
 export async function compileBatchToStrokes(
@@ -585,9 +650,10 @@ export async function compileBatchToStrokes(
   const isInjection = batch.source === 'injection';
 
   // Pre-expand math primitives and sort by draw order for injections
-  const { sorted: elements, speedHints } = expandAndSortForInjection(
+  const { sorted: elements, speedHints, originTypes } = expandAndSortForInjection(
     batch.elements,
     isInjection,
+    batch.colorTheme,
   );
 
   const results = await Promise.all(elements.map((el) => compileOneElement(el, preset)));
@@ -599,9 +665,12 @@ export async function compileBatchToStrokes(
   for (let i = 0; i < results.length; i++) {
     const r = results[i]!;
     if (r.clear) clear = true;
+    const el = elements[i]!;
+    // Propagate meta.elementType from the source element
+    const originType = originTypes.get(el.id) ?? el.type;
+    const isCurveSeg = isCurveSegmentId(el.id);
     // Apply speed hints from injection priority to each stroke
     if (isInjection) {
-      const el = elements[i]!;
       const hint = speedHints.get(el.id);
       if (hint) {
         for (const stroke of r.strokes) {
@@ -611,14 +680,23 @@ export async function compileBatchToStrokes(
         }
       }
     }
+    for (const stroke of r.strokes) {
+      stroke.meta = {
+        elementType: originType,
+        curveSegment: isCurveSeg,
+      };
+    }
     strokes.push(...r.strokes);
     warnings.push(...r.warnings);
   }
 
-  normalizeTextVerticalSpacing(batch, strokes);
+  // Consolidate consecutive curve segments into single multi-point strokes
+  const consolidated = consolidateCurveStrokes(strokes);
+
+  normalizeTextVerticalSpacing(batch, consolidated);
 
   // Compute bounding boxes for viewport culling (after normalization shifts)
-  for (const stroke of strokes) {
+  for (const stroke of consolidated) {
     if (stroke.points.length > 0) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const p of stroke.points) {
@@ -631,5 +709,5 @@ export async function compileBatchToStrokes(
     }
   }
 
-  return { strokes, warnings, clear };
+  return { strokes: consolidated, warnings, clear };
 }

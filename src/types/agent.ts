@@ -461,6 +461,8 @@ export function assertNeverDrawElement(x: never, fallback?: string): never {
   throw new Error(`Unhandled DrawElement type: ${(x as Record<string, unknown>)?.type ?? fallback}`);
 }
 
+export type ColorTheme = 'default' | 'dark' | 'colorful' | 'pastel' | 'monochrome';
+
 export interface DrawBatch {
   batch_id: string;
   style_preset?: StylePreset;
@@ -471,6 +473,8 @@ export interface DrawBatch {
   schemaVersion?: number;
   /** Monotonic sequence number for deterministic cross-channel ordering (STATE-001). */
   sequenceNumber?: number;
+  /** Color theme for math drawings — controls axis, grid, curve, and fill colors. */
+  colorTheme?: ColorTheme;
 }
 
 export type SemanticTemplate =
@@ -712,6 +716,13 @@ export interface WhiteboardLayoutDiagnostics {
 
 export type DrawingSpeed = 'instant' | 'fast' | 'natural' | 'slow';
 
+export interface StrokeMeta {
+  /** Source element type (e.g. 'function_curve', 'cartesian_axes', 'text'). */
+  elementType?: string;
+  /** True when this stroke is part of a function curve (enables easeInOut). */
+  curveSegment?: boolean;
+}
+
 export interface StrokeTrajectory {
   id: string;
   elementId: string;
@@ -732,6 +743,8 @@ export interface StrokeTrajectory {
     y: number;
     fontSize: number;
   };
+  /** Metadata for animation ordering, easing selection, and speed inference. */
+  meta?: StrokeMeta;
 }
 
 export interface ActiveStroke extends StrokeTrajectory {

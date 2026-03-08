@@ -170,6 +170,151 @@ export function computeSpatialSummary(
 }
 
 /**
+ * Suggest `n` non-overlapping placement regions for new diagrams.
+ *
+ * Layout strategy:
+ * - n=1: largest free area
+ * - n=2: left half / right half
+ * - n=3: three equal columns
+ * - n=4: quadrants
+ * - n≥5: grid with ceil(n/cols) rows
+ *
+ * Each candidate region is shrunk to avoid already-occupied areas.
+ * Regions that are fully occluded are still returned (at zero area) so
+ * callers always get exactly `n` entries.
+ */
+export function suggestRegions(
+  n: number,
+  canvasWidth: number = CANVAS_W,
+  canvasHeight: number = CANVAS_H,
+  occupiedRects: Array<{ x: number; y: number; w: number; h: number }> = [],
+): SpatialBounds[] {
+  if (n <= 0) return [];
+
+  const margin = PADDING;
+  const gap = PADDING;
+
+  const safeX = margin;
+  const safeY = margin;
+  const safeW = canvasWidth - margin * 2;
+  const safeH = canvasHeight - margin * 2;
+
+  // Determine grid layout: cols × rows
+  let cols: number;
+  let rows: number;
+  if (n === 1) {
+    cols = 1;
+    rows = 1;
+  } else if (n === 2) {
+    cols = 2;
+    rows = 1;
+  } else if (n === 3) {
+    cols = 3;
+    rows = 1;
+  } else if (n === 4) {
+    cols = 2;
+    rows = 2;
+  } else {
+    cols = Math.ceil(Math.sqrt(n));
+    rows = Math.ceil(n / cols);
+  }
+
+  const cellW = (safeW - gap * (cols - 1)) / cols;
+  const cellH = (safeH - gap * (rows - 1)) / rows;
+
+  const merged = mergeOccupiedRegions(occupiedRects, margin);
+
+  const regions: SpatialBounds[] = [];
+  for (let i = 0; i < n; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+
+    const rx = safeX + col * (cellW + gap);
+    const ry = safeY + row * (cellH + gap);
+
+    // Shrink candidate to avoid occupied areas
+    let bestRect: SpatialBounds = { x: rx, y: ry, w: cellW, h: cellH };
+
+    for (const occ of merged) {
+      bestRect = subtractLargestRect(bestRect, occ);
+    }
+
+    regions.push(bestRect);
+  }
+
+  return regions;
+}
+
+/**
+ * Given a candidate rectangle and an occupied rectangle, return the
+ * largest axis-aligned sub-rectangle of `candidate` that does not
+ * overlap `occupied`. If there is no overlap the original candidate
+ * is returned unchanged.
+ */
+function subtractLargestRect(candidate: SpatialBounds, occupied: SpatialBounds): SpatialBounds {
+  if (!overlaps(candidate, occupied)) return candidate;
+
+  // The occupied rect splits the candidate into up to 4 sub-rects
+  // (top, bottom, left, right).  Pick the largest.
+  const slices: SpatialBounds[] = [];
+
+  // Top slice
+  if (occupied.y > candidate.y) {
+    slices.push({
+      x: candidate.x,
+      y: candidate.y,
+      w: candidate.w,
+      h: occupied.y - candidate.y,
+    });
+  }
+  // Bottom slice
+  const occBottom = occupied.y + occupied.h;
+  const candBottom = candidate.y + candidate.h;
+  if (occBottom < candBottom) {
+    slices.push({
+      x: candidate.x,
+      y: occBottom,
+      w: candidate.w,
+      h: candBottom - occBottom,
+    });
+  }
+  // Left slice
+  if (occupied.x > candidate.x) {
+    slices.push({
+      x: candidate.x,
+      y: candidate.y,
+      w: occupied.x - candidate.x,
+      h: candidate.h,
+    });
+  }
+  // Right slice
+  const occRight = occupied.x + occupied.w;
+  const candRight = candidate.x + candidate.w;
+  if (occRight < candRight) {
+    slices.push({
+      x: occRight,
+      y: candidate.y,
+      w: candRight - occRight,
+      h: candidate.h,
+    });
+  }
+
+  if (slices.length === 0) {
+    // Fully occluded — return a zero-area rect at the candidate origin
+    return { x: candidate.x, y: candidate.y, w: 0, h: 0 };
+  }
+
+  // Return the slice with the largest area
+  let best = slices[0];
+  for (let i = 1; i < slices.length; i++) {
+    if (slices[i].w * slices[i].h > best.w * best.h) {
+      best = slices[i];
+    }
+  }
+  return best;
+}
+
+/**
  * Convert WhiteboardBounds[] (from occupied_regions on the context) to
  * simple {x,y,w,h} rectangles for spatial computation.
  */

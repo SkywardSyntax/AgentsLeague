@@ -27,6 +27,12 @@ function hasDiscontinuity(
 // sampleFunction
 // ---------------------------------------------------------------------------
 
+/** Result of sampling a function, with optional diagnostic warnings. */
+export interface SampleResult {
+  segments: Point[][];
+  warnings: string[];
+}
+
 /**
  * Sample y=f(x) over [xMin, xMax] with automatic discontinuity splitting.
  *
@@ -50,12 +56,28 @@ export function sampleFunction(
   steps: number,
   maxSlope: number = DEFAULT_MAX_SLOPE,
 ): Point[][] {
+  return sampleFunctionWithWarnings(fn, xMin, xMax, steps, maxSlope).segments;
+}
+
+/**
+ * Like {@link sampleFunction} but returns a {@link SampleResult} that
+ * includes diagnostic warnings when the expression is mostly or entirely
+ * undefined on the sampled domain.
+ */
+export function sampleFunctionWithWarnings(
+  fn: (x: number) => number,
+  xMin: number,
+  xMax: number,
+  steps: number,
+  maxSlope: number = DEFAULT_MAX_SLOPE,
+): SampleResult {
   const n = Math.max(2, Math.round(steps));
   const dx = (xMax - xMin) / (n - 1);
   const slopeThreshold = Math.abs(maxSlope * dx);
 
   const segments: Point[][] = [];
   let current: Point[] = [];
+  let finiteCount = 0;
 
   let prevY: number | undefined;
 
@@ -72,6 +94,8 @@ export function sampleFunction(
       prevY = undefined;
       continue;
     }
+
+    finiteCount++;
 
     if (prevY !== undefined && hasDiscontinuity(prevY, y, slopeThreshold)) {
       // slope discontinuity → end current segment, start a new one
@@ -90,7 +114,14 @@ export function sampleFunction(
     segments.push(current);
   }
 
-  return segments;
+  const warnings: string[] = [];
+  if (finiteCount === 0) {
+    warnings.push('Expression is undefined on this domain');
+  } else if (finiteCount < n * 0.5) {
+    warnings.push('Expression produced mostly undefined values — check for domain issues');
+  }
+
+  return { segments, warnings };
 }
 
 // ---------------------------------------------------------------------------

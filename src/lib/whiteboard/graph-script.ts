@@ -405,12 +405,26 @@ const EXPR_FUNCTIONS: Record<string, (v: number) => number> = {
   round: Math.round, sign: Math.sign,
 };
 
+const EXPR_FUNCTIONS_2ARG: Record<string, (a: number, b: number) => number> = {
+  min: Math.min, max: Math.max, pow: Math.pow,
+};
+
+/** All supported function names (single + two-arg) for validation hints. */
+export const SUPPORTED_FUNCTIONS = [
+  ...Object.keys(EXPR_FUNCTIONS),
+  ...Object.keys(EXPR_FUNCTIONS_2ARG),
+] as const;
+
+/** All supported constant names for validation hints. */
+export const SUPPORTED_CONSTANTS = Object.keys(EXPR_CONSTANTS) as readonly string[];
+
 type ExprNode =
   | { kind: 'number'; value: number }
   | { kind: 'var' }
   | { kind: 'unary'; op: '-'; arg: ExprNode }
   | { kind: 'binary'; op: '+' | '-' | '*' | '/' | '^'; left: ExprNode; right: ExprNode }
-  | { kind: 'call'; fn: (v: number) => number; arg: ExprNode };
+  | { kind: 'call'; fn: (v: number) => number; arg: ExprNode }
+  | { kind: 'call2'; fn: (a: number, b: number) => number; left: ExprNode; right: ExprNode };
 
 function tokenizeExpr(input: string): string[] {
   const tokens: string[] = [];
@@ -418,7 +432,7 @@ function tokenizeExpr(input: string): string[] {
   while (i < input.length) {
     const ch = input[i]!;
     if (/\s/.test(ch)) { i++; continue; }
-    if ('+-*/^()'.includes(ch)) { tokens.push(ch); i++; continue; }
+    if ('+-*/^(),'.includes(ch)) { tokens.push(ch); i++; continue; }
     if (/[0-9.]/.test(ch)) {
       let num = '';
       while (i < input.length && /[0-9.]/.test(input[i]!)) { num += input[i]; i++; }
@@ -434,6 +448,45 @@ function tokenizeExpr(input: string): string[] {
     return [];
   }
   return tokens;
+}
+
+/**
+ * Insert implicit multiplication tokens.
+ *
+ * Handles: `2x` → `2*x`, `2(` → `2*(`, `)x` → `)*x`,
+ * `)(` → `)*(`, `x(` → `x*(` (when x is not a function name),
+ * `pi x` → `pi*x`, `2pi` → `2*pi`.
+ */
+function insertImplicitMul(tokens: string[]): string[] {
+  const result: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    result.push(tokens[i]!);
+    if (i + 1 >= tokens.length) continue;
+    const cur = tokens[i]!;
+    const next = tokens[i + 1]!;
+    const curIsNum = /^[0-9.]/.test(cur);
+    const curIsIdent = /^[a-zA-Z_]/.test(cur);
+    const curIsCloseParen = cur === ')';
+    const nextIsNum = /^[0-9.]/.test(next);
+    const nextIsIdent = /^[a-zA-Z_]/.test(next);
+    const nextIsOpenParen = next === '(';
+
+    const curIsIdentNotFunc = curIsIdent
+      && !EXPR_FUNCTIONS[cur.toLowerCase()]
+      && !EXPR_FUNCTIONS_2ARG[cur.toLowerCase()];
+
+    // number followed by ident or '(' : 2x, 2sin(x), 2(x+1)
+    if (curIsNum && (nextIsIdent || nextIsOpenParen)) { result.push('*'); continue; }
+    // ')' followed by number, ident, or '(' : )(, )x, )2
+    if (curIsCloseParen && (nextIsNum || nextIsIdent || nextIsOpenParen)) { result.push('*'); continue; }
+    // ident (not function) followed by '(' : x(x+1)
+    if (curIsIdentNotFunc && nextIsOpenParen) { result.push('*'); continue; }
+    // ident (not function) followed by number: x2 → x*2
+    if (curIsIdentNotFunc && nextIsNum) { result.push('*'); continue; }
+    // constant followed by ident: pi x → pi*x
+    if (curIsIdent && EXPR_CONSTANTS[cur.toLowerCase()] !== undefined && nextIsIdent) { result.push('*'); continue; }
+  }
+  return result;
 }
 
 function buildExprAST(tokens: string[]): ExprNode | null {
@@ -489,7 +542,22 @@ function buildExprAST(tokens: string[]): ExprNode | null {
   function parseCall(): ExprNode | null {
     const tok = peek();
     if (tok && /^[a-zA-Z_]/.test(tok)) {
-      const fn = EXPR_FUNCTIONS[tok.toLowerCase()];
+      const lower = tok.toLowerCase();
+      // Two-argument function: min(a,b), max(a,b), pow(a,b)
+      const fn2 = EXPR_FUNCTIONS_2ARG[lower];
+      if (fn2 !== undefined && tokens[pos + 1] === '(') {
+        advance(); // ident
+        advance(); // '('
+        const arg1 = parseAdditive();
+        if (!arg1 || peek() !== ',') return null;
+        advance(); // ','
+        const arg2 = parseAdditive();
+        if (!arg2 || peek() !== ')') return null;
+        advance(); // ')'
+        return { kind: 'call2', fn: fn2, left: arg1, right: arg2 };
+      }
+      // Single-argument function
+      const fn = EXPR_FUNCTIONS[lower];
       if (fn !== undefined && tokens[pos + 1] === '(') {
         advance(); // ident
         advance(); // '('
@@ -518,7 +586,7 @@ function buildExprAST(tokens: string[]): ExprNode | null {
       return inner;
     }
     const lower = tok.toLowerCase();
-    if (lower === 'x') { advance(); return { kind: 'var' }; }
+    if (lower === 'x' || lower === 't') { advance(); return { kind: 'var' }; }
     const c = EXPR_CONSTANTS[lower];
     if (c !== undefined) { advance(); return { kind: 'number', value: c }; }
     return null;
@@ -534,6 +602,7 @@ function evalExprNode(node: ExprNode, x: number): number {
     case 'var': return x;
     case 'unary': return -evalExprNode(node.arg, x);
     case 'call': return node.fn(evalExprNode(node.arg, x));
+    case 'call2': return node.fn(evalExprNode(node.left, x), evalExprNode(node.right, x));
     case 'binary': {
       const l = evalExprNode(node.left, x);
       const r = evalExprNode(node.right, x);
@@ -549,10 +618,73 @@ function evalExprNode(node: ExprNode, x: number): number {
 }
 
 /**
+ * Validate a math expression string without evaluating it.
+ *
+ * Returns `{ valid: true }` if the expression can be parsed, or
+ * `{ valid: false, error: string }` with a descriptive message.
+ */
+export function validateExpression(expr: string): { valid: boolean; error?: string } {
+  if (!expr || !expr.trim()) {
+    return { valid: false, error: 'Expression is empty' };
+  }
+  const trimmed = expr.trim();
+
+  // Check for disallowed characters
+  const disallowed = trimmed.match(/[^a-zA-Z0-9_\s+\-*/^().,%]/);
+  if (disallowed) {
+    return { valid: false, error: `Unexpected character '${disallowed[0]}' in expression` };
+  }
+
+  const lower = trimmed.toLowerCase();
+  // Bare function name is OK
+  if (EXPR_FUNCTIONS[lower] && !trimmed.includes('(')) {
+    return { valid: true };
+  }
+
+  const tokens = tokenizeExpr(trimmed);
+  if (tokens.length === 0) {
+    return { valid: false, error: 'Expression contains invalid characters' };
+  }
+
+  // Check for unknown identifiers
+  for (const tok of tokens) {
+    if (/^[a-zA-Z_]/.test(tok)) {
+      const l = tok.toLowerCase();
+      if (l !== 'x' && l !== 't'
+        && EXPR_CONSTANTS[l] === undefined
+        && EXPR_FUNCTIONS[l] === undefined
+        && EXPR_FUNCTIONS_2ARG[l] === undefined) {
+        return { valid: false, error: `Unknown identifier '${tok}'. Supported functions: ${SUPPORTED_FUNCTIONS.join(', ')}` };
+      }
+    }
+  }
+
+  // Check balanced parentheses
+  let depth = 0;
+  for (const tok of tokens) {
+    if (tok === '(') depth++;
+    if (tok === ')') depth--;
+    if (depth < 0) return { valid: false, error: 'Unmatched closing parenthesis' };
+  }
+  if (depth !== 0) return { valid: false, error: 'Unmatched opening parenthesis' };
+
+  const withImplicitMul = insertImplicitMul(tokens);
+  const ast = buildExprAST(withImplicitMul);
+  if (!ast) {
+    return { valid: false, error: 'Could not parse expression — check syntax (operators, parentheses, function arguments)' };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Parse a math expression string into a callable function of x.
  *
  * Supports: `+`, `-`, `*`, `/`, `^`, parentheses, constants (`pi`, `e`),
- * and standard functions (`sin`, `cos`, `tan`, `sqrt`, `abs`, `log`, `exp`, …).
+ * standard functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`,
+ * `cosh`, `tanh`, `sqrt`, `abs`, `log`, `exp`, `floor`, `ceil`, `round`, `sign`),
+ * two-argument functions (`min`, `max`, `pow`), and implicit multiplication
+ * (`2x` → `2*x`, `2(x+1)` → `2*(x+1)`).
  *
  * Uses a safe recursive-descent parser — no `eval()`.
  */
@@ -567,7 +699,8 @@ export function parseMathExpression(expr: string): ((x: number) => number) | nul
   }
   const tokens = tokenizeExpr(trimmed);
   if (tokens.length === 0) return null;
-  const ast = buildExprAST(tokens);
+  const withImplicitMul = insertImplicitMul(tokens);
+  const ast = buildExprAST(withImplicitMul);
   if (!ast) return null;
   return (x: number) => evalExprNode(ast, x);
 }

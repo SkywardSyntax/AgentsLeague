@@ -176,7 +176,7 @@ describe('expandNormalDistribution', () => {
       showLabels: true,
     };
     const result = lowerMathPrimitive(withLabels);
-    const labels = result.filter((e) => e.type === 'text' && e.id.includes('-label'));
+    const labels = result.filter((e) => (e.type === 'text' || e.type === 'latex') && e.id.includes('-label'));
     expect(labels.length).toBeGreaterThanOrEqual(5); // μ + μ±σ + μ±2σ
   });
 

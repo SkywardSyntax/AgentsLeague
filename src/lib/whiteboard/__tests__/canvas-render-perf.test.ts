@@ -8,8 +8,8 @@ const MAX_STROKES_PER_PAYLOAD = 2000;
 const MAX_COMPILE_TIME_MS = 100;
 
 describe('Canvas render performance — full pipeline', () => {
-  it('should have 10 demo payloads', () => {
-    expect(demoPayloads).toHaveLength(10);
+  it('should have 18 demo payloads', () => {
+    expect(demoPayloads).toHaveLength(18);
   });
 
   describe.each(demoPayloads.map((d) => [d.label, d] as const))(
