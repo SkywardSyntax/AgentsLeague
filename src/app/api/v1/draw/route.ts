@@ -128,12 +128,21 @@ async function handler(
   const batch = ctx.data as DrawBatch;
   const elements = batch.elements ?? [];
 
-  // Try to load the canvas package
-  let createCanvas: ((w: number, h: number) => { getContext: (type: string) => CanvasRenderingContext2D; toBuffer: (mime: string) => Buffer; toDataURL: (mime: string) => string; width: number; height: number }) | null = null;
+  // Try to load the canvas package (npm install canvas)
+  interface NodeCanvas {
+    getContext(type: string): CanvasRenderingContext2D;
+    toBuffer(mime: string): Buffer;
+    toDataURL(mime: string): string;
+    width: number;
+    height: number;
+  }
+  type CreateCanvasFn = (w: number, h: number) => NodeCanvas;
+
+  let canvas: NodeCanvas;
   try {
-    // Dynamic import of canvas package
-    const canvasModule = await import('canvas');
-    createCanvas = canvasModule.createCanvas as typeof createCanvas;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const canvasModule = require('canvas') as { createCanvas: CreateCanvasFn };
+    canvas = canvasModule.createCanvas(width, height);
   } catch {
     return Response.json(
       {
@@ -146,14 +155,6 @@ async function handler(
     );
   }
 
-  if (!createCanvas) {
-    return Response.json(
-      { ok: false, error: 'CANVAS_INIT_FAILED', message: 'Failed to initialize canvas', requestId: ctx.requestId },
-      { status: 500, headers: { 'X-Request-Id': ctx.requestId } },
-    );
-  }
-
-  const canvas = createCanvas(width, height);
   const canvasCtx = canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
 
   renderElementsToCanvas(canvasCtx, elements, width, height);
@@ -181,7 +182,7 @@ async function handler(
 
   // Default: return PNG
   const buffer = canvas.toBuffer('image/png');
-  return new Response(buffer, {
+  return new Response(new Uint8Array(buffer), {
     status: 200,
     headers: {
       'Content-Type': 'image/png',

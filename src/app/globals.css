@@ -14,6 +14,7 @@
   --color-bg: #09090F;
   --color-surface: #111119;
   --color-surface-raised: #1A1A26;
+  --color-surface-soft: var(--color-surface-raised); /* legacy alias */
   --color-surface-high: #222232;
 
   /* Borders */
