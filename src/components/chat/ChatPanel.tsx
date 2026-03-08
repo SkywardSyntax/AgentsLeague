@@ -502,7 +502,8 @@ export const ChatPanel = memo(function ChatPanel({
               type="submit"
               data-testid="chat-send"
               aria-disabled={sendDisabled}
-              aria-label={status !== 'idle' ? `${status === 'thinking' ? 'Thinking' : status === 'streaming' ? 'Responding' : 'Drawing'}… please wait` : 'Send message'}
+              aria-busy={status !== 'idle'}
+              aria-label="Send message"
               className={`flex items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition ${
                 sendDisabled ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'
               }`}
