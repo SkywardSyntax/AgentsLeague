@@ -1080,6 +1080,24 @@ function expandNumberLine(el: NumberLineElement, _theme?: ColorTheme): DrawEleme
   // Arrow extension for clean endpoints
   const ARROW_EXT = 6;
 
+  // Shaded region (rendered first, behind everything else)
+  if (el.region) {
+    const regionColor = el.region.color ?? 'rgba(37,99,235,0.15)';
+    const rStartX = toCanvasX(Math.max(min, el.region.start));
+    const rEndX = toCanvasX(Math.min(max, el.region.end));
+    const regionHeight = 16;
+    result.push({
+      id: `${el.id}-region`,
+      type: 'rect' as const,
+      x: rStartX,
+      y: y - regionHeight / 2,
+      w: Math.max(0, rEndX - rStartX),
+      h: regionHeight,
+      color: regionColor,
+      fillColor: regionColor,
+    });
+  }
+
   // Main axis arrow with clean extended endpoints
   result.push({
     id: `${el.id}-axis`,
@@ -1137,6 +1155,7 @@ function expandNumberLine(el: NumberLineElement, _theme?: ColorTheme): DrawEleme
     for (let i = 0; i < el.highlights.length; i++) {
       const h = el.highlights[i]!;
       const hx = toCanvasX(h.value);
+      const dotColor = h.color ?? color;
       result.push({
         id: `${el.id}-hl-${i}`,
         type: 'ellipse' as const,
@@ -1144,7 +1163,8 @@ function expandNumberLine(el: NumberLineElement, _theme?: ColorTheme): DrawEleme
         cy: y,
         rx: 3.5,
         ry: 3.5,
-        color,
+        color: dotColor,
+        fillColor: dotColor,
         stroke_width: 2,
       });
       if (h.label) {
@@ -1155,7 +1175,7 @@ function expandNumberLine(el: NumberLineElement, _theme?: ColorTheme): DrawEleme
           y: y - TICK_HALF - 8,
           text: h.label,
           size: 11,
-          color,
+          color: dotColor,
         });
       }
     }
@@ -1171,6 +1191,209 @@ function expandNumberLine(el: NumberLineElement, _theme?: ColorTheme): DrawEleme
       text: el.label,
       size: 13,
       color,
+    });
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Interval diagram expansion
+// ---------------------------------------------------------------------------
+
+function expandIntervalDiagram(el: IntervalDiagramElement, _theme?: ColorTheme): DrawElement[] {
+  const result: DrawElement[] = [];
+  const color = el.color ?? '#1f2a44';
+  const sw = el.stroke_width ?? 2;
+  const width = el.width ?? 400;
+  const PADDING = 20;
+
+  if (el.intervals.length === 0) return result;
+
+  // Compute axis range from intervals (ignoring ±Infinity)
+  const finiteValues: number[] = [];
+  for (const iv of el.intervals) {
+    if (Number.isFinite(iv.start)) finiteValues.push(iv.start);
+    if (Number.isFinite(iv.end)) finiteValues.push(iv.end);
+  }
+  if (finiteValues.length === 0) {
+    finiteValues.push(-5, 5);
+  }
+  const dataMin = Math.min(...finiteValues);
+  const dataMax = Math.max(...finiteValues);
+  const margin = Math.max(1, (dataMax - dataMin) * 0.15) || 2;
+  const axisMin = el.xMin ?? Math.floor(dataMin - margin);
+  const axisMax = el.xMax ?? Math.ceil(dataMax + margin);
+  const span = axisMax - axisMin;
+  if (span <= 0) return result;
+
+  const lineWidth = width - 2 * PADDING;
+  const lineX = el.x + PADDING;
+  const lineY = el.y;
+  const scale = lineWidth / span;
+  const toCanvasX = (v: number) => lineX + (v - axisMin) * scale;
+
+  // Main axis arrow
+  result.push({
+    id: `${el.id}-axis`,
+    type: 'arrow' as const,
+    from: { x: lineX - 6, y: lineY },
+    to: { x: lineX + lineWidth + 6, y: lineY },
+    color,
+    stroke_width: sw,
+  });
+
+  // Tick marks at integer values
+  const TICK_HALF = 5;
+  const ticks = tickMarksForRange(axisMin, axisMax, 10);
+  for (let i = 0; i < ticks.length; i++) {
+    const t = ticks[i]!;
+    const tx = toCanvasX(t.value);
+    result.push({
+      id: `${el.id}-tick-${i}`,
+      type: 'line' as const,
+      from: { x: tx, y: lineY - TICK_HALF },
+      to: { x: tx, y: lineY + TICK_HALF },
+      color,
+      stroke_width: 1,
+    });
+    result.push({
+      id: `${el.id}-tlbl-${i}`,
+      type: 'text' as const,
+      x: tx - 4,
+      y: lineY + TICK_HALF + 12,
+      text: t.label,
+      size: 10,
+      color,
+    });
+  }
+
+  // Render each interval
+  const DEFAULT_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c'];
+  for (let i = 0; i < el.intervals.length; i++) {
+    const iv = el.intervals[i]!;
+    const ivColor = iv.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]!;
+    const startInf = !Number.isFinite(iv.start);
+    const endInf = !Number.isFinite(iv.end);
+    const startOpen = iv.startOpen ?? false;
+    const endOpen = iv.endOpen ?? false;
+
+    const segStartX = startInf ? lineX : toCanvasX(iv.start);
+    const segEndX = endInf ? lineX + lineWidth : toCanvasX(iv.end);
+    const clampedStartX = Math.max(lineX, segStartX);
+    const clampedEndX = Math.min(lineX + lineWidth, segEndX);
+
+    // Thick colored segment
+    result.push({
+      id: `${el.id}-seg-${i}`,
+      type: 'line' as const,
+      from: { x: clampedStartX, y: lineY },
+      to: { x: clampedEndX, y: lineY },
+      color: ivColor,
+      stroke_width: sw * 2.5,
+    });
+
+    // Start endpoint marker (closed = filled dot, open = ring)
+    if (!startInf) {
+      const DOT_R = 4;
+      result.push({
+        id: `${el.id}-ep-s-${i}`,
+        type: 'ellipse' as const,
+        cx: segStartX,
+        cy: lineY,
+        rx: DOT_R,
+        ry: DOT_R,
+        color: ivColor,
+        ...(startOpen ? {} : { fillColor: ivColor }),
+        stroke_width: startOpen ? 2 : 1,
+      });
+    } else {
+      // Arrow extending to left edge for -Infinity
+      result.push({
+        id: `${el.id}-arr-s-${i}`,
+        type: 'arrow' as const,
+        from: { x: clampedEndX, y: lineY - 1 },
+        to: { x: lineX - 4, y: lineY - 1 },
+        color: ivColor,
+        stroke_width: sw * 1.5,
+      });
+    }
+
+    // End endpoint marker
+    if (!endInf) {
+      const DOT_R = 4;
+      result.push({
+        id: `${el.id}-ep-e-${i}`,
+        type: 'ellipse' as const,
+        cx: segEndX,
+        cy: lineY,
+        rx: DOT_R,
+        ry: DOT_R,
+        color: ivColor,
+        ...(endOpen ? {} : { fillColor: ivColor }),
+        stroke_width: endOpen ? 2 : 1,
+      });
+    } else {
+      // Arrow extending to right edge for +Infinity
+      result.push({
+        id: `${el.id}-arr-e-${i}`,
+        type: 'arrow' as const,
+        from: { x: clampedStartX, y: lineY - 1 },
+        to: { x: lineX + lineWidth + 4, y: lineY - 1 },
+        color: ivColor,
+        stroke_width: sw * 1.5,
+      });
+    }
+
+    // Interval label above segment
+    if (iv.label) {
+      const midX = (clampedStartX + clampedEndX) / 2;
+      result.push({
+        id: `${el.id}-ivlbl-${i}`,
+        type: 'text' as const,
+        x: midX,
+        y: lineY - 14,
+        text: iv.label,
+        size: 11,
+        color: ivColor,
+      });
+    }
+  }
+
+  // Title above everything
+  if (el.title) {
+    result.push({
+      id: `${el.id}-title`,
+      type: 'text' as const,
+      x: el.x + width / 2,
+      y: lineY - 28,
+      text: el.title,
+      size: 14,
+      color,
+      align: 'center' as const,
+    });
+  }
+
+  // Interval notation text below
+  if (el.showNotation) {
+    const parts: string[] = [];
+    for (const iv of el.intervals) {
+      const startBracket = iv.startOpen ? '(' : '[';
+      const endBracket = iv.endOpen ? ')' : ']';
+      const startStr = Number.isFinite(iv.start) ? String(iv.start) : '-∞';
+      const endStr = Number.isFinite(iv.end) ? String(iv.end) : '∞';
+      parts.push(`${startBracket}${startStr}, ${endStr}${endBracket}`);
+    }
+    const notation = parts.join(' ∪ ');
+    result.push({
+      id: `${el.id}-notation`,
+      type: 'text' as const,
+      x: el.x + width / 2,
+      y: lineY + TICK_HALF + 28,
+      text: notation,
+      size: 12,
+      color,
+      align: 'center' as const,
     });
   }
 
@@ -3111,7 +3334,7 @@ function expandTruthTable(el: TruthTableElement): DrawElement[] {
       x: el.x + ci * cw + cw / 2,
       y: el.y + ch / 2,
       text: col,
-      fontSize: 14,
+      size: 14,
       color: headerColor,
     });
   });
@@ -3120,10 +3343,8 @@ function expandTruthTable(el: TruthTableElement): DrawElement[] {
   out.push({
     id: `${id}-hdr-line`,
     type: 'line' as const,
-    x1: el.x,
-    y1: el.y + ch,
-    x2: el.x + cols.length * cw,
-    y2: el.y + ch,
+    from: { x: el.x, y: el.y + ch },
+    to: { x: el.x + cols.length * cw, y: el.y + ch },
     color: baseColor,
     stroke_width: 1,
   });
@@ -3140,7 +3361,7 @@ function expandTruthTable(el: TruthTableElement): DrawElement[] {
         x: el.x + vi * cw + cw / 2,
         y: rowY,
         text: val ? 'T' : 'F',
-        fontSize: 13,
+        size: 13,
         color: val ? (el.trueColor ?? '#27ae60') : (el.falseColor ?? '#e74c3c'),
       });
     });
@@ -3608,6 +3829,416 @@ function expandBoxPlot(el: BoxPlotElement): DrawElement[] {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Polygon expansion
+// ---------------------------------------------------------------------------
+
+const DEG_TO_RAD_POLY = Math.PI / 180;
+
+function resolvePolygonVertices(el: PolygonElement): { x: number; y: number }[] {
+  if (el.vertices && el.vertices.length >= 3) {
+    return el.vertices.map(v => ({ x: v.x, y: v.y }));
+  }
+  const n = el.sides ?? 5;
+  const cx = el.centerX ?? 400;
+  const cy = el.centerY ?? 400;
+  const r = el.radius ?? 100;
+  const rot = (el.rotationDeg ?? 0) * DEG_TO_RAD_POLY;
+  const verts: { x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const angle = rot + (2 * Math.PI * i) / n - Math.PI / 2;
+    verts.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+  }
+  return verts;
+}
+
+function expandPolygon(el: PolygonElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const verts = resolvePolygonVertices(el);
+  const n = verts.length;
+  const color = el.strokeColor ?? el.color ?? '#000';
+  const sw = el.stroke_width ?? 2;
+  const fill = el.fillColor;
+
+  // Centroid for label offset direction
+  const cx = verts.reduce((s, v) => s + v.x, 0) / n;
+  const cy = verts.reduce((s, v) => s + v.y, 0) / n;
+
+  // Optional fill (translucent rect placeholder – best effort)
+  if (fill) {
+    const xs = verts.map(v => v.x);
+    const ys = verts.map(v => v.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+    out.push({
+      id: `${id}-fill`,
+      type: 'rect' as const,
+      x: minX,
+      y: minY,
+      w: maxX - minX,
+      h: maxY - minY,
+      color: fill,
+      fillColor: fill,
+      stroke_width: 0,
+    });
+  }
+
+  // Edges
+  for (let i = 0; i < n; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % n];
+    out.push({
+      id: `${id}-edge${i}`,
+      type: 'line' as const,
+      from: { x: a.x, y: a.y },
+      to: { x: b.x, y: b.y },
+      color,
+      stroke_width: sw,
+    });
+  }
+
+  // Vertex labels
+  if (el.showVertexLabels) {
+    const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    for (let i = 0; i < n; i++) {
+      const v = verts[i];
+      const dx = v.x - cx;
+      const dy = v.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const offset = 16;
+      out.push({
+        id: `${id}-vlabel${i}`,
+        type: 'text' as const,
+        x: v.x + (dx / dist) * offset,
+        y: v.y + (dy / dist) * offset,
+        text: labels[i % labels.length],
+        size: 14,
+        color,
+      });
+    }
+  }
+
+  // Side length labels
+  if (el.showSideLabels) {
+    for (let i = 0; i < n; i++) {
+      const a = verts[i];
+      const b = verts[(i + 1) % n];
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const len = Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+      const nx = -(b.y - a.y) / len;
+      const ny = (b.x - a.x) / len;
+      const offset = 14;
+      out.push({
+        id: `${id}-slabel${i}`,
+        type: 'text' as const,
+        x: mx + nx * offset,
+        y: my + ny * offset,
+        text: len.toFixed(1),
+        size: 12,
+        color,
+      });
+    }
+  }
+
+  // Angle arcs
+  if (el.showAngles) {
+    for (let i = 0; i < n; i++) {
+      const prev = verts[(i - 1 + n) % n];
+      const curr = verts[i];
+      const next = verts[(i + 1) % n];
+      const a1 = Math.atan2(prev.y - curr.y, prev.x - curr.x);
+      const a2 = Math.atan2(next.y - curr.y, next.x - curr.x);
+      let sweep = a2 - a1;
+      if (sweep < 0) sweep += 2 * Math.PI;
+      if (sweep > Math.PI) sweep = 2 * Math.PI - sweep;
+      const arcR = 18;
+      const steps = 16;
+      let startAngle = a1;
+      let endAngle = a1 + sweep;
+      // Ensure we draw the interior angle
+      const midAngle = (startAngle + endAngle) / 2;
+      const testX = curr.x + Math.cos(midAngle);
+      const testY = curr.y + Math.sin(midAngle);
+      const toCx = cx - curr.x;
+      const toCy = cy - curr.y;
+      const toTest = testX - curr.x;
+      const toTestY = testY - curr.y;
+      if (toCx * toTest + toCy * toTestY < 0) {
+        startAngle = a2;
+        endAngle = a2 + (2 * Math.PI - sweep);
+      }
+      for (let s = 0; s < steps; s++) {
+        const t0 = startAngle + ((endAngle - startAngle) * s) / steps;
+        const t1 = startAngle + ((endAngle - startAngle) * (s + 1)) / steps;
+        out.push({
+          id: `${id}-angle${i}-seg${s}`,
+          type: 'line' as const,
+          from: { x: curr.x + arcR * Math.cos(t0), y: curr.y + arcR * Math.sin(t0) },
+          to: { x: curr.x + arcR * Math.cos(t1), y: curr.y + arcR * Math.sin(t1) },
+          color,
+          stroke_width: 1,
+        });
+      }
+      const degs = (sweep * 180) / Math.PI;
+      const labelAngle = (startAngle + endAngle) / 2;
+      out.push({
+        id: `${id}-anglelabel${i}`,
+        type: 'text' as const,
+        x: curr.x + (arcR + 14) * Math.cos(labelAngle),
+        y: curr.y + (arcR + 14) * Math.sin(labelAngle),
+        text: `${degs.toFixed(0)}°`,
+        size: 10,
+        color,
+      });
+    }
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Geometric construction expansion
+// ---------------------------------------------------------------------------
+
+function expandGeometricConstruction(el: GeometricConstructionElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const color = el.color ?? '#000';
+  const sw = el.stroke_width ?? 2;
+
+  // Title
+  if (el.title) {
+    out.push({
+      id: `${id}-title`,
+      type: 'text' as const,
+      x: el.steps[0]?.x1 ?? 200,
+      y: (el.steps[0]?.y1 ?? 200) - 40,
+      text: el.title,
+      size: 18,
+      color,
+    });
+  }
+
+  for (let i = 0; i < el.steps.length; i++) {
+    const step = el.steps[i];
+    const sid = `${id}-step${i}`;
+    const stepColor = step.color ?? color;
+    const stepSw = sw;
+
+    switch (step.type) {
+      case 'point': {
+        const r = 3;
+        const px = step.x ?? step.x1 ?? 0;
+        const py = step.y ?? step.y1 ?? 0;
+        out.push({
+          id: `${sid}-dot`,
+          type: 'ellipse' as const,
+          cx: px,
+          cy: py,
+          rx: r,
+          ry: r,
+          color: stepColor,
+          fillColor: stepColor,
+          stroke_width: 1,
+        });
+        if (step.label) {
+          out.push({
+            id: `${sid}-label`,
+            type: 'text' as const,
+            x: px + 8,
+            y: py - 8,
+            text: step.label,
+            size: 14,
+            color: stepColor,
+          });
+        }
+        break;
+      }
+      case 'line': {
+        out.push({
+          id: sid,
+          type: 'line' as const,
+          from: { x: step.x1 ?? 0, y: step.y1 ?? 0 },
+          to: { x: step.x2 ?? 0, y: step.y2 ?? 0 },
+          color: stepColor,
+          stroke_width: stepSw,
+        });
+        if (step.ticks && step.ticks > 0) {
+          const mx = ((step.x1 ?? 0) + (step.x2 ?? 0)) / 2;
+          const my = ((step.y1 ?? 0) + (step.y2 ?? 0)) / 2;
+          const dx = (step.x2 ?? 0) - (step.x1 ?? 0);
+          const dy = (step.y2 ?? 0) - (step.y1 ?? 0);
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const nx = -dy / len;
+          const ny = dx / len;
+          const tickLen = 8;
+          const spacing = 5;
+          const tickCount = step.ticks;
+          for (let t = 0; t < tickCount; t++) {
+            const offset = (t - (tickCount - 1) / 2) * spacing;
+            const tx = mx + (dx / len) * offset;
+            const ty = my + (dy / len) * offset;
+            out.push({
+              id: `${sid}-tick${t}`,
+              type: 'line' as const,
+              from: { x: tx - nx * tickLen, y: ty - ny * tickLen },
+              to: { x: tx + nx * tickLen, y: ty + ny * tickLen },
+              color: stepColor,
+              stroke_width: 1,
+            });
+          }
+        }
+        if (step.label) {
+          const mx = ((step.x1 ?? 0) + (step.x2 ?? 0)) / 2;
+          const my = ((step.y1 ?? 0) + (step.y2 ?? 0)) / 2;
+          out.push({
+            id: `${sid}-label`,
+            type: 'text' as const,
+            x: mx + 8,
+            y: my - 8,
+            text: step.label,
+            size: 12,
+            color: stepColor,
+          });
+        }
+        break;
+      }
+      case 'circle': {
+        const r = step.r ?? 50;
+        const ccx = step.cx ?? step.x1 ?? 0;
+        const ccy = step.cy ?? step.y1 ?? 0;
+        out.push({
+          id: sid,
+          type: 'ellipse' as const,
+          cx: ccx,
+          cy: ccy,
+          rx: r,
+          ry: r,
+          color: stepColor,
+          stroke_width: stepSw,
+        });
+        if (step.label) {
+          out.push({
+            id: `${sid}-label`,
+            type: 'text' as const,
+            x: ccx + r + 8,
+            y: ccy,
+            text: step.label,
+            size: 12,
+            color: stepColor,
+          });
+        }
+        break;
+      }
+      case 'arc': {
+        const r = step.r ?? 50;
+        const acx = step.cx ?? step.x1 ?? 0;
+        const acy = step.cy ?? step.y1 ?? 0;
+        const start = (step.startAngle ?? 0) * DEG_TO_RAD_POLY;
+        const end = (step.endAngle ?? 180) * DEG_TO_RAD_POLY;
+        const segments = 24;
+        for (let s = 0; s < segments; s++) {
+          const t0 = start + ((end - start) * s) / segments;
+          const t1 = start + ((end - start) * (s + 1)) / segments;
+          out.push({
+            id: `${sid}-seg${s}`,
+            type: 'line' as const,
+            from: { x: acx + r * Math.cos(t0), y: acy + r * Math.sin(t0) },
+            to: { x: acx + r * Math.cos(t1), y: acy + r * Math.sin(t1) },
+            color: stepColor,
+            stroke_width: stepSw,
+          });
+        }
+        break;
+      }
+      case 'angle_bisector': {
+        const ax1 = step.x1 ?? 0;
+        const ay1 = step.y1 ?? 0;
+        if (step.x2 != null && step.y2 != null) {
+          out.push({
+            id: sid,
+            type: 'line' as const,
+            from: { x: ax1, y: ay1 },
+            to: { x: step.x2, y: step.y2 },
+            color: stepColor,
+            stroke_width: stepSw,
+            lineStyle: 'dashed' as const,
+          });
+        }
+        if (step.label) {
+          const lx = step.x2 != null ? (ax1 + step.x2) / 2 : ax1;
+          const ly = step.y2 != null ? (ay1 + step.y2) / 2 : ay1;
+          out.push({
+            id: `${sid}-label`,
+            type: 'text' as const,
+            x: lx + 8,
+            y: ly - 8,
+            text: step.label,
+            size: 12,
+            color: stepColor,
+          });
+        }
+        break;
+      }
+      case 'perpendicular': {
+        const px1 = step.x1 ?? 0;
+        const py1 = step.y1 ?? 0;
+        if (step.x2 != null && step.y2 != null) {
+          out.push({
+            id: sid,
+            type: 'line' as const,
+            from: { x: px1, y: py1 },
+            to: { x: step.x2, y: step.y2 },
+            color: stepColor,
+            stroke_width: stepSw,
+            lineStyle: 'dashed' as const,
+          });
+          const dx = step.x2 - px1;
+          const dy = step.y2 - py1;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const ux = dx / len;
+          const uy = dy / len;
+          const markSize = 10;
+          out.push({
+            id: `${sid}-rmark0`,
+            type: 'line' as const,
+            from: { x: px1 + ux * markSize, y: py1 + uy * markSize },
+            to: { x: px1 + ux * markSize - uy * markSize, y: py1 + uy * markSize + ux * markSize },
+            color: stepColor,
+            stroke_width: 1,
+          });
+          out.push({
+            id: `${sid}-rmark1`,
+            type: 'line' as const,
+            from: { x: px1 - uy * markSize, y: py1 + ux * markSize },
+            to: { x: px1 + ux * markSize - uy * markSize, y: py1 + uy * markSize + ux * markSize },
+            color: stepColor,
+            stroke_width: 1,
+          });
+        }
+        if (step.label) {
+          out.push({
+            id: `${sid}-label`,
+            type: 'text' as const,
+            x: px1 + 8,
+            y: py1 - 8,
+            text: step.label,
+            size: 12,
+            color: stepColor,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  return out;
+}
+
 function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   let curveIndex = 0;
@@ -3688,6 +4319,8 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandPolygon(el));
     } else if (el.type === 'geometric_construction') {
       result.push(...expandGeometricConstruction(el));
+    } else if (el.type === 'interval_diagram') {
+      result.push(...expandIntervalDiagram(el, theme));
     } else {
       result.push(el);
     }
@@ -4372,7 +5005,7 @@ function expandCoordinateGrid(el: CoordinateGridElement): DrawElement[] {
           type: 'text',
           x: originX + px,
           y: originY + height + 14,
-          text: formatTickLabel(val, mathMajorX),
+          text: formatTickLabel(val),
           size: 10,
           color: labelColor,
           align: 'center' as const,
@@ -4387,7 +5020,7 @@ function expandCoordinateGrid(el: CoordinateGridElement): DrawElement[] {
           type: 'text',
           x: originX - 8,
           y: originY + py - 4,
-          text: formatTickLabel(val, mathMajorY),
+          text: formatTickLabel(val),
           size: 10,
           color: labelColor,
           align: 'right' as const,
@@ -4430,7 +5063,7 @@ function expandCoordinateGrid(el: CoordinateGridElement): DrawElement[] {
   return out;
 }
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement | ComplexPlaneElement | NumberTheoryGridElement | AnnotationArrowElement | FormulaBoxElement | VennDiagramElement | TruthTableElement | ConicSectionElement | CoordinateGridElement | ProbabilityTreeElement | ScatterPlotElement | SymbolGridElement | EquationSystemElement | ComparisonChartElement | BoxPlotElement | PolygonElement | GeometricConstructionElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement | ComplexPlaneElement | NumberTheoryGridElement | AnnotationArrowElement | FormulaBoxElement | VennDiagramElement | TruthTableElement | ConicSectionElement | CoordinateGridElement | ProbabilityTreeElement | ScatterPlotElement | SymbolGridElement | EquationSystemElement | ComparisonChartElement | BoxPlotElement | PolygonElement | GeometricConstructionElement | IntervalDiagramElement,
   theme?: ColorTheme,
 ): DrawElement[] {
   switch (el.type) {
@@ -4504,6 +5137,8 @@ export function lowerMathPrimitive(
       return expandPolygon(el);
     case 'geometric_construction':
       return expandGeometricConstruction(el);
+    case 'interval_diagram':
+      return expandIntervalDiagram(el, theme);
   }
 }
 

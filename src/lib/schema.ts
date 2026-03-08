@@ -399,6 +399,7 @@ const BoxPlotGroupSchema = z.object({
   q3: z.number().finite(),
   max: z.number().finite(),
   outliers: z.array(z.number().finite()).max(100).optional(),
+  mean: z.number().finite().optional(),
   color: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
 });
 
@@ -462,7 +463,7 @@ const TruthTableSchema = BaseElementSchema.extend({
   type: z.literal('truth_table'),
   variables: z.array(z.string().max(50)).min(1).max(8),
   outputs: z.array(z.string().max(200)).min(1).max(20),
-  rows: z.array(z.array(z.boolean())).optional(),
+  rows: z.array(z.record(z.string(), z.union([z.boolean(), z.string()]))).optional(),
   x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
   y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
   cellWidth: z.number().positive().max(400).optional(),
@@ -491,6 +492,54 @@ const IntervalDiagramSchema = BaseElementSchema.extend({
   width: z.number().positive().max(COORD_MAX).optional(),
   title: z.string().max(200).optional(),
   showNotation: z.boolean().optional(),
+});
+
+const PolygonVertexSchema = z.object({
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  label: z.string().max(20).optional(),
+});
+
+const PolygonSchema = BaseElementSchema.extend({
+  type: z.literal('polygon'),
+  vertices: z.array(PolygonVertexSchema).min(3).max(100).optional(),
+  sides: z.number().int().min(3).max(100).optional(),
+  centerX: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  centerY: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  radius: z.number().positive().max(COORD_MAX).optional(),
+  rotationDeg: z.number().finite().min(-360).max(360).optional(),
+  strokeColor: z.string().regex(COLOR_OR_RGBA_REGEX).optional(),
+  fillColor: z.string().regex(COLOR_OR_RGBA_REGEX).optional(),
+  fillOpacity: z.number().min(0).max(1).optional(),
+  showAngles: z.boolean().optional(),
+  showSideLabels: z.boolean().optional(),
+  showVertexLabels: z.boolean().optional(),
+  title: z.string().max(200).optional(),
+});
+
+const GeometricConstructionStepSchema = z.object({
+  type: z.enum(['point', 'line', 'circle', 'arc', 'angle_bisector', 'perpendicular']),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  label: z.string().max(50).optional(),
+  x1: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  y1: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  x2: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  y2: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  cx: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  cy: z.number().finite().min(COORD_MIN).max(COORD_MAX).optional(),
+  r: z.number().positive().max(COORD_MAX).optional(),
+  startAngle: z.number().finite().min(-360).max(360).optional(),
+  endAngle: z.number().finite().min(-360).max(360).optional(),
+  ticks: z.number().int().min(1).max(3).optional(),
+  color: z.string().regex(COLOR_OR_RGBA_REGEX).optional(),
+  dashed: z.boolean().optional(),
+});
+
+const GeometricConstructionSchema = BaseElementSchema.extend({
+  type: z.literal('geometric_construction'),
+  steps: z.array(GeometricConstructionStepSchema).min(1).max(50),
+  title: z.string().max(200).optional(),
 });
 
 export const DrawElementSchema = z.discriminatedUnion('type', [
@@ -525,6 +574,8 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
   VennDiagramSchema,
   TruthTableSchema,
   IntervalDiagramSchema,
+  PolygonSchema,
+  GeometricConstructionSchema,
 ]);
 
 const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optional();
@@ -2075,7 +2126,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'riemann_sum', 'tangent_line', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve', 'complex_plane', 'number_theory_grid', 'conic_section', 'coordinate_grid', 'symbol_grid', 'equation_system', 'comparison_chart', 'box_plot', 'annotation_arrow', 'formula_box', 'venn_diagram', 'truth_table', 'interval_diagram'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'riemann_sum', 'tangent_line', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve', 'complex_plane', 'number_theory_grid', 'conic_section', 'coordinate_grid', 'symbol_grid', 'equation_system', 'comparison_chart', 'box_plot', 'annotation_arrow', 'formula_box', 'venn_diagram', 'truth_table', 'interval_diagram', 'probability_tree', 'scatter_plot', 'polygon', 'geometric_construction'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch', 'tree_node'] as const;
 

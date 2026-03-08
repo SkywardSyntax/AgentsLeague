@@ -790,6 +790,7 @@ export interface BoxPlotElement extends BaseDrawElement {
     q3: number;
     max: number;
     outliers?: number[];
+    mean?: number;
     color?: string;
   }>;
   /** Top-left X position */
@@ -826,6 +827,8 @@ export interface AnnotationArrowElement extends BaseDrawElement {
   labelY: number;
   /** Font size (default 16) */
   fontSize?: number;
+  /** Stroke color (default '#333') */
+  strokeColor?: string;
   /** Force LaTeX rendering (auto-detected if omitted) */
   isLatex?: boolean;
 }

@@ -94,6 +94,9 @@ function elementPosition(el: DrawElement): string {
     case 'formula_box':
     case 'venn_diagram':
     case 'truth_table':
+    case 'polygon':
+    case 'geometric_construction':
+    case 'interval_diagram':
     default:
       return el.type;
   }

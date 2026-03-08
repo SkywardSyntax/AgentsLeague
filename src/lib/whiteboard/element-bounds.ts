@@ -453,5 +453,17 @@ export function computeElementBounds(
     };
   }
 
+  // interval_diagram: horizontal line with padding
+  if (el.type === 'interval_diagram') {
+    const w = el.width ?? 400;
+    if (!allFinite(el.x, el.y)) return null;
+    return {
+      minX: el.x,
+      minY: el.y - 40,
+      maxX: el.x + w,
+      maxY: el.y + 50,
+    };
+  }
+
   return null;
 }

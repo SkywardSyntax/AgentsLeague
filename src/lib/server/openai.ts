@@ -34,7 +34,7 @@ export const DRAW_TOOL_DEFINITION = {
   type: 'function' as const,
   name: 'emit_draw_batch',
   description:
-    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, matrix_bracket, linear_transform, angle_arc, integral_region, riemann_sum, tangent_line, circle_with_radius, triangle_with_angles, histogram, normal_distribution, slope_field, vector_field_2d, wireframe_3d, sequence_plot, bezier_curve, complex_plane, number_theory_grid, annotation_arrow, formula_box, venn_diagram, truth_table, comparison_chart, box_plot). Use when a visual explanation helps.',
+    'Emit a whiteboard drawing batch. Supports basic shapes (rect, ellipse, line, arrow, text, latex) and math primitives (cartesian_axes, number_line, vector_arrow, function_curve, parametric_curve, polar_plot, matrix_bracket, linear_transform, angle_arc, integral_region, riemann_sum, tangent_line, circle_with_radius, triangle_with_angles, histogram, normal_distribution, slope_field, vector_field_2d, wireframe_3d, sequence_plot, bezier_curve, complex_plane, number_theory_grid, annotation_arrow, formula_box, venn_diagram, truth_table, comparison_chart, box_plot, interval_diagram). Use when a visual explanation helps.',
   strict: false,
   parameters: {
     type: 'object',
@@ -55,7 +55,7 @@ export const DRAW_TOOL_DEFINITION = {
             type: {
               type: 'string',
               enum: [...DRAW_ELEMENT_TYPES],
-              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. tangent_line: Draws tangent line to a curve at a specific x value. Uses expression for f(x), atX for the point. Pair with cartesian_axes + function_curve. riemann_sum: Draws Riemann sum rectangles under a curve. Uses expression for f(x), n for number of rectangles, method for sampling (left/right/midpoint). slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y. wireframe_3d: 3D wireframe projection of shapes (cube, tetrahedron, octahedron, axes_3d, surface). Uses cx,cy center, size, rotationX/Y. sequence_plot: Visualize numeric sequences a_n=f(n). Uses expression with variable \'n\', nMin/nMax range, optional limit line. bezier_curve: Smooth parametric Bezier curves via control points. Uses points array of [x,y] pairs (3=quadratic, 4=cubic, more=polyBezier). Optional showControlPoints, showTangents. complex_plane: Complex number plane with Re/Im axes. Mark points and vectors with re/im coordinates. Optional showUnitCircle, xRange/yRange. number_theory_grid: Modular arithmetic visualization. n×n grid of cells with highlights. Optional showConnections for modular relationships. conic_section: Plot conic sections (ellipse, hyperbola, parabola). Set conicType, a/b for semi-axes (ellipse/hyperbola), p for focal distance (parabola). x,y set canvas center. Optional showFoci, showVertices, showAsymptotes (hyperbola), showDirectrix (parabola), showEquation. coordinate_grid: Fine-grained coordinate grid for graph paper backgrounds. Set x,y for top-left position, width/height for dimensions. majorSpacing/minorSpacing for gridline density. Optional showAxes, showLabels, xMin/xMax/yMin/yMax for math ranges. polygon: Regular or irregular polygon. Provide vertices array (each with x,y, optional label) for irregular polygon, or sides+centerX+centerY+radius for regular polygon. Optional showAngles, showSideLabels, showVertexLabels, fillColor, fillOpacity, title. Example: {"type":"polygon","id":"hex1","sides":6,"centerX":400,"centerY":300,"radius":80,"showVertexLabels":true,"title":"Regular Hexagon"}. geometric_construction: Euclidean construction steps with compass/straightedge marks. Provide steps array, each with type (point/line/circle/arc/angle_bisector/perpendicular) and relevant coordinates. Optional dashed for construction lines, ticks for equal-length marks. Example: {"type":"geometric_construction","id":"gc1","steps":[{"type":"line","x1":100,"y1":300,"x2":400,"y2":300},{"type":"arc","cx":100,"cy":300,"r":120,"startAngle":0,"endAngle":60,"dashed":true}],"title":"Angle Bisection"}. symbol_grid: Grid layout for displaying math symbols/notation. Provide symbols array (each with latex, optional name and category), x,y for position. Optional columns, cellWidth, cellHeight, title, showNames. Example: {"type":"symbol_grid","id":"sg1","x":100,"y":100,"symbols":[{"latex":"\\\\alpha","name":"alpha"},{"latex":"\\\\beta","name":"beta"}],"columns":3,"title":"Greek Letters"}. equation_system: Display a system of equations with optional brace. Provide equations array of LaTeX strings, x,y for position. Optional showBrace (default true), lineSpacing, fontSize, title. Example: {"type":"equation_system","id":"es1","x":100,"y":100,"equations":["2x + 3y = 7","x - y = 1"],"title":"Linear System"}. venn_diagram: Venn diagram for set theory with 2 or 3 overlapping circles. Provide sets array with label and optional color. Optional intersectionLabel, leftOnlyLabel, rightOnlyLabel, title. Example: {"type":"venn_diagram","id":"v1","x":400,"y":300,"sets":[{"label":"A"},{"label":"B"}],"intersectionLabel":"A∩B"}. truth_table: Logic truth table with auto-generated 2^n rows. Provide variables (column names) and outputs (formula columns). Optional rows for custom values, cellWidth, cellHeight, headerColor, trueColor, falseColor. Example: {"type":"truth_table","id":"tt1","x":100,"y":100,"variables":["P","Q"],"outputs":["P∧Q","P∨Q"]}.',
+              description: 'Element type. cartesian_axes: Use when showing a coordinate system or plotting functions. Set xRange and yRange to match your function\'s domain/range. function_curve: Use expression field for clean math notation like \'sin(x)\', \'x^2+1\', \'1/x\'. Always set xRange and yRange matching the axes. parametric_curve: Plot parametric curves x(t),y(t). Use xExpression/yExpression with variable \'t\'. polar_plot: Plot polar curves r(θ). Use expression with variable \'theta\'. vector_arrow: Use for physics vectors, linear algebra, or directional quantities. Tail at (x,y), extends by (dx,dy) pixels. number_line: Use for 1D concepts: intervals, inequalities, distances, limits. tangent_line: Draws tangent line to a curve at a specific x value. Uses expression for f(x), atX for the point. Pair with cartesian_axes + function_curve. riemann_sum: Draws Riemann sum rectangles under a curve. Uses expression for f(x), n for number of rectangles, method for sampling (left/right/midpoint). slope_field: Direction field for ODE dy/dx=f(x,y). Uses expression with variables x,y. vector_field_2d: 2D vector field F(x,y)=(Px,Py). Uses Px,Py expressions with variables x,y. wireframe_3d: 3D wireframe projection of shapes (cube, tetrahedron, octahedron, axes_3d, surface). Uses cx,cy center, size, rotationX/Y. sequence_plot: Visualize numeric sequences a_n=f(n). Uses expression with variable \'n\', nMin/nMax range, optional limit line. bezier_curve: Smooth parametric Bezier curves via control points. Uses points array of [x,y] pairs (3=quadratic, 4=cubic, more=polyBezier). Optional showControlPoints, showTangents. complex_plane: Complex number plane with Re/Im axes. Mark points and vectors with re/im coordinates. Optional showUnitCircle, xRange/yRange. number_theory_grid: Modular arithmetic visualization. n×n grid of cells with highlights. Optional showConnections for modular relationships. conic_section: Plot conic sections (ellipse, hyperbola, parabola). Set conicType, a/b for semi-axes (ellipse/hyperbola), p for focal distance (parabola). x,y set canvas center. Optional showFoci, showVertices, showAsymptotes (hyperbola), showDirectrix (parabola), showEquation. coordinate_grid: Fine-grained coordinate grid for graph paper backgrounds. Set x,y for top-left position, width/height for dimensions. majorSpacing/minorSpacing for gridline density. Optional showAxes, showLabels, xMin/xMax/yMin/yMax for math ranges. polygon: Regular or irregular polygon. Provide vertices array (each with x,y, optional label) for irregular polygon, or sides+centerX+centerY+radius for regular polygon. Optional showAngles, showSideLabels, showVertexLabels, fillColor, fillOpacity, title. Example: {"type":"polygon","id":"hex1","sides":6,"centerX":400,"centerY":300,"radius":80,"showVertexLabels":true,"title":"Regular Hexagon"}. geometric_construction: Euclidean construction steps with compass/straightedge marks. Provide steps array, each with type (point/line/circle/arc/angle_bisector/perpendicular) and relevant coordinates. Optional dashed for construction lines, ticks for equal-length marks. Example: {"type":"geometric_construction","id":"gc1","steps":[{"type":"line","x1":100,"y1":300,"x2":400,"y2":300},{"type":"arc","cx":100,"cy":300,"r":120,"startAngle":0,"endAngle":60,"dashed":true}],"title":"Angle Bisection"}. symbol_grid: Grid layout for displaying math symbols/notation. Provide symbols array (each with latex, optional name and category), x,y for position. Optional columns, cellWidth, cellHeight, title, showNames. Example: {"type":"symbol_grid","id":"sg1","x":100,"y":100,"symbols":[{"latex":"\\\\alpha","name":"alpha"},{"latex":"\\\\beta","name":"beta"}],"columns":3,"title":"Greek Letters"}. equation_system: Display a system of equations with optional brace. Provide equations array of LaTeX strings, x,y for position. Optional showBrace (default true), lineSpacing, fontSize, title. Example: {"type":"equation_system","id":"es1","x":100,"y":100,"equations":["2x + 3y = 7","x - y = 1"],"title":"Linear System"}. venn_diagram: Venn diagram for set theory with 2 or 3 overlapping circles. Provide sets array with label and optional color. Optional intersectionLabel, leftOnlyLabel, rightOnlyLabel, title. Example: {"type":"venn_diagram","id":"v1","x":400,"y":300,"sets":[{"label":"A"},{"label":"B"}],"intersectionLabel":"A∩B"}. truth_table: Logic truth table with auto-generated 2^n rows. Provide variables (column names) and outputs (formula columns). Optional rows for custom values, cellWidth, cellHeight, headerColor, trueColor, falseColor. Example: {"type":"truth_table","id":"tt1","x":100,"y":100,"variables":["P","Q"],"outputs":["P∧Q","P∨Q"]}. annotation_arrow: Callout annotation with a curved arrow from label to target point. Provide text, targetX/Y (point being annotated), labelX/Y (where label sits). Auto-detects LaTeX in text. Example: {"type":"annotation_arrow","id":"a1","text":"maximum","targetX":400,"targetY":200,"labelX":500,"labelY":100}. formula_box: Bordered formula display with optional title. Provide formula (LaTeX), x, y. Optional width/height (auto-computed), borderColor, fillColor, padding, title. Example: {"type":"formula_box","id":"f1","formula":"\\\\int_a^b f(x)\\\\,dx = F(b)-F(a)","x":100,"y":100,"title":"Fundamental Theorem"}. comparison_chart: Grouped bar chart comparing categories across series. Provide categories array and series array (each with name, values array matching categories, optional color). Optional orientation (vertical/horizontal), showValues, showLegend, title, xAxisLabel, yAxisLabel. Example: {"type":"comparison_chart","id":"cc1","x":100,"y":100,"categories":["Q1","Q2","Q3"],"series":[{"name":"2023","values":[10,20,30]},{"name":"2024","values":[15,25,35]}],"title":"Revenue by Quarter"}. box_plot: Box-and-whisker plot showing statistical distribution. Provide groups array (each with label, min, q1, median, q3, max, optional outliers and mean). Optional orientation (vertical/horizontal), showMean, title, xAxisLabel, yAxisLabel. Example: {"type":"box_plot","id":"bp1","x":100,"y":100,"groups":[{"label":"Group A","min":10,"q1":25,"median":50,"q3":75,"max":90,"outliers":[2,95],"mean":48}],"showMean":true,"title":"Score Distribution"}. interval_diagram: Show set intervals on a number line with open/closed endpoint notation. Provide intervals array (each with start, end, optional startOpen/endOpen booleans for open endpoints, optional color and label). Use Infinity/-Infinity for unbounded intervals. Optional xMin/xMax for axis range, width (default 400), title, showNotation (renders interval notation like [-2,3)∪(5,∞) below). number_line enhancements: highlights accepts optional color per dot; region field shades an area. Example: {"type":"interval_diagram","id":"iv1","x":100,"y":300,"intervals":[{"start":-2,"end":3,"endOpen":true},{"start":5,"end":Infinity,"startOpen":true}],"showNotation":true,"title":"Solution Set"}.',
             },
             x: { type: 'number', description: 'X position in canvas pixels. Safe range: [50, 1350].' },
             y: { type: 'number', description: 'Y position in canvas pixels. Safe range: [50, 650]. Y is inverted: smaller = higher on screen.' },
@@ -90,7 +90,7 @@ export const DRAW_TOOL_DEFINITION = {
             tex: { type: 'string', description: 'LaTeX string for "latex" elements. Use single backslashes: \\frac{a}{b}. Keep under 200 chars.' },
             latex: { type: 'string' },
             size: { type: 'number', description: 'Font size for text elements. Minimum: 12. Labels: 14-16, headings: 20-24.' },
-            fontSize: { type: 'number', description: 'Font size for latex elements. Minimum: 12. Equations: 18-22, results: 24-28.' },
+            fontSize: { type: 'number', description: 'Font size for latex elements, annotation_arrow labels, or formula_box formulas. Minimum: 12. Equations: 18-22, results: 24-28.' },
             color: { type: 'string', description: 'CSS color string. Use distinct colors for different elements: #2563eb (blue), #dc2626 (red), #16a34a (green).' },
             stroke_width: { type: 'number' },
             displayMode: { type: 'boolean' },
@@ -241,6 +241,29 @@ export const DRAW_TOOL_DEFINITION = {
             headerColor: { type: 'string', description: 'Header background color for truth_table. Default: "#4a90d9".' },
             trueColor: { type: 'string', description: 'Color for T values in truth_table. Default: "#27ae60".' },
             falseColor: { type: 'string', description: 'Color for F values in truth_table. Default: "#e74c3c".' },
+            // annotation_arrow fields
+            targetX: { type: 'number', description: 'X coordinate of the point being annotated for annotation_arrow.' },
+            targetY: { type: 'number', description: 'Y coordinate of the point being annotated for annotation_arrow.' },
+            labelX: { type: 'number', description: 'X coordinate where the annotation label sits for annotation_arrow.' },
+            labelY: { type: 'number', description: 'Y coordinate where the annotation label sits for annotation_arrow.' },
+            isLatex: { type: 'boolean', description: 'Force LaTeX rendering for annotation_arrow text. Auto-detected if omitted.' },
+            // formula_box fields
+            formula: { type: 'string', description: 'LaTeX formula for formula_box. Example: "\\\\int_a^b f(x)\\\\,dx = F(b)-F(a)".' },
+            borderColor: { type: 'string', description: 'Border color for formula_box. Default: "#333".' },
+            padding: { type: 'number', description: 'Padding inside formula_box in pixels. Default: 12.' },
+            // comparison_chart fields
+            categories: { type: 'array', items: { type: 'string' }, description: 'Category labels for comparison_chart x-axis.' },
+            series: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } }, color: { type: 'string' } }, required: ['name', 'values'] }, description: 'Data series for comparison_chart. Each has name, values (matching categories length), optional color.' },
+            orientation: { type: 'string', enum: ['vertical', 'horizontal'], description: 'Bar/box orientation for comparison_chart or box_plot. Default: "vertical".' },
+            showLegend: { type: 'boolean', description: 'Show legend for comparison_chart series. Default: true.' },
+            // box_plot fields
+            groups: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, min: { type: 'number' }, q1: { type: 'number' }, median: { type: 'number' }, q3: { type: 'number' }, max: { type: 'number' }, outliers: { type: 'array', items: { type: 'number' } }, mean: { type: 'number' } }, required: ['label', 'min', 'q1', 'median', 'q3', 'max'] }, description: 'Box plot groups for box_plot. Each has label, min, q1, median, q3, max, optional outliers and mean.' },
+            showMean: { type: 'boolean', description: 'Show mean marker (×) on box_plot. Default: false.' },
+            // interval_diagram fields
+            intervals: { type: 'array', items: { type: 'object', properties: { start: { type: 'number' }, end: { type: 'number' }, startOpen: { type: 'boolean' }, endOpen: { type: 'boolean' }, color: { type: 'string' }, label: { type: 'string' } }, required: ['start', 'end'] }, description: 'Intervals for interval_diagram. Each has start, end (use Infinity/-Infinity for unbounded), optional startOpen/endOpen (default false=closed), color, label.' },
+            showNotation: { type: 'boolean', description: 'Show interval notation text below interval_diagram (e.g. [-2,3)∪(5,∞)). Default: false.' },
+            // number_line region field
+            region: { type: 'object', properties: { start: { type: 'number' }, end: { type: 'number' }, color: { type: 'string' } }, required: ['start', 'end'], description: 'Shaded region on number_line (e.g. where f(x)>0). Provide start, end, optional color.' },
           },
           required: ['id', 'type'],
         },
@@ -433,6 +456,8 @@ You are an interactive teaching agent for a chat + whiteboard product.
 | Complex number visualization | emit_draw_batch | complex_plane | Complex plane with Re/Im axes, points, vectors, unit circle |
 | Modular arithmetic / number grids | emit_draw_batch | number_theory_grid | n×n grid with highlighted cells and modular connections |
 | Complex multi-panel text-based diagram | emit_graph_script | graph + node + edge DSL | Rich DSL with references and connections |
+| Grouped bar charts, category comparisons | emit_draw_batch | comparison_chart | Auto-computed grouped bars with legend and labels |
+| Box-and-whisker plots, distributions | emit_draw_batch | box_plot | Statistical summary (min, Q1, median, Q3, max) with outliers |
 
 - You may alternate text and drawings multiple times in a single turn
 - Emit incremental batches: 1-3 equations or one small visual step per batch
@@ -526,6 +551,8 @@ For graphs with cartesian_axes, use these defaults:
 | riemann_sum | x, y, width, height, xRange, yRange, expression, n, method, showFunction, showAxes | Riemann sum rectangles under f(x) |
 | complex_plane | points [{re,im,label,color}], vectors [{re,im,label,color}], showUnitCircle, xRange, yRange | Complex number plane with Re/Im axes |
 | number_theory_grid | cx, cy, n, highlights [{i,j,color,label}], showConnections, modulus, cellSize | Modular arithmetic n×n grid |
+| comparison_chart | x, y, width, height, categories[], series[{name,values[],color?}], orientation, showValues, showLegend, title | Grouped bar chart comparing categories across series |
+| box_plot | x, y, width, height, groups[{label,min,q1,median,q3,max,outliers?,mean?}], orientation, showMean, title | Box-and-whisker plot showing statistical distribution |
 
 ### Quick Type Selection — what to use for common requests
 | Want to show | Use these types |
@@ -537,6 +564,8 @@ For graphs with cartesian_axes, use these defaults:
 | Parametric curve (Lissajous, spiral) | cartesian_axes + parametric_curve |
 | Polar curve (rose, cardioid) | polar_plot |
 | Data distribution / bar chart | histogram (+ normal_distribution overlay if bell curve) |
+| Grouped bar chart / category comparison | comparison_chart (with multiple series for side-by-side bars) |
+| Box-and-whisker / statistical summary | box_plot (with groups, optional outliers and mean) |
 | Matrix equation | matrix_bracket (multiple, with arrow and text between) |
 | Vector field or vector addition | multiple vector_arrow elements |
 | Slope / direction field (ODE) | slope_field (optionally with solutionCurve) |
@@ -763,6 +792,39 @@ Example — multiplication table mod 5, highlighting quadratic residues:
     {"i":3,"j":3,"color":"#93c5fd","label":"4"},
     {"i":4,"j":4,"color":"#93c5fd","label":"1"}
   ],"showConnections":false}
+\`\`\`
+
+### comparison_chart Details
+Grouped bar chart comparing categories across one or more data series.
+\`categories\`: array of category labels (x-axis).
+\`series\`: array of \`{name, values[], color?}\` — each series has one value per category.
+\`orientation\` (default "vertical"): "vertical" for bars going up, "horizontal" for bars going right.
+\`showValues\` (default false): show numeric value labels on each bar.
+\`showLegend\` (default true): show legend mapping series names to colors.
+\`title\`, \`xAxisLabel\`, \`yAxisLabel\`: optional labels.
+Example — quarterly revenue comparison:
+\`\`\`json
+{"type":"comparison_chart","id":"cc1","x":100,"y":100,"width":500,"height":300,
+  "categories":["Q1","Q2","Q3","Q4"],
+  "series":[
+    {"name":"2023","values":[12,18,25,30],"color":"#4a90d9"},
+    {"name":"2024","values":[15,22,28,35],"color":"#e74c3c"}
+  ],"showValues":true,"title":"Revenue by Quarter ($M)"}
+\`\`\`
+
+### box_plot Details
+Box-and-whisker plot showing five-number summary (min, Q1, median, Q3, max) with optional outliers and mean.
+\`groups\`: array of \`{label, min, q1, median, q3, max, outliers?, mean?}\` — each group is one box.
+\`orientation\` (default "vertical"): "vertical" for boxes going up, "horizontal" for boxes going right.
+\`showMean\` (default false): show mean marker (×) on each box.
+\`title\`, \`xAxisLabel\`, \`yAxisLabel\`: optional labels.
+Example — test score distribution by class:
+\`\`\`json
+{"type":"box_plot","id":"bp1","x":100,"y":100,"width":400,"height":250,
+  "groups":[
+    {"label":"Class A","min":45,"q1":60,"median":72,"q3":85,"max":95,"outliers":[30,98],"mean":70},
+    {"label":"Class B","min":50,"q1":65,"median":78,"q3":88,"max":96,"mean":76}
+  ],"showMean":true,"title":"Test Scores by Class"}
 \`\`\`
 
 ### Dos and Don'ts for Math Drawings
