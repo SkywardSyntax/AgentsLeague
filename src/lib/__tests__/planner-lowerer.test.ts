@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { lowerPlannedLayoutToDrawBatch, DEFAULT_MAX_LOWERED_ELEMENTS, planSemanticBatch } from '@/lib/whiteboard/planner';
 import type { PlannedSemanticLayout } from '@/lib/whiteboard/planner';
-import type { DrawElement, SemanticBatch } from '@/types/agent';
+import type { DrawElement, SemanticBatch, PolygonElement, GeometricConstructionElement } from '@/types/agent';
+import { DrawElementSchema } from '@/lib/schema';
 
 function makeLayout(elements: DrawElement[], warnings: string[] = []): PlannedSemanticLayout {
   return {
@@ -190,5 +191,326 @@ describe('planner lowerer', () => {
     expect(draw.batch_id).toBe('contract-1');
     expect(draw.elements.length).toBeGreaterThan(0);
     expect(draw.elements.every(e => 'id' in e && 'type' in e)).toBe(true);
+  });
+
+  // ── Polygon primitive tests ──────────────────────────────────────────
+
+  it('polygon regular hexagon expands to 6 edges', () => {
+    const hex: PolygonElement = {
+      id: 'hex1',
+      type: 'polygon',
+      sides: 6,
+      centerX: 400,
+      centerY: 300,
+      radius: 80,
+    };
+    const planned = makeLayout([hex]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    const edges = draw.elements.filter(e => e.type === 'line' && e.id.startsWith('hex1-edge-'));
+    expect(edges).toHaveLength(6);
+  });
+
+  it('polygon with vertices uses correct vertex count', () => {
+    const quad: PolygonElement = {
+      id: 'quad1',
+      type: 'polygon',
+      vertices: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 0, y: 100 },
+      ],
+    };
+    const planned = makeLayout([quad]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    const edges = draw.elements.filter(e => e.type === 'line' && e.id.startsWith('quad1-edge-'));
+    expect(edges).toHaveLength(4);
+  });
+
+  it('polygon with showAngles includes angle arcs', () => {
+    const tri: PolygonElement = {
+      id: 'tri1',
+      type: 'polygon',
+      vertices: [
+        { x: 200, y: 100 },
+        { x: 300, y: 300 },
+        { x: 100, y: 300 },
+      ],
+      showAngles: true,
+    };
+    const planned = makeLayout([tri]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    const arcs = draw.elements.filter(e => e.id.startsWith('tri1-arc-'));
+    expect(arcs.length).toBeGreaterThan(0);
+  });
+
+  it('polygon schema validates regular polygon', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'p-valid',
+      type: 'polygon',
+      sides: 5,
+      centerX: 400,
+      centerY: 300,
+      radius: 80,
+    });
+    expect(valid.success).toBe(true);
+  });
+
+  it('polygon schema rejects < 3 vertices', () => {
+    const invalid = DrawElementSchema.safeParse({
+      id: 'p-bad',
+      type: 'polygon',
+      vertices: [{ x: 0, y: 0 }, { x: 100, y: 100 }],
+    });
+    expect(invalid.success).toBe(false);
+  });
+
+  // ── Geometric construction primitive tests ───────────────────────────
+
+  it('geometric_construction circle + line expands with correct types', () => {
+    const gc: GeometricConstructionElement = {
+      id: 'gc1',
+      type: 'geometric_construction',
+      steps: [
+        { type: 'circle', cx: 200, cy: 200, r: 50 },
+        { type: 'line', x1: 100, y1: 200, x2: 300, y2: 200 },
+      ],
+    };
+    const planned = makeLayout([gc]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    const hasCircle = draw.elements.some(e => e.type === 'ellipse' && e.id.includes('circle'));
+    const hasLine = draw.elements.some(e => e.type === 'line' && e.id.includes('line'));
+    expect(hasCircle).toBe(true);
+    expect(hasLine).toBe(true);
+  });
+
+  it('geometric_construction with point step renders dot and label', () => {
+    const gc: GeometricConstructionElement = {
+      id: 'gc2',
+      type: 'geometric_construction',
+      steps: [
+        { type: 'point', x: 100, y: 100, label: 'A' },
+      ],
+    };
+    const planned = makeLayout([gc]);
+    const draw = lowerPlannedLayoutToDrawBatch(planned);
+    expect(draw.elements.some(e => e.type === 'ellipse')).toBe(true);
+    expect(draw.elements.some(e => e.type === 'text')).toBe(true);
+  });
+
+  it('geometric_construction schema validates correctly', () => {
+    const valid = DrawElementSchema.safeParse({
+      id: 'gc-v',
+      type: 'geometric_construction',
+      steps: [
+        { type: 'line', x1: 0, y1: 0, x2: 100, y2: 100 },
+        { type: 'arc', cx: 50, cy: 50, r: 30, startAngle: 0, endAngle: 90, dashed: true },
+      ],
+    });
+    expect(valid.success).toBe(true);
+
+    const missing = DrawElementSchema.safeParse({
+      id: 'gc-m',
+      type: 'geometric_construction',
+      // missing steps
+    });
+    expect(missing.success).toBe(false);
+  });
+});
+
+// ── symbol_grid tests ─────────────────────────────────────────────────
+
+describe('symbol_grid lowering', () => {
+  it('expands a 3×3 symbol grid into rects and latex elements', () => {
+    const el: DrawElement = {
+      id: 'sg1',
+      type: 'symbol_grid',
+      x: 100,
+      y: 100,
+      symbols: [
+        { latex: '\\alpha' },
+        { latex: '\\beta' },
+        { latex: '\\gamma' },
+        { latex: '\\delta' },
+        { latex: '\\epsilon' },
+        { latex: '\\zeta' },
+        { latex: '\\eta' },
+        { latex: '\\theta' },
+        { latex: '\\iota' },
+      ],
+      columns: 3,
+    };
+    const layout = makeLayout([el]);
+    const result = lowerPlannedLayoutToDrawBatch(layout);
+    // 9 rects + 9 latex = 18 minimum (no names by default when no name field)
+    const rects = result.elements.filter(e => e.type === 'rect');
+    const latexEls = result.elements.filter(e => e.type === 'latex');
+    expect(rects.length).toBe(9);
+    expect(latexEls.length).toBeGreaterThanOrEqual(9);
+  });
+
+  it('includes name text elements when symbols have names', () => {
+    const el: DrawElement = {
+      id: 'sg2',
+      type: 'symbol_grid',
+      x: 100,
+      y: 100,
+      symbols: [
+        { latex: '\\alpha', name: 'alpha' },
+        { latex: '\\beta', name: 'beta' },
+      ],
+      columns: 2,
+    };
+    const layout = makeLayout([el]);
+    const result = lowerPlannedLayoutToDrawBatch(layout);
+    const textEls = result.elements.filter(e => e.type === 'text');
+    expect(textEls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('suppresses name text when showNames is false', () => {
+    const el: DrawElement = {
+      id: 'sg3',
+      type: 'symbol_grid',
+      x: 100,
+      y: 100,
+      symbols: [
+        { latex: '\\alpha', name: 'alpha' },
+        { latex: '\\beta', name: 'beta' },
+      ],
+      columns: 2,
+      showNames: false,
+    };
+    const layout = makeLayout([el]);
+    const result = lowerPlannedLayoutToDrawBatch(layout);
+    const textEls = result.elements.filter(e => e.type === 'text');
+    // No name text elements (title text may still appear if set)
+    expect(textEls.length).toBe(0);
+  });
+
+  it('renders title text when title is provided', () => {
+    const el: DrawElement = {
+      id: 'sg4',
+      type: 'symbol_grid',
+      x: 100,
+      y: 100,
+      symbols: [{ latex: '\\alpha' }],
+      title: 'Greek Letters',
+    };
+    const layout = makeLayout([el]);
+    const result = lowerPlannedLayoutToDrawBatch(layout);
+    const textEls = result.elements.filter(e => e.type === 'text');
+    const titleEl = textEls.find(e => e.type === 'text' && (e as { text: string }).text === 'Greek Letters');
+    expect(titleEl).toBeDefined();
+  });
+});
+
+// ── equation_system tests ─────────────────────────────────────────────
+
+describe('equation_system lowering', () => {
+  it('expands equation system with brace into a single latex element', () => {
+    const el: DrawElement = {
+      id: 'es1',
+      type: 'equation_system',
+      x: 200,
+      y: 200,
+      equations: ['2x + 3y = 7', 'x - y = 1'],
+    };
+    const layout = makeLayout([el]);
+    const result = lowerPlannedLayoutToDrawBatch(layout);
+    const latexEls = result.elements.filter(e => e.type === 'latex');
+    // With brace (default), should produce one combined latex element
+    expect(latexEls.length).toBeGreaterThanOrEqual(1);
+    const combinedTex = (latexEls[0] as { tex: string }).tex;
+    expect(combinedTex).toContain('\\left\\{');
+    expect(combinedTex).toContain('\\begin{array}');
+  });
+
+  it('expands equation system without brace into individual latex elements', () => {
+    const el: DrawElement = {
+      id: 'es2',
+      type: 'equation_system',
+      x: 200,
+      y: 200,
+      equations: ['2x + 3y = 7', 'x - y = 1', '3x + 2y = 8'],
+      showBrace: false,
+    };
+    const layout = makeLayout([el]);
+    const result = lowerPlannedLayoutToDrawBatch(layout);
+    const latexEls = result.elements.filter(e => e.type === 'latex');
+    // Without brace, each equation is a separate latex element
+    expect(latexEls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('renders title text when title is provided', () => {
+    const el: DrawElement = {
+      id: 'es3',
+      type: 'equation_system',
+      x: 200,
+      y: 200,
+      equations: ['x = 1'],
+      title: 'Solution',
+    };
+    const layout = makeLayout([el]);
+    const result = lowerPlannedLayoutToDrawBatch(layout);
+    const textEls = result.elements.filter(e => e.type === 'text');
+    const titleEl = textEls.find(e => e.type === 'text' && (e as { text: string }).text === 'Solution');
+    expect(titleEl).toBeDefined();
+  });
+});
+
+// ── schema validation tests ───────────────────────────────────────────
+
+describe('symbol_grid and equation_system schema validation', () => {
+  it('validates a valid symbol_grid element', () => {
+    const result = DrawElementSchema.safeParse({
+      id: 'sg-v',
+      type: 'symbol_grid',
+      x: 100,
+      y: 100,
+      symbols: [{ latex: '\\alpha', name: 'alpha' }],
+      columns: 3,
+      cellWidth: 60,
+      cellHeight: 50,
+      title: 'Test',
+      showNames: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects symbol_grid missing symbols', () => {
+    const result = DrawElementSchema.safeParse({
+      id: 'sg-bad',
+      type: 'symbol_grid',
+      x: 100,
+      y: 100,
+      // missing symbols
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('validates a valid equation_system element', () => {
+    const result = DrawElementSchema.safeParse({
+      id: 'es-v',
+      type: 'equation_system',
+      x: 100,
+      y: 100,
+      equations: ['x + y = 1'],
+      showBrace: true,
+      lineSpacing: 35,
+      fontSize: 16,
+      title: 'System',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects equation_system missing equations', () => {
+    const result = DrawElementSchema.safeParse({
+      id: 'es-bad',
+      type: 'equation_system',
+      x: 100,
+      y: 100,
+      // missing equations
+    });
+    expect(result.success).toBe(false);
   });
 });

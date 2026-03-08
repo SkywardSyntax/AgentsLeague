@@ -26,6 +26,8 @@ import type {
   NumberTheoryGridElement,
   ConicSectionElement,
   CoordinateGridElement,
+  PolygonElement,
+  GeometricConstructionElement,
   ProbabilityTreeElement,
   ScatterPlotElement,
   AnnotationArrowElement,
@@ -36,6 +38,7 @@ import type {
   EquationSystemElement,
   ComparisonChartElement,
   BoxPlotElement,
+  IntervalDiagramElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -3036,31 +3039,28 @@ function expandVennDiagram(el: VennDiagramElement): DrawElement[] {
     const sc = cx + off.dx;
     const sy = cy + off.dy;
     const setColor = s.color ?? baseColor;
-    // Draw circle as an ellipse
     out.push({
       id: `${id}-circle-${i}`,
       type: 'ellipse' as const,
-      x: sc - r,
-      y: sy - r,
-      w: r * 2,
-      h: r * 2,
+      cx: sc,
+      cy: sy,
+      rx: r,
+      ry: r,
       color: setColor,
       stroke_width: sw,
-      fill: 'transparent',
+      fillColor: 'transparent',
     });
-    // Set label
     out.push({
       id: `${id}-label-${i}`,
       type: 'text' as const,
       x: sc + off.dx * 0.6,
       y: sy + off.dy * 0.6 - 10,
       text: s.label,
-      fontSize: 14,
+      size: 14,
       color: setColor,
     });
   });
 
-  // Intersection label
   if (el.intersectionLabel) {
     out.push({
       id: `${id}-intersection`,
@@ -3068,12 +3068,11 @@ function expandVennDiagram(el: VennDiagramElement): DrawElement[] {
       x: cx,
       y: cy,
       text: el.intersectionLabel,
-      fontSize: 12,
+      size: 12,
       color: baseColor,
     });
   }
 
-  // Title
   if (el.title) {
     out.push({
       id: `${id}-title`,
@@ -3081,7 +3080,7 @@ function expandVennDiagram(el: VennDiagramElement): DrawElement[] {
       x: cx,
       y: cy - r - 30,
       text: el.title,
-      fontSize: 16,
+      size: 16,
       color: baseColor,
     });
   }
@@ -3685,6 +3684,10 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandComparisonChart(el));
     } else if (el.type === 'box_plot') {
       result.push(...expandBoxPlot(el));
+    } else if (el.type === 'polygon') {
+      result.push(...expandPolygon(el));
+    } else if (el.type === 'geometric_construction') {
+      result.push(...expandGeometricConstruction(el));
     } else {
       result.push(el);
     }

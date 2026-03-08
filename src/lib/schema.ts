@@ -2003,6 +2003,55 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // interval_diagram: pass through with validation (lowered later)
+    if (type === 'interval_diagram') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const rawIntervals = Array.isArray(raw.intervals) ? raw.intervals : null;
+      if (x == null || y == null || !rawIntervals || rawIntervals.length === 0) {
+        warnings.push(`IntervalDiagram ${id} has invalid coordinates or empty intervals`);
+        continue;
+      }
+      const intervals: Array<{ start: number; end: number; startOpen?: boolean; endOpen?: boolean; color?: string; label?: string }> = [];
+      for (const ri of rawIntervals) {
+        const rec = asRecord(ri);
+        if (!rec) continue;
+        const start = asNumber(rec.start);
+        const end = asNumber(rec.end);
+        if (start == null || end == null) continue;
+        const startOpen = typeof rec.startOpen === 'boolean' ? rec.startOpen : undefined;
+        const endOpen = typeof rec.endOpen === 'boolean' ? rec.endOpen : undefined;
+        const iColor = asString(rec.color) ?? undefined;
+        const iLabel = asString(rec.label) ?? undefined;
+        intervals.push({ start, end, ...(startOpen != null ? { startOpen } : {}), ...(endOpen != null ? { endOpen } : {}), ...(iColor ? { color: iColor } : {}), ...(iLabel ? { label: iLabel } : {}) });
+      }
+      if (intervals.length === 0) {
+        warnings.push(`IntervalDiagram ${id} has no valid intervals`);
+        continue;
+      }
+      const width = asNumber(raw.width) ?? undefined;
+      const xMin = asNumber(raw.xMin) ?? undefined;
+      const xMax = asNumber(raw.xMax) ?? undefined;
+      const title = asString(raw.title) ?? undefined;
+      const showNotation = typeof raw.showNotation === 'boolean' ? raw.showNotation : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        intervals,
+        x,
+        y,
+        ...(width != null ? { width } : {}),
+        ...(xMin != null ? { xMin } : {}),
+        ...(xMax != null ? { xMax } : {}),
+        ...(title ? { title } : {}),
+        ...(showNotation != null ? { showNotation } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     warnings.push(`Unsupported element type at ${idx}`);
   }
 

@@ -309,5 +309,149 @@ export function computeElementBounds(
     };
   }
 
+  // polygon: bounding box of all vertices (explicit or regular)
+  if (el.type === 'polygon') {
+    if (el.vertices && el.vertices.length >= 3) {
+      const xs = el.vertices.map((v) => v.x);
+      const ys = el.vertices.map((v) => v.y);
+      if (!allFinite(...xs, ...ys)) return null;
+      return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
+    }
+    if (el.sides && el.sides >= 3) {
+      const cx = el.centerX ?? 400;
+      const cy = el.centerY ?? 300;
+      const r = el.radius ?? 80;
+      if (!allFinite(cx, cy, r)) return null;
+      return { minX: cx - r, minY: cy - r, maxX: cx + r, maxY: cy + r };
+    }
+    return null;
+  }
+
+  // geometric_construction: bounding box of all step coordinates
+  if (el.type === 'geometric_construction') {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const step of el.steps) {
+      if (step.x !== undefined) xs.push(step.x);
+      if (step.y !== undefined) ys.push(step.y);
+      if (step.x1 !== undefined) xs.push(step.x1);
+      if (step.y1 !== undefined) ys.push(step.y1);
+      if (step.x2 !== undefined) xs.push(step.x2);
+      if (step.y2 !== undefined) ys.push(step.y2);
+      if (step.cx !== undefined && step.r !== undefined) {
+        xs.push(step.cx - step.r, step.cx + step.r);
+        ys.push(step.cy! - step.r, step.cy! + step.r);
+      }
+    }
+    if (xs.length === 0 || ys.length === 0 || !allFinite(...xs, ...ys)) return null;
+    return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
+  }
+
+  // symbol_grid: grid of cells
+  if (el.type === 'symbol_grid') {
+    const cellW = el.cellWidth ?? 60;
+    const cellH = el.cellHeight ?? 50;
+    const n = el.symbols.length;
+    const cols = el.columns ?? Math.max(1, Math.round(Math.sqrt(n)));
+    const rows = Math.ceil(n / cols);
+    const titleOffset = el.title ? 25 : 0;
+    if (!allFinite(el.x, el.y)) return null;
+    return {
+      minX: el.x,
+      minY: el.y - titleOffset,
+      maxX: el.x + cols * cellW,
+      maxY: el.y + rows * cellH,
+    };
+  }
+
+  // equation_system: stacked equations
+  if (el.type === 'equation_system') {
+    const fontSize = el.fontSize ?? 16;
+    const lineSpacing = el.lineSpacing ?? 35;
+    const n = el.equations.length;
+    const titleOffset = el.title ? 25 : 0;
+    if (!allFinite(el.x, el.y)) return null;
+    const estimatedWidth = Math.max(120, fontSize * 12);
+    const totalHeight = n * lineSpacing + titleOffset;
+    return {
+      minX: el.x,
+      minY: el.y - titleOffset,
+      maxX: el.x + estimatedWidth,
+      maxY: el.y + totalHeight,
+    };
+  }
+
+  // comparison_chart: bounding box is the plot area
+  if (el.type === 'comparison_chart') {
+    const w = el.width ?? 400;
+    const h = el.height ?? 250;
+    if (!allFinite(el.x, el.y) || !isFinitePositive(w) || !isFinitePositive(h)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + w, maxY: el.y + h };
+  }
+
+  // box_plot: bounding box is the plot area
+  if (el.type === 'box_plot') {
+    const w = el.width ?? 400;
+    const h = el.height ?? 200;
+    if (!allFinite(el.x, el.y) || !isFinitePositive(w) || !isFinitePositive(h)) return null;
+    return { minX: el.x, minY: el.y, maxX: el.x + w, maxY: el.y + h };
+  }
+
+  // annotation_arrow: bounding box spans label and target positions
+  if (el.type === 'annotation_arrow') {
+    const fs = el.fontSize ?? 16;
+    if (!allFinite(el.targetX, el.targetY, el.labelX, el.labelY)) return null;
+    return {
+      minX: Math.min(el.targetX, el.labelX) - fs,
+      minY: Math.min(el.targetY, el.labelY) - fs,
+      maxX: Math.max(el.targetX, el.labelX) + fs * el.text.length * 0.6,
+      maxY: Math.max(el.targetY, el.labelY) + fs,
+    };
+  }
+
+  // formula_box: bounding box is the box dimensions
+  if (el.type === 'formula_box') {
+    const padding = el.padding ?? 12;
+    const fontSize = el.fontSize ?? 16;
+    const autoWidth = el.width ?? Math.max(180, Math.min(800, el.formula.length * fontSize * 0.5 + padding * 2));
+    const titleHeight = el.title ? fontSize + 8 : 0;
+    const autoHeight = el.height ?? (fontSize * 2 + padding * 2 + titleHeight);
+    if (!allFinite(el.x, el.y)) return null;
+    return {
+      minX: el.x,
+      minY: el.y,
+      maxX: el.x + autoWidth,
+      maxY: el.y + autoHeight,
+    };
+  }
+
+  // venn_diagram: bounding box from center and radius
+  if (el.type === 'venn_diagram') {
+    const r = el.radius ?? 80;
+    if (!allFinite(el.x, el.y)) return null;
+    const spread = r * 1.5;
+    return {
+      minX: el.x - spread,
+      minY: el.y - spread - 30,
+      maxX: el.x + spread,
+      maxY: el.y + spread,
+    };
+  }
+
+  // truth_table: bounding box from cell dimensions
+  if (el.type === 'truth_table') {
+    const cw = el.cellWidth ?? 60;
+    const ch = el.cellHeight ?? 30;
+    const cols = (el.variables?.length ?? 0) + (el.outputs?.length ?? 0);
+    const rows = Math.pow(2, el.variables?.length ?? 0) + 1;
+    if (!allFinite(el.x, el.y)) return null;
+    return {
+      minX: el.x,
+      minY: el.y,
+      maxX: el.x + cols * cw,
+      maxY: el.y + rows * ch,
+    };
+  }
+
   return null;
 }
