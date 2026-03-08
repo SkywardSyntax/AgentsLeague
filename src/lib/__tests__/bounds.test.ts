@@ -42,7 +42,7 @@ describe('boundsOf', () => {
       expect(b.minX).toBe(10);
       expect(b.minY).toBeCloseTo(30 - 18 * 0.9);
       expect(b.maxX).toBeGreaterThan(10);
-      expect(b.maxY).toBeCloseTo(30 + 18 * 0.5);
+      expect(b.maxY).toBeCloseTo(30 - 18 * 0.9 + 18 * 1.3);
     });
 
     it('uses custom size', () => {

@@ -91,9 +91,9 @@ export function computeSpatialSummary(
     },
   }));
 
-  // Grid-based free region detection
-  const cols = Math.max(1, Math.floor(canvasW / GRID_CELL_W));
-  const rows = Math.max(1, Math.floor(canvasH / GRID_CELL_H));
+  // Grid-based free region detection — include partial edge cells
+  const cols = Math.ceil(canvasW / GRID_CELL_W);
+  const rows = Math.ceil(canvasH / GRID_CELL_H);
   const freeRegions: SpatialSummary['free_regions'] = [];
 
   for (let row = 0; row < rows; row++) {

@@ -13,8 +13,8 @@ const chatPanelSource = fs.readFileSync(chatPanelPath, 'utf-8');
 
 describe('CSS Containment', () => {
   // Test 1: WhiteboardCanvas container has contain: strict applied
-  it('globals.css has contain: strict for [aria-label="Whiteboard"]', () => {
-    const whiteboardRule = /\[aria-label="Whiteboard"\]\s*\{[^}]*contain:\s*strict/;
+  it('globals.css has contain: strict for [aria-label="Whiteboard drawing canvas"]', () => {
+    const whiteboardRule = /\[aria-label="Whiteboard drawing canvas"\]\s*\{[^}]*contain:\s*strict/;
     expect(globalsCss).toMatch(whiteboardRule);
   });
 
@@ -31,8 +31,8 @@ describe('CSS Containment', () => {
   });
 
   // Test 4: WhiteboardCanvas <section> has aria-label="Whiteboard"
-  it('WhiteboardCanvas.tsx has aria-label="Whiteboard" on the container', () => {
-    expect(whiteboardSource).toContain('aria-label="Whiteboard"');
+  it('WhiteboardCanvas.tsx has aria-label="Whiteboard drawing canvas" on the container', () => {
+    expect(whiteboardSource).toContain('aria-label="Whiteboard drawing canvas"');
   });
 
   // Test 5: contain: strict equals contain: size layout paint style
@@ -63,7 +63,7 @@ describe('CSS Containment', () => {
     // properties that Tailwind doesn't set, there's no conflict
     // Verify our rules don't use !important (not needed since Tailwind doesn't set contain)
     const whiteboardMatch = globalsCss.match(
-      /\[aria-label="Whiteboard"\]\s*\{([^}]*)\}/
+      /\[aria-label="Whiteboard drawing canvas"\]\s*\{([^}]*)\}/
     );
     expect(whiteboardMatch).not.toBeNull();
     const ruleBody = whiteboardMatch![1];
@@ -90,8 +90,8 @@ describe('CSS Containment', () => {
 
   // Test 10: Containment CSS rules target elements that exist in the component tree
   it('selectors target actual DOM elements in components', () => {
-    // WhiteboardCanvas renders a div with aria-label="Whiteboard"
-    expect(whiteboardSource).toContain('aria-label="Whiteboard"');
+    // WhiteboardCanvas renders a section with aria-label="Whiteboard drawing canvas"
+    expect(whiteboardSource).toContain('aria-label="Whiteboard drawing canvas"');
     // ChatPanel renders a div with data-testid="chat-messages"
     expect(chatPanelSource).toContain('data-testid="chat-messages"');
   });

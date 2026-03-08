@@ -93,10 +93,12 @@ describe('accessibility annotations', () => {
   it('MobilePanelSwitcher active tab has aria-selected="true"', () => {
     render(<MobilePanelSwitcher activePanel="chat" onSwitch={vi.fn()} />);
     const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(2);
+    expect(tabs).toHaveLength(3);
     const canvasTab = tabs.find((t) => t.textContent === 'Canvas');
     const chatTab = tabs.find((t) => t.textContent === 'Chat');
+    const drawTab = tabs.find((t) => t.textContent === 'Draw');
     expect(canvasTab!.getAttribute('aria-selected')).toBe('false');
+    expect(drawTab!.getAttribute('aria-selected')).toBe('false');
     expect(chatTab!.getAttribute('aria-selected')).toBe('true');
   });
 });

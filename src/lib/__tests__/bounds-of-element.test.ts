@@ -8,28 +8,19 @@ describe('boundsOfElement', () => {
     expect(b).toEqual({ minX: 10, maxX: 40, minY: 20, maxY: 60, width: 30, height: 40 });
   });
 
-  it('zero-size rect (w=0, h=0) yields degenerate bounds', () => {
+  it('zero-size rect (w=0, h=0) returns null (non-positive dimensions)', () => {
     const b = boundsOfElement({ type: 'rect', id: 'r2', x: 5, y: 5, w: 0, h: 0 });
-    expect(b).not.toBeNull();
-    expect(b!.width).toBe(0);
-    expect(b!.height).toBe(0);
-    expect(b!.minX).toBe(5);
-    expect(b!.maxX).toBe(5);
+    expect(b).toBeNull();
   });
 
-  it('negative width rect still gives correct minX/maxX ordering', () => {
+  it('negative width rect returns null (non-positive dimension)', () => {
     const b = boundsOfElement({ type: 'rect', id: 'r3', x: 50, y: 10, w: -30, h: 20 });
-    expect(b!.minX).toBe(20);
-    expect(b!.maxX).toBe(50);
-    expect(b!.width).toBe(30);
+    expect(b).toBeNull();
   });
 
-  it('ellipse with rx=0 yields vertical line bounds', () => {
+  it('ellipse with rx=0 returns null (non-positive radius)', () => {
     const b = boundsOfElement({ type: 'ellipse', id: 'e1', cx: 10, cy: 20, rx: 0, ry: 15 });
-    expect(b!.minX).toBe(10);
-    expect(b!.maxX).toBe(10);
-    expect(b!.width).toBe(0);
-    expect(b!.height).toBe(30);
+    expect(b).toBeNull();
   });
 
   it('ellipse with normal radii', () => {
@@ -55,14 +46,12 @@ describe('boundsOfElement', () => {
     const b = boundsOfElement({ type: 'text', id: 't1', x: 10, y: 20, text: '', size: 18 });
     expect(b).not.toBeNull();
     expect(b!.width).toBe(18); // max(fontSize, 0 * ...) = fontSize
-    expect(b!.height).toBe(18);
+    expect(b!.height).toBeCloseTo(23.4); // 1 line * 18 * 1.3
   });
 
-  it('latex with empty tex string yields minimum fontSize-based bounds', () => {
+  it('latex with empty tex string returns null', () => {
     const b = boundsOfElement({ type: 'latex', id: 'x1', x: 0, y: 0, tex: '' });
-    expect(b).not.toBeNull();
-    expect(b!.width).toBeGreaterThan(0);
-    expect(b!.height).toBe(20); // default fontSize
+    expect(b).toBeNull();
   });
 
   it('clear element returns null', () => {

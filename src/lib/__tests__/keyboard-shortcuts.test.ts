@@ -60,10 +60,11 @@ describe('useKeyboardShortcuts', () => {
     expect(actions.nextChat).toHaveBeenCalledOnce();
   });
 
-  it('Ctrl+0 calls resetZoom', () => {
+  it('Ctrl+0 is not handled by this hook (delegated to WhiteboardCanvas)', () => {
     renderHook(() => useKeyboardShortcuts(actions));
     fireKey('0', { ctrlKey: true });
-    expect(actions.resetZoom).toHaveBeenCalledOnce();
+    // resetZoom is handled by WhiteboardCanvas, not this hook
+    expect(actions.resetZoom).not.toHaveBeenCalled();
   });
 
   it('Ctrl+Shift+M calls togglePanel', () => {

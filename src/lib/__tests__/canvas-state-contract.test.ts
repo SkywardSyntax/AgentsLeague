@@ -41,15 +41,15 @@ describe('Canvas↔State contract', () => {
     expect(tooLarge).toBeCloseTo(MAX_SCREEN_STROKE_PX);
   });
 
-  it('createActiveBatch sets duration within 220–2600ms range', () => {
+  it('createActiveBatch sets duration within speed-dependent bounds', () => {
     const strokes = [
       { id: 's1', elementId: 'e1', points: [{ x: 0, y: 0 }, { x: 100, y: 0 }], color: '#000', baseWidth: 2 },
       { id: 's2', elementId: 'e2', points: [{ x: 0, y: 0 }, { x: 1, y: 0 }], color: '#000', baseWidth: 2 },
     ];
     const active = createActiveBatch(strokes);
     for (const s of active) {
-      expect(s.durationMs).toBeGreaterThanOrEqual(220);
-      expect(s.durationMs).toBeLessThanOrEqual(2600);
+      expect(s.durationMs).toBeGreaterThanOrEqual(60);
+      expect(s.durationMs).toBeLessThanOrEqual(4000);
     }
   });
 

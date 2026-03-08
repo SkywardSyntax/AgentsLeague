@@ -38,7 +38,7 @@ describe('Schema contract stability', () => {
 
     it('has the expected top-level field set', () => {
       const keys = Object.keys(DrawBatchSchema.shape).sort();
-      expect(keys).toEqual(['batch_id', 'elements', 'style_preset']);
+      expect(keys).toEqual(['batch_id', 'elements', 'schemaVersion', 'source', 'style_preset']);
     });
   });
 

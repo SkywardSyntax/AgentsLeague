@@ -22,8 +22,8 @@ describe('createActiveBatch performance', () => {
     expect(elapsed).toBeLessThan(10);
     expect(active).toHaveLength(60);
     for (const stroke of active) {
-      expect(stroke.durationMs).toBeGreaterThanOrEqual(220);
-      expect(stroke.durationMs).toBeLessThanOrEqual(2600);
+      expect(stroke.durationMs).toBeGreaterThanOrEqual(60);
+      expect(stroke.durationMs).toBeLessThanOrEqual(4000);
       expect(stroke.length).toBeGreaterThan(0);
       expect(stroke.cumulativeLengths).toHaveLength(200);
     }

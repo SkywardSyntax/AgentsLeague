@@ -22,7 +22,7 @@ describe('scheduler invariants', () => {
       ],
       0,
     );
-    expect(active!.durationMs).toBe(220);
+    expect(active!.durationMs).toBe(60);
     expect(active!.length).toBe(0);
   });
 

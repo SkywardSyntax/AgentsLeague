@@ -29,24 +29,24 @@ describe('MobilePanelSwitcher', () => {
     expect(canvasTab.tabIndex).toBe(-1);
   });
 
-  it('ArrowRight on Canvas tab calls onSwitch with chat', () => {
+  it('ArrowRight on Canvas tab calls onSwitch with draw', () => {
     const onSwitch = vi.fn();
     render(<MobilePanelSwitcher activePanel="whiteboard" onSwitch={onSwitch} />);
 
     const canvasTab = screen.getByRole('tab', { name: 'Canvas' });
     fireEvent.keyDown(canvasTab, { key: 'ArrowRight' });
 
-    expect(onSwitch).toHaveBeenCalledWith('chat');
+    expect(onSwitch).toHaveBeenCalledWith('draw');
   });
 
-  it('ArrowLeft on Chat tab wraps to whiteboard', () => {
+  it('ArrowLeft on Chat tab goes to draw', () => {
     const onSwitch = vi.fn();
     render(<MobilePanelSwitcher activePanel="chat" onSwitch={onSwitch} />);
 
     const chatTab = screen.getByRole('tab', { name: 'Chat' });
     fireEvent.keyDown(chatTab, { key: 'ArrowLeft' });
 
-    expect(onSwitch).toHaveBeenCalledWith('whiteboard');
+    expect(onSwitch).toHaveBeenCalledWith('draw');
   });
 
   it('ArrowLeft on Canvas tab wraps to chat', () => {

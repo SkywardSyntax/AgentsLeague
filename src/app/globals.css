@@ -260,7 +260,7 @@ pre {
 }
 
 /* Layout containment for performance-critical components */
-[aria-label="Whiteboard"] {
+[aria-label="Whiteboard drawing canvas"] {
   contain: strict;
 }
 
