@@ -457,6 +457,342 @@ const taylorSeries: LabeledDemo = {
 };
 
 // ---------------------------------------------------------------------------
+// 11. Calculus: FTC Demo — Fundamental Theorem of Calculus
+// ---------------------------------------------------------------------------
+function sinPlusOnePoints(xMin: number, xMax: number, count: number): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= count; i++) {
+    const xv = xMin + ((xMax - xMin) * i) / count;
+    pts.push({ x: xv, y: Math.sin(xv) + 1 });
+  }
+  return pts;
+}
+
+const ftcDemo: LabeledDemo = {
+  label: 'Calculus: FTC Demo',
+  description: 'Fundamental Theorem of Calculus with integral region and Riemann sums',
+  expectedElementCount: 6,
+  expectedTypes: ['cartesian_axes', 'function_curve', 'integral_region', 'riemann_sum', 'text'],
+  payload: {
+    batch_id: 'demo-ftc',
+    style_preset: 'mathematical',
+    elements: [
+      {
+        id: 'ftc-axes', type: 'cartesian_axes',
+        x: 80, y: 50, width: 700, height: 500,
+        xRange: [-0.5, 4.5], yRange: [-0.5, 3],
+        xLabel: 'x', yLabel: 'y', gridlines: true,
+      },
+      {
+        id: 'ftc-curve', type: 'function_curve' as DrawElement['type'],
+        x: 80, y: 50, width: 700, height: 500,
+        xRange: [-0.5, 4.5], yRange: [-0.5, 3],
+        points: sinPlusOnePoints(-0.5, 4.5, 80),
+        label: 'f(x) = sin(x) + 1',
+        color: '#0a84ff', stroke_width: 2,
+      } as DrawElement,
+      {
+        id: 'ftc-region', type: 'integral_region',
+        x: 80, y: 50, width: 700, height: 500,
+        xRange: [1, 3], yRange: [-0.5, 3],
+        topPoints: sinPlusOnePoints(1, 3, 40),
+        fillColor: 'rgba(30, 64, 175, 0.2)', strokeColor: '#1e40af',
+        label: '∫₁³ f(x)dx',
+      },
+      {
+        id: 'ftc-riemann', type: 'riemann_sum' as DrawElement['type'],
+        x: 80, y: 50, width: 700, height: 500,
+        xRange: [1, 3], yRange: [-0.5, 3],
+        expression: 'Math.sin(x) + 1', n: 8, method: 'left',
+        showFunction: false, showAxes: false,
+      } as DrawElement,
+      { id: 'ftc-lbl1', type: 'text', x: 820, y: 120, text: 'Area = ∫f(x)dx', size: 16, color: '#1e40af' },
+      { id: 'ftc-lbl2', type: 'text', x: 820, y: 160, text: 'Left Riemann Sum', size: 14, color: '#666666' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 12. Linear Algebra: 2D Rotation
+// ---------------------------------------------------------------------------
+const rotation2D: LabeledDemo = {
+  label: 'Linear Algebra: 2D Rotation',
+  description: '45° rotation matrix with transformed basis vectors',
+  expectedElementCount: 8,
+  expectedTypes: ['linear_transform', 'vector_arrow', 'text', 'matrix_bracket', 'latex'],
+  payload: {
+    batch_id: 'demo-rotation-2d',
+    style_preset: 'blueprint_neat',
+    elements: [
+      {
+        id: 'rot-tf', type: 'linear_transform',
+        x: 80, y: 60, width: 500, height: 500,
+        matrix: [[0.707, -0.707], [0.707, 0.707]],
+        showBasisVectors: true, showOriginalGrid: true, gridRange: 3,
+        label: 'Rotation by 45°',
+      },
+      { id: 'rot-e1', type: 'vector_arrow', x: 330, y: 310, dx: 140, dy: 0, label: 'e₁', color: '#2563eb', stroke_width: 2 },
+      { id: 'rot-e2', type: 'vector_arrow', x: 330, y: 310, dx: 0, dy: -140, label: 'e₂', color: '#059669', stroke_width: 2 },
+      { id: 'rot-title', type: 'text', x: 80, y: 30, text: 'Rotation by 45°', size: 18, color: '#1e40af' },
+      { id: 'rot-te1', type: 'text', x: 620, y: 150, text: 'T(e₁) = (cos45°, sin45°)', size: 14, color: '#2563eb' },
+      { id: 'rot-te2', type: 'text', x: 620, y: 190, text: 'T(e₂) = (-sin45°, cos45°)', size: 14, color: '#059669' },
+      {
+        id: 'rot-mat', type: 'matrix_bracket',
+        x: 620, y: 260, rows: [['0.707', '-0.707'], ['0.707', '0.707']],
+        bracketStyle: '[]', cellWidth: 55, cellHeight: 32,
+      },
+      { id: 'rot-mlbl', type: 'latex', x: 620, y: 230, tex: 'R_{45°} =', fontSize: 18, displayMode: false },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 13. Statistics: Normal Distribution with Histogram
+// ---------------------------------------------------------------------------
+const normalDistribution: LabeledDemo = {
+  label: 'Statistics: Normal Distribution',
+  description: 'Bell curve overlaid on histogram bins',
+  expectedElementCount: 6,
+  expectedTypes: ['histogram', 'normal_distribution', 'text', 'latex'],
+  payload: {
+    batch_id: 'demo-normal-dist',
+    style_preset: 'mathematical',
+    elements: [
+      {
+        id: 'nd-hist', type: 'histogram',
+        x: 100, y: 80, width: 600, height: 400,
+        bins: [
+          { label: '-2.5', value: 2 }, { label: '-2', value: 5 },
+          { label: '-1.5', value: 12 }, { label: '-1', value: 22 },
+          { label: '-0.5', value: 30 }, { label: '0', value: 34 },
+          { label: '0.5', value: 28 }, { label: '1', value: 18 },
+          { label: '1.5', value: 8 }, { label: '2', value: 3 },
+        ],
+        showValues: true, showAxes: true,
+        xLabel: 'Value', yLabel: 'Frequency',
+      },
+      {
+        id: 'nd-curve', type: 'normal_distribution',
+        x: 100, y: 80, width: 600, height: 400,
+        mu: 0, sigma: 1,
+        showMeanLine: true, showSigmaLines: true, showLabels: true,
+      },
+      { id: 'nd-title', type: 'text', x: 280, y: 30, text: 'Normal Distribution', size: 20, color: '#1e40af' },
+      { id: 'nd-mu', type: 'latex', x: 750, y: 150, tex: '\\mu = 0', fontSize: 18, displayMode: false },
+      { id: 'nd-sigma', type: 'latex', x: 750, y: 200, tex: '\\sigma = 1', fontSize: 18, displayMode: false },
+      { id: 'nd-formula', type: 'latex', x: 750, y: 280, tex: 'f(x) = \\frac{1}{\\sqrt{2\\pi}} e^{-x^2/2}', fontSize: 14, displayMode: true },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 14. Calculus: Derivative at Point
+// ---------------------------------------------------------------------------
+function parabolaPoints(count: number): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= count; i++) {
+    const xv = -2 + (6 * i) / count;
+    pts.push({ x: xv, y: xv * xv - 2 * xv + 2 });
+  }
+  return pts;
+}
+
+const derivativeAtPoint: LabeledDemo = {
+  label: 'Calculus: Derivative at Point',
+  description: 'f(x)=x²−2x+2 with tangent line at x=2',
+  expectedElementCount: 7,
+  expectedTypes: ['cartesian_axes', 'function_curve', 'tangent_line', 'latex', 'text'],
+  payload: {
+    batch_id: 'demo-deriv-point',
+    style_preset: 'mathematical',
+    elements: [
+      {
+        id: 'dp-axes', type: 'cartesian_axes',
+        x: 100, y: 50, width: 600, height: 450,
+        xRange: [-2, 4], yRange: [-1, 5],
+        xLabel: 'x', yLabel: 'y', gridlines: true,
+      },
+      {
+        id: 'dp-curve', type: 'function_curve' as DrawElement['type'],
+        x: 100, y: 50, width: 600, height: 450,
+        xRange: [-2, 4], yRange: [-1, 5],
+        points: parabolaPoints(60),
+        label: 'f(x) = x² − 2x + 2',
+        color: '#0a84ff', stroke_width: 2,
+      } as DrawElement,
+      {
+        id: 'dp-tan', type: 'tangent_line' as DrawElement['type'],
+        x: 100, y: 50, width: 600, height: 450,
+        xRange: [-2, 4], yRange: [-1, 5],
+        expression: 'x*x - 2*x + 2', atX: 2,
+        length: 2.5, showPoint: true,
+        label: "f'(2) = 2", color: '#dc2626',
+      } as DrawElement,
+      { id: 'dp-flbl', type: 'latex', x: 740, y: 100, tex: 'f(x) = x^2 - 2x + 2', fontSize: 18, displayMode: false },
+      { id: 'dp-dlbl', type: 'latex', x: 740, y: 160, tex: "f'(x) = 2x - 2", fontSize: 16, displayMode: false },
+      { id: 'dp-val', type: 'latex', x: 740, y: 220, tex: "f'(2) = 2", fontSize: 16, displayMode: false, color: '#dc2626' },
+      { id: 'dp-pt', type: 'text', x: 740, y: 280, text: 'Point: (2, 2)', size: 14, color: '#666666' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 15. Parametric: Lissajous Figure
+// ---------------------------------------------------------------------------
+const lissajousFigure: LabeledDemo = {
+  label: 'Parametric: Lissajous Figure',
+  description: 'Parametric curve x=sin(3t), y=sin(2t)',
+  expectedElementCount: 5,
+  expectedTypes: ['parametric_curve', 'text', 'latex'],
+  payload: {
+    batch_id: 'demo-lissajous',
+    style_preset: 'mathematical',
+    elements: [
+      {
+        id: 'lj-curve', type: 'parametric_curve' as DrawElement['type'],
+        x: 150, y: 50, width: 500, height: 500,
+        xRange: [-1.3, 1.3], yRange: [-1.3, 1.3],
+        tMin: 0, tMax: 2 * Math.PI,
+        xExpression: 'Math.sin(3*t)', yExpression: 'Math.sin(2*t)',
+        steps: 300, label: 'Lissajous 3:2',
+        color: '#7c3aed', stroke_width: 2,
+      } as DrawElement,
+      { id: 'lj-title', type: 'text', x: 280, y: 20, text: 'Lissajous Figure', size: 20, color: '#1e40af' },
+      { id: 'lj-eq1', type: 'latex', x: 700, y: 150, tex: 'x(t) = \\sin(3t)', fontSize: 18, displayMode: false },
+      { id: 'lj-eq2', type: 'latex', x: 700, y: 210, tex: 'y(t) = \\sin(2t)', fontSize: 18, displayMode: false },
+      { id: 'lj-range', type: 'latex', x: 700, y: 280, tex: 't \\in [0, 2\\pi]', fontSize: 16, displayMode: false, color: '#666666' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 16. Polar: Rose Curve
+// ---------------------------------------------------------------------------
+const roseCurve: LabeledDemo = {
+  label: 'Polar: Rose Curve',
+  description: 'Polar plot r = cos(3θ)',
+  expectedElementCount: 5,
+  expectedTypes: ['polar_plot', 'text', 'latex'],
+  payload: {
+    batch_id: 'demo-rose-curve',
+    style_preset: 'mathematical',
+    elements: [
+      {
+        id: 'rc-plot', type: 'polar_plot' as DrawElement['type'],
+        cx: 400, cy: 320, radius: 220,
+        expression: 'Math.cos(3*theta)',
+        thetaMin: 0, thetaMax: Math.PI,
+        steps: 300, showPolarGrid: true,
+        label: 'r = cos(3θ)',
+        color: '#e11d48', stroke_width: 2,
+      } as DrawElement,
+      { id: 'rc-title', type: 'text', x: 300, y: 30, text: 'Rose Curve (3 petals)', size: 20, color: '#1e40af' },
+      { id: 'rc-eq', type: 'latex', x: 680, y: 150, tex: 'r = \\cos(3\\theta)', fontSize: 22, displayMode: false },
+      { id: 'rc-range', type: 'latex', x: 680, y: 220, tex: '\\theta \\in [0, \\pi]', fontSize: 16, displayMode: false, color: '#666666' },
+      { id: 'rc-note', type: 'text', x: 680, y: 290, text: 'k=3 → 3 petals', size: 14, color: '#666666' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 17. Matrix Operations — A × B = C
+// ---------------------------------------------------------------------------
+const matrixOperations: LabeledDemo = {
+  label: 'Matrix Operations',
+  description: '2×2 matrix multiplication A × B = C',
+  expectedElementCount: 12,
+  expectedTypes: ['matrix_bracket', 'arrow', 'text', 'latex'],
+  payload: {
+    batch_id: 'demo-matrix-ops',
+    style_preset: 'blueprint_neat',
+    elements: [
+      { id: 'mo-title', type: 'text', x: 300, y: 50, text: 'Matrix Multiplication', size: 20, color: '#1e40af' },
+      { id: 'mo-albl', type: 'latex', x: 120, y: 120, tex: 'A =', fontSize: 18, displayMode: false },
+      {
+        id: 'mo-a', type: 'matrix_bracket',
+        x: 170, y: 130, rows: [['2', '1'], ['0', '3']],
+        bracketStyle: '[]', cellWidth: 40, cellHeight: 36,
+      },
+      {
+        id: 'mo-times', type: 'arrow',
+        from: { x: 280, y: 165 }, to: { x: 320, y: 165 },
+        label: '×', color: '#111827', stroke_width: 2,
+      },
+      { id: 'mo-blbl', type: 'latex', x: 340, y: 120, tex: 'B =', fontSize: 18, displayMode: false },
+      {
+        id: 'mo-b', type: 'matrix_bracket',
+        x: 390, y: 130, rows: [['4', '-1'], ['2', '5']],
+        bracketStyle: '[]', cellWidth: 40, cellHeight: 36,
+      },
+      { id: 'mo-eq', type: 'text', x: 510, y: 155, text: '=', size: 28 },
+      { id: 'mo-clbl', type: 'latex', x: 550, y: 120, tex: 'C =', fontSize: 18, displayMode: false },
+      {
+        id: 'mo-c', type: 'matrix_bracket',
+        x: 600, y: 130, rows: [['10', '3'], ['6', '15']],
+        bracketStyle: '[]', cellWidth: 40, cellHeight: 36, color: '#1e40af',
+      },
+      { id: 'mo-formula', type: 'latex', x: 120, y: 260, tex: 'C_{ij} = \\sum_k A_{ik} B_{kj}', fontSize: 18, displayMode: true },
+      { id: 'mo-ex1', type: 'latex', x: 120, y: 340, tex: 'C_{11} = 2 \\cdot 4 + 1 \\cdot 2 = 10', fontSize: 14, displayMode: false, color: '#666666' },
+      { id: 'mo-ex2', type: 'latex', x: 120, y: 380, tex: 'C_{12} = 2 \\cdot (-1) + 1 \\cdot 5 = 3', fontSize: 14, displayMode: false, color: '#666666' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 18. Probability Tree — Bernoulli Process
+// ---------------------------------------------------------------------------
+const probabilityTree: LabeledDemo = {
+  label: 'Probability Tree',
+  description: 'Two-stage Bernoulli trial tree with p=0.7',
+  expectedElementCount: 32,
+  expectedTypes: ['ellipse', 'line', 'text'],
+  payload: {
+    batch_id: 'demo-prob-tree',
+    style_preset: 'clean_pen_sketch',
+    elements: [
+      { id: 'pt-title', type: 'text', x: 350, y: 30, text: 'Bernoulli Process', size: 20, color: '#1e40af' },
+      // Root node
+      { id: 'pt-root', type: 'ellipse', cx: 200, cy: 250, rx: 24, ry: 24, color: '#1e40af', stroke_width: 2 },
+      { id: 'pt-rlbl', type: 'text', x: 192, y: 244, text: 'Start', size: 10, color: '#1e40af' },
+      // Success branch (top)
+      { id: 'pt-s1', type: 'line', from: { x: 224, y: 238 }, to: { x: 396, y: 150 }, color: '#059669', stroke_width: 2 },
+      { id: 'pt-s1p', type: 'text', x: 280, y: 175, text: 'p=0.7', size: 13, color: '#059669' },
+      { id: 'pt-s1n', type: 'ellipse', cx: 420, cy: 140, rx: 22, ry: 22, color: '#059669', stroke_width: 2 },
+      { id: 'pt-s1l', type: 'text', x: 412, y: 134, text: 'S', size: 14, color: '#059669' },
+      // Failure branch (bottom)
+      { id: 'pt-f1', type: 'line', from: { x: 224, y: 262 }, to: { x: 396, y: 350 }, color: '#dc2626', stroke_width: 2 },
+      { id: 'pt-f1p', type: 'text', x: 280, y: 325, text: 'p=0.3', size: 13, color: '#dc2626' },
+      { id: 'pt-f1n', type: 'ellipse', cx: 420, cy: 360, rx: 22, ry: 22, color: '#dc2626', stroke_width: 2 },
+      { id: 'pt-f1l', type: 'text', x: 414, y: 354, text: 'F', size: 14, color: '#dc2626' },
+      // Second level — from S
+      { id: 'pt-ss', type: 'line', from: { x: 442, y: 130 }, to: { x: 596, y: 90 }, color: '#059669', stroke_width: 1 },
+      { id: 'pt-ssp', type: 'text', x: 500, y: 92, text: '0.7', size: 11, color: '#059669' },
+      { id: 'pt-ssn', type: 'ellipse', cx: 620, cy: 80, rx: 18, ry: 18, color: '#059669', stroke_width: 2 },
+      { id: 'pt-ssl', type: 'text', x: 612, y: 74, text: 'SS', size: 11, color: '#059669' },
+      { id: 'pt-sf', type: 'line', from: { x: 442, y: 150 }, to: { x: 596, y: 190 }, color: '#dc2626', stroke_width: 1 },
+      { id: 'pt-sfp', type: 'text', x: 500, y: 185, text: '0.3', size: 11, color: '#dc2626' },
+      { id: 'pt-sfn', type: 'ellipse', cx: 620, cy: 200, rx: 18, ry: 18, color: '#dc2626', stroke_width: 2 },
+      { id: 'pt-sfl', type: 'text', x: 612, y: 194, text: 'SF', size: 11, color: '#b45309' },
+      // Second level — from F
+      { id: 'pt-fs', type: 'line', from: { x: 442, y: 350 }, to: { x: 596, y: 310 }, color: '#059669', stroke_width: 1 },
+      { id: 'pt-fsp', type: 'text', x: 500, y: 312, text: '0.7', size: 11, color: '#059669' },
+      { id: 'pt-fsn', type: 'ellipse', cx: 620, cy: 300, rx: 18, ry: 18, color: '#059669', stroke_width: 2 },
+      { id: 'pt-fsl', type: 'text', x: 612, y: 294, text: 'FS', size: 11, color: '#b45309' },
+      { id: 'pt-ff', type: 'line', from: { x: 442, y: 370 }, to: { x: 596, y: 410 }, color: '#dc2626', stroke_width: 1 },
+      { id: 'pt-ffp', type: 'text', x: 500, y: 405, text: '0.3', size: 11, color: '#dc2626' },
+      { id: 'pt-ffn', type: 'ellipse', cx: 620, cy: 420, rx: 18, ry: 18, color: '#dc2626', stroke_width: 2 },
+      { id: 'pt-ffl', type: 'text', x: 612, y: 414, text: 'FF', size: 11, color: '#dc2626' },
+      // Probabilities on right
+      { id: 'pt-pss', type: 'text', x: 660, y: 74, text: 'P=0.49', size: 12, color: '#111827' },
+      { id: 'pt-psf', type: 'text', x: 660, y: 194, text: 'P=0.21', size: 12, color: '#111827' },
+      { id: 'pt-pfs', type: 'text', x: 660, y: 294, text: 'P=0.21', size: 12, color: '#111827' },
+      { id: 'pt-pff', type: 'text', x: 660, y: 414, text: 'P=0.09', size: 12, color: '#111827' },
+      { id: 'pt-sum', type: 'text', x: 660, y: 470, text: 'Σ = 1.00', size: 14, color: '#1e40af' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Export all demos
 // ---------------------------------------------------------------------------
 export const demoPayloads: LabeledDemo[] = [
@@ -470,4 +806,12 @@ export const demoPayloads: LabeledDemo[] = [
   coordinateGeometry,
   complexPlane,
   taylorSeries,
+  ftcDemo,
+  rotation2D,
+  normalDistribution,
+  derivativeAtPoint,
+  lissajousFigure,
+  roseCurve,
+  matrixOperations,
+  probabilityTree,
 ];

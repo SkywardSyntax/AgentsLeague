@@ -24,6 +24,7 @@ import {
   DEFAULT_EXPORT_OPTIONS,
 } from '@/lib/whiteboard/canvas-export';
 import { ExportButton } from '@/components/whiteboard/ExportButton';
+import { KeyboardShortcutsHelp } from '@/components/whiteboard/KeyboardShortcutsHelp';
 
 interface Camera {
   x: number;
@@ -106,6 +107,19 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
 
   const isMobile = useIsMobile();
   const [toolbarOpen, setToolbarOpen] = useState(false);
+  const mobileToolbarRef = useRef<HTMLDivElement>(null);
+
+  // Close mobile toolbar on outside click
+  useEffect(() => {
+    if (!toolbarOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (mobileToolbarRef.current && !mobileToolbarRef.current.contains(e.target as Node)) {
+        setToolbarOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [toolbarOpen]);
 
   const committedStrokesRef = useRef<StrokeTrajectory[]>([]);
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
@@ -233,6 +247,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       .join(', ');
     return `Drawing contains ${totalElements} element${totalElements === 1 ? '' : 's'} across ${batches.length} batch${batches.length === 1 ? '' : 'es'} including ${types}.`;
   }, [batches]);
+
+  // Whether the scene has no visible content (for disabling export)
+  const sceneEmpty = batches.length === 0;
 
   // Store onWarning in a ref to avoid re-running batch effect on callback identity changes
   const onWarningRef = useRef(onWarning);
@@ -1229,7 +1246,7 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       >
         {isMobile ? (
           /* Mobile: collapsed toolbar menu */
-          <div className="relative">
+          <div className="relative" ref={mobileToolbarRef}>
             <button
               type="button"
               onClick={() => setToolbarOpen((v) => !v)}
@@ -1333,7 +1350,8 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         )}
 
         {/* Export group */}
-        <ExportButton whiteboardRef={selfExportRef} />
+        <ExportButton whiteboardRef={selfExportRef} disabled={sceneEmpty} />
+        <KeyboardShortcutsHelp />
       </div>
 
       <div data-testid="debug-overlay" className="glass-panel pointer-events-none absolute left-3 top-14 rounded-xl px-3 py-2 text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]" style={{ display: 'none' }}>

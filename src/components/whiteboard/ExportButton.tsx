@@ -8,12 +8,13 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 type ExportFormat = 'png' | 'svg' | 'clipboard';
 type ExportScale = 1 | 2 | 4;
 
-interface ExportButtonProps {
+export interface ExportButtonProps {
   whiteboardRef: React.RefObject<WhiteboardExportHandle | null>;
   className?: string;
+  disabled?: boolean;
 }
 
-export function ExportButton({ whiteboardRef, className }: ExportButtonProps) {
+export function ExportButton({ whiteboardRef, className, disabled }: ExportButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [format, setFormat] = useState<ExportFormat>('png');
@@ -200,7 +201,7 @@ export function ExportButton({ whiteboardRef, className }: ExportButtonProps) {
         ref={buttonRef}
         type="button"
         onClick={() => setIsOpen((v) => !v)}
-        disabled={isExporting}
+        disabled={isExporting || disabled}
         aria-label="Export whiteboard"
         aria-expanded={isOpen}
         aria-haspopup="menu"

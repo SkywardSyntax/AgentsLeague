@@ -14,7 +14,7 @@ import { DrawingPayloadDocs } from './DrawingPayloadDocs';
 // Template categories & types
 // ---------------------------------------------------------------------------
 
-const TEMPLATE_CATEGORIES = ['All', 'Basic', 'Algebra', 'Calculus', 'Geometry', 'Linear Algebra', 'Examples'] as const;
+const TEMPLATE_CATEGORIES = ['All', 'Basic', 'Algebra', 'Calculus', 'Geometry', 'Linear Algebra', 'Statistics', 'Examples'] as const;
 type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
 
 interface MathTemplate {
@@ -482,6 +482,302 @@ const TEMPLATES: Record<string, MathTemplate> = {
       return { batch_id: batchId('linalg'), style_preset: 'blueprint_neat' as const, elements };
     },
   },
+
+  /* ── Wave 6 Templates ─── */
+
+  /* 13 ── Calculus: FTC Demo — Fundamental Theorem of Calculus */
+  ftc_demo: {
+    label: '∫ Calculus: FTC Demo',
+    category: 'Calculus',
+    description: 'Fundamental Theorem of Calculus with Riemann sums',
+    build: () => {
+      const f = (x: number) => Math.sin(x) + 1;
+      const curvePts = Array.from({ length: 81 }, (_, i) => {
+        const xv = -0.5 + (5 * i) / 80;
+        return { x: xv, y: f(xv) };
+      });
+      const topPts = Array.from({ length: 41 }, (_, i) => {
+        const xv = 1 + (2 * i) / 40;
+        return { x: xv, y: f(xv) };
+      });
+      const elements: DrawElement[] = [
+        {
+          id: uid('ftc-axes'), type: 'cartesian_axes',
+          x: 80, y: 50, width: 700, height: 500,
+          xRange: [-0.5, 4.5] as [number, number], yRange: [-0.5, 3] as [number, number],
+          xLabel: 'x', yLabel: 'y', gridlines: true,
+        },
+        {
+          id: uid('ftc-curve'), type: 'function_curve',
+          x: 80, y: 50, width: 700, height: 500,
+          xRange: [-0.5, 4.5] as [number, number], yRange: [-0.5, 3] as [number, number],
+          points: curvePts, label: 'f(x) = sin(x) + 1',
+          color: '#0a84ff', stroke_width: 2,
+        },
+        {
+          id: uid('ftc-region'), type: 'integral_region',
+          x: 80, y: 50, width: 700, height: 500,
+          xRange: [1, 3] as [number, number], yRange: [-0.5, 3] as [number, number],
+          topPoints: topPts,
+          fillColor: 'rgba(30, 64, 175, 0.2)', strokeColor: '#1e40af',
+          label: '∫₁³ f(x)dx',
+        },
+        {
+          id: uid('ftc-riemann'), type: 'riemann_sum',
+          x: 80, y: 50, width: 700, height: 500,
+          xRange: [1, 3] as [number, number], yRange: [-0.5, 3] as [number, number],
+          expression: 'Math.sin(x) + 1', n: 8, method: 'left' as const,
+          showFunction: false, showAxes: false,
+        },
+        { id: uid('ftc-lbl1'), type: 'text', x: 820, y: 120, text: 'Area = ∫f(x)dx', size: 16, color: '#1e40af' },
+        { id: uid('ftc-lbl2'), type: 'text', x: 820, y: 160, text: 'Left Riemann Sum', size: 14, color: '#666666' },
+      ];
+      return { batch_id: batchId('ftc'), style_preset: 'mathematical' as const, elements };
+    },
+  },
+
+  /* 14 ── Linear Algebra: 2D Rotation */
+  rotation_2d: {
+    label: '🔄 2D Rotation',
+    category: 'Linear Algebra',
+    description: '45° rotation matrix with transformed basis vectors',
+    build: () => {
+      const c = 0.707;
+      const elements: DrawElement[] = [
+        {
+          id: uid('rot-tf'), type: 'linear_transform',
+          x: 80, y: 60, width: 500, height: 500,
+          matrix: [[c, -c], [c, c]] as [[number, number], [number, number]],
+          showBasisVectors: true, showOriginalGrid: true, gridRange: 3,
+          label: 'Rotation by 45°',
+        },
+        { id: uid('rot-e1'), type: 'vector_arrow', x: 330, y: 310, dx: 140, dy: 0, label: 'e₁', color: '#2563eb', stroke_width: 2 },
+        { id: uid('rot-e2'), type: 'vector_arrow', x: 330, y: 310, dx: 0, dy: -140, label: 'e₂', color: '#059669', stroke_width: 2 },
+        { id: uid('rot-title'), type: 'text', x: 80, y: 30, text: 'Rotation by 45°', size: 18, color: '#1e40af' },
+        { id: uid('rot-te1'), type: 'text', x: 620, y: 150, text: 'T(e₁) = (cos45°, sin45°)', size: 14, color: '#2563eb' },
+        { id: uid('rot-te2'), type: 'text', x: 620, y: 190, text: 'T(e₂) = (-sin45°, cos45°)', size: 14, color: '#059669' },
+        {
+          id: uid('rot-mat'), type: 'matrix_bracket',
+          x: 620, y: 260, rows: [['0.707', '-0.707'], ['0.707', '0.707']],
+          bracketStyle: '[]', cellWidth: 55, cellHeight: 32,
+        },
+        { id: uid('rot-mlbl'), type: 'latex', x: 620, y: 230, tex: 'R_{45°} =', fontSize: 18, displayMode: false },
+      ];
+      return { batch_id: batchId('rotation'), style_preset: 'blueprint_neat' as const, elements };
+    },
+  },
+
+  /* 15 ── Statistics: Normal Distribution with Histogram */
+  normal_dist: {
+    label: '📊 Normal Distribution',
+    category: 'Statistics',
+    description: 'Bell curve overlaid on histogram data',
+    build: () => {
+      const binLabels = ['-2.5', '-2', '-1.5', '-1', '-0.5', '0', '0.5', '1', '1.5', '2'];
+      const binValues = [2, 5, 12, 22, 30, 34, 28, 18, 8, 3];
+      const elements: DrawElement[] = [
+        {
+          id: uid('nd-hist'), type: 'histogram',
+          x: 100, y: 80, width: 600, height: 400,
+          bins: binLabels.map((label, i) => ({ label, value: binValues[i] })),
+          showValues: true, showAxes: true,
+          xLabel: 'Value', yLabel: 'Frequency',
+        },
+        {
+          id: uid('nd-curve'), type: 'normal_distribution',
+          x: 100, y: 80, width: 600, height: 400,
+          mu: 0, sigma: 1,
+          showMeanLine: true, showSigmaLines: true, showLabels: true,
+        },
+        { id: uid('nd-title'), type: 'text', x: 280, y: 30, text: 'Normal Distribution', size: 20, color: '#1e40af' },
+        { id: uid('nd-mu'), type: 'latex', x: 750, y: 150, tex: '\\mu = 0', fontSize: 18, displayMode: false },
+        { id: uid('nd-sigma'), type: 'latex', x: 750, y: 200, tex: '\\sigma = 1', fontSize: 18, displayMode: false },
+        { id: uid('nd-formula'), type: 'latex', x: 750, y: 280, tex: 'f(x) = \\frac{1}{\\sqrt{2\\pi}} e^{-x^2/2}', fontSize: 14, displayMode: true },
+      ];
+      return { batch_id: batchId('normal'), style_preset: 'mathematical' as const, elements };
+    },
+  },
+
+  /* 16 ── Calculus: Derivative at Point */
+  derivative_point: {
+    label: "📐 Derivative at Point",
+    category: 'Calculus',
+    description: 'f(x)=x²−2x+2 with tangent line at x=2',
+    build: () => {
+      const f = (x: number) => x * x - 2 * x + 2;
+      const curvePts = Array.from({ length: 61 }, (_, i) => {
+        const xv = -2 + (6 * i) / 60;
+        return { x: xv, y: f(xv) };
+      });
+      const elements: DrawElement[] = [
+        {
+          id: uid('dp-axes'), type: 'cartesian_axes',
+          x: 100, y: 50, width: 600, height: 450,
+          xRange: [-2, 4] as [number, number], yRange: [-1, 5] as [number, number],
+          xLabel: 'x', yLabel: 'y', gridlines: true,
+        },
+        {
+          id: uid('dp-curve'), type: 'function_curve',
+          x: 100, y: 50, width: 600, height: 450,
+          xRange: [-2, 4] as [number, number], yRange: [-1, 5] as [number, number],
+          points: curvePts, label: 'f(x) = x² − 2x + 2',
+          color: '#0a84ff', stroke_width: 2,
+        },
+        {
+          id: uid('dp-tan'), type: 'tangent_line',
+          x: 100, y: 50, width: 600, height: 450,
+          xRange: [-2, 4] as [number, number], yRange: [-1, 5] as [number, number],
+          expression: 'x*x - 2*x + 2', atX: 2,
+          length: 2.5, showPoint: true,
+          label: "f'(2) = 2", color: '#dc2626',
+        },
+        { id: uid('dp-flbl'), type: 'latex', x: 740, y: 100, tex: 'f(x) = x^2 - 2x + 2', fontSize: 18, displayMode: false },
+        { id: uid('dp-dlbl'), type: 'latex', x: 740, y: 160, tex: "f'(x) = 2x - 2", fontSize: 16, displayMode: false },
+        { id: uid('dp-val'), type: 'latex', x: 740, y: 220, tex: "f'(2) = 2", fontSize: 16, displayMode: false, color: '#dc2626' },
+        { id: uid('dp-pt'), type: 'text', x: 740, y: 280, text: 'Point: (2, 2)', size: 14, color: '#666666' },
+      ];
+      return { batch_id: batchId('deriv-pt'), style_preset: 'mathematical' as const, elements };
+    },
+  },
+
+  /* 17 ── Parametric: Lissajous Figure */
+  lissajous: {
+    label: '🌀 Lissajous Figure',
+    category: 'Calculus',
+    description: 'Parametric curve x=sin(3t), y=sin(2t)',
+    build: () => {
+      const elements: DrawElement[] = [
+        {
+          id: uid('lj-curve'), type: 'parametric_curve',
+          x: 150, y: 50, width: 500, height: 500,
+          xRange: [-1.3, 1.3] as [number, number], yRange: [-1.3, 1.3] as [number, number],
+          tMin: 0, tMax: 2 * Math.PI,
+          xExpression: 'Math.sin(3*t)', yExpression: 'Math.sin(2*t)',
+          steps: 300, label: 'Lissajous 3:2',
+          color: '#7c3aed', stroke_width: 2,
+        },
+        { id: uid('lj-title'), type: 'text', x: 280, y: 20, text: 'Lissajous Figure', size: 20, color: '#1e40af' },
+        { id: uid('lj-eq1'), type: 'latex', x: 700, y: 150, tex: 'x(t) = \\sin(3t)', fontSize: 18, displayMode: false },
+        { id: uid('lj-eq2'), type: 'latex', x: 700, y: 210, tex: 'y(t) = \\sin(2t)', fontSize: 18, displayMode: false },
+        { id: uid('lj-range'), type: 'latex', x: 700, y: 280, tex: 't \\in [0, 2\\pi]', fontSize: 16, displayMode: false, color: '#666666' },
+      ];
+      return { batch_id: batchId('lissajous'), style_preset: 'mathematical' as const, elements };
+    },
+  },
+
+  /* 18 ── Polar: Rose Curve */
+  rose_curve: {
+    label: '🌸 Rose Curve',
+    category: 'Calculus',
+    description: 'Polar plot r = cos(3θ)',
+    build: () => {
+      const elements: DrawElement[] = [
+        {
+          id: uid('rc-plot'), type: 'polar_plot',
+          cx: 400, cy: 320, radius: 220,
+          expression: 'Math.cos(3*theta)',
+          thetaMin: 0, thetaMax: Math.PI,
+          steps: 300, showPolarGrid: true,
+          label: 'r = cos(3θ)',
+          color: '#e11d48', stroke_width: 2,
+        },
+        { id: uid('rc-title'), type: 'text', x: 300, y: 30, text: 'Rose Curve (3 petals)', size: 20, color: '#1e40af' },
+        { id: uid('rc-eq'), type: 'latex', x: 680, y: 150, tex: 'r = \\cos(3\\theta)', fontSize: 22, displayMode: false },
+        { id: uid('rc-range'), type: 'latex', x: 680, y: 220, tex: '\\theta \\in [0, \\pi]', fontSize: 16, displayMode: false, color: '#666666' },
+        { id: uid('rc-note'), type: 'text', x: 680, y: 290, text: 'k=3 → 3 petals', size: 14, color: '#666666' },
+      ];
+      return { batch_id: batchId('rose'), style_preset: 'mathematical' as const, elements };
+    },
+  },
+
+  /* 19 ── Matrix Operations — A × B = C */
+  matrix_ops: {
+    label: '🔢 Matrix Operations',
+    category: 'Linear Algebra',
+    description: '2×2 matrix multiplication A × B = C',
+    build: () => {
+      const elements: DrawElement[] = [
+        { id: uid('mo-title'), type: 'text', x: 300, y: 50, text: 'Matrix Multiplication', size: 20, color: '#1e40af' },
+        { id: uid('mo-albl'), type: 'latex', x: 120, y: 120, tex: 'A =', fontSize: 18, displayMode: false },
+        {
+          id: uid('mo-a'), type: 'matrix_bracket',
+          x: 170, y: 130, rows: [['2', '1'], ['0', '3']],
+          bracketStyle: '[]', cellWidth: 40, cellHeight: 36,
+        },
+        {
+          id: uid('mo-times'), type: 'arrow',
+          from: { x: 280, y: 165 }, to: { x: 320, y: 165 },
+          label: '×', color: '#111827', stroke_width: 2,
+        },
+        { id: uid('mo-blbl'), type: 'latex', x: 340, y: 120, tex: 'B =', fontSize: 18, displayMode: false },
+        {
+          id: uid('mo-b'), type: 'matrix_bracket',
+          x: 390, y: 130, rows: [['4', '-1'], ['2', '5']],
+          bracketStyle: '[]', cellWidth: 40, cellHeight: 36,
+        },
+        { id: uid('mo-eq'), type: 'text', x: 510, y: 155, text: '=', size: 28 },
+        { id: uid('mo-clbl'), type: 'latex', x: 550, y: 120, tex: 'C =', fontSize: 18, displayMode: false },
+        {
+          id: uid('mo-c'), type: 'matrix_bracket',
+          x: 600, y: 130, rows: [['10', '3'], ['6', '15']],
+          bracketStyle: '[]', cellWidth: 40, cellHeight: 36, color: '#1e40af',
+        },
+        { id: uid('mo-formula'), type: 'latex', x: 120, y: 260, tex: 'C_{ij} = \\sum_k A_{ik} B_{kj}', fontSize: 18, displayMode: true },
+        { id: uid('mo-ex1'), type: 'latex', x: 120, y: 340, tex: 'C_{11} = 2 \\cdot 4 + 1 \\cdot 2 = 10', fontSize: 14, displayMode: false, color: '#666666' },
+        { id: uid('mo-ex2'), type: 'latex', x: 120, y: 380, tex: 'C_{12} = 2 \\cdot (-1) + 1 \\cdot 5 = 3', fontSize: 14, displayMode: false, color: '#666666' },
+      ];
+      return { batch_id: batchId('matops'), style_preset: 'blueprint_neat' as const, elements };
+    },
+  },
+
+  /* 20 ── Probability Tree — Bernoulli Process */
+  probability_tree: {
+    label: '🎲 Probability Tree',
+    category: 'Statistics',
+    description: 'Bernoulli trial tree with p=0.7',
+    build: () => {
+      const elements: DrawElement[] = [
+        { id: uid('pt-title'), type: 'text', x: 350, y: 30, text: 'Bernoulli Process', size: 20, color: '#1e40af' },
+        // Root node
+        { id: uid('pt-root'), type: 'ellipse', cx: 200, cy: 250, rx: 24, ry: 24, color: '#1e40af', stroke_width: 2 },
+        { id: uid('pt-rlbl'), type: 'text', x: 192, y: 244, text: 'Start', size: 10, color: '#1e40af' },
+        // Success branch (top)
+        { id: uid('pt-s1'), type: 'line', from: { x: 224, y: 238 }, to: { x: 396, y: 150 }, color: '#059669', stroke_width: 2 },
+        { id: uid('pt-s1p'), type: 'text', x: 280, y: 175, text: 'p=0.7', size: 13, color: '#059669' },
+        { id: uid('pt-s1n'), type: 'ellipse', cx: 420, cy: 140, rx: 22, ry: 22, color: '#059669', stroke_width: 2 },
+        { id: uid('pt-s1l'), type: 'text', x: 412, y: 134, text: 'S', size: 14, color: '#059669' },
+        // Failure branch (bottom)
+        { id: uid('pt-f1'), type: 'line', from: { x: 224, y: 262 }, to: { x: 396, y: 350 }, color: '#dc2626', stroke_width: 2 },
+        { id: uid('pt-f1p'), type: 'text', x: 280, y: 325, text: 'p=0.3', size: 13, color: '#dc2626' },
+        { id: uid('pt-f1n'), type: 'ellipse', cx: 420, cy: 360, rx: 22, ry: 22, color: '#dc2626', stroke_width: 2 },
+        { id: uid('pt-f1l'), type: 'text', x: 414, y: 354, text: 'F', size: 14, color: '#dc2626' },
+        // Second level — from S
+        { id: uid('pt-ss'), type: 'line', from: { x: 442, y: 130 }, to: { x: 596, y: 90 }, color: '#059669', stroke_width: 1 },
+        { id: uid('pt-ssp'), type: 'text', x: 500, y: 92, text: '0.7', size: 11, color: '#059669' },
+        { id: uid('pt-ssn'), type: 'ellipse', cx: 620, cy: 80, rx: 18, ry: 18, color: '#059669', stroke_width: 2 },
+        { id: uid('pt-ssl'), type: 'text', x: 612, y: 74, text: 'SS', size: 11, color: '#059669' },
+        { id: uid('pt-sf'), type: 'line', from: { x: 442, y: 150 }, to: { x: 596, y: 190 }, color: '#dc2626', stroke_width: 1 },
+        { id: uid('pt-sfp'), type: 'text', x: 500, y: 185, text: '0.3', size: 11, color: '#dc2626' },
+        { id: uid('pt-sfn'), type: 'ellipse', cx: 620, cy: 200, rx: 18, ry: 18, color: '#dc2626', stroke_width: 2 },
+        { id: uid('pt-sfl'), type: 'text', x: 612, y: 194, text: 'SF', size: 11, color: '#b45309' },
+        // Second level — from F
+        { id: uid('pt-fs'), type: 'line', from: { x: 442, y: 350 }, to: { x: 596, y: 310 }, color: '#059669', stroke_width: 1 },
+        { id: uid('pt-fsp'), type: 'text', x: 500, y: 312, text: '0.7', size: 11, color: '#059669' },
+        { id: uid('pt-fsn'), type: 'ellipse', cx: 620, cy: 300, rx: 18, ry: 18, color: '#059669', stroke_width: 2 },
+        { id: uid('pt-fsl'), type: 'text', x: 612, y: 294, text: 'FS', size: 11, color: '#b45309' },
+        { id: uid('pt-ff'), type: 'line', from: { x: 442, y: 370 }, to: { x: 596, y: 410 }, color: '#dc2626', stroke_width: 1 },
+        { id: uid('pt-ffp'), type: 'text', x: 500, y: 405, text: '0.3', size: 11, color: '#dc2626' },
+        { id: uid('pt-ffn'), type: 'ellipse', cx: 620, cy: 420, rx: 18, ry: 18, color: '#dc2626', stroke_width: 2 },
+        { id: uid('pt-ffl'), type: 'text', x: 612, y: 414, text: 'FF', size: 11, color: '#dc2626' },
+        // Probabilities on right
+        { id: uid('pt-pss'), type: 'text', x: 660, y: 74, text: 'P=0.49', size: 12, color: '#111827' },
+        { id: uid('pt-psf'), type: 'text', x: 660, y: 194, text: 'P=0.21', size: 12, color: '#111827' },
+        { id: uid('pt-pfs'), type: 'text', x: 660, y: 294, text: 'P=0.21', size: 12, color: '#111827' },
+        { id: uid('pt-pff'), type: 'text', x: 660, y: 414, text: 'P=0.09', size: 12, color: '#111827' },
+      ];
+      return { batch_id: batchId('probtree'), style_preset: 'clean_pen_sketch' as const, elements };
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -699,16 +995,27 @@ interface DrawPayloadInjectorProps {
   sessionId?: string;
   /** When true the panel is rendered open (controlled by MobilePanelSwitcher). */
   forceOpen?: boolean;
+  /** Ref callback to expose a toggle function to the parent. */
+  toggleRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 export const DrawPayloadInjector = memo(function DrawPayloadInjector({
   onInject,
   sessionId,
   forceOpen,
+  toggleRef,
 }: DrawPayloadInjectorProps) {
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
   const isVisible = forceOpen ?? open;
+
+  // Expose toggle function to parent via ref
+  useEffect(() => {
+    if (toggleRef) {
+      toggleRef.current = () => setOpen((v) => !v);
+      return () => { toggleRef.current = null; };
+    }
+  }, [toggleRef]);
   const [tab, setTab] = useState<TabId>('json');
   const [jsonText, setJsonText] = useState(DEFAULT_JSON);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -801,6 +1108,7 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
 
   // ------- Keyboard shortcut: Ctrl/Cmd+Shift+F to format -------
   useEffect(() => {
+    if (!isVisible) return;
     function handleGlobalKey(e: globalThis.KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
         e.preventDefault();
@@ -809,7 +1117,7 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     }
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
-  }, [handleFormatJson]);
+  }, [handleFormatJson, isVisible]);
 
   // ------- Textarea key handler: Tab, bracket auto-close, Ctrl+A -------
   const handleTextareaKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -986,6 +1294,19 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     },
     [clearError],
   );
+
+  // ------- Keyboard shortcut: Ctrl/Cmd+Enter to validate + inject -------
+  useEffect(() => {
+    if (!isVisible) return;
+    function handleInjectKey(e: globalThis.KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void handleInject();
+      }
+    }
+    window.addEventListener('keydown', handleInjectKey);
+    return () => window.removeEventListener('keydown', handleInjectKey);
+  }, [handleInject, isVisible]);
 
   // On mobile with forceOpen, skip the FAB and render inline
   if (!isVisible) {

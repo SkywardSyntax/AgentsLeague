@@ -26,8 +26,14 @@ const NORMALIZER_SUPPORTED_TYPES = new Set([
   'function_curve', 'angle_arc', 'integral_region',
 ]);
 
-/** `function_curve` is handled by the normalizer but is NOT in the Zod schema union. */
-const SCHEMA_EXCLUDED_TYPES = new Set(['function_curve']);
+/**
+ * Types handled by the normalizer but NOT in the Zod DrawElementSchema union.
+ * `function_curve`, `riemann_sum`, `tangent_line`, `parametric_curve`, and
+ * `polar_plot` must be filtered before `safeParse`.
+ */
+const SCHEMA_EXCLUDED_TYPES = new Set([
+  'function_curve', 'riemann_sum', 'tangent_line', 'parametric_curve', 'polar_plot',
+]);
 
 /** Check that all numeric coordinate-like fields are within bounds. */
 function assertCoordsInBounds(elements: unknown[]): void {
@@ -119,8 +125,8 @@ function resolveElements(demo: LabeledDemo): {
 // ---------------------------------------------------------------------------
 
 describe('Demo Payloads — schema validation & normalization', () => {
-  it('should have 10 demo payloads', () => {
-    expect(demoPayloads).toHaveLength(10);
+  it('should have 18 demo payloads', () => {
+    expect(demoPayloads).toHaveLength(18);
   });
 
   describe.each(demoPayloads.map((d) => [d.label, d] as const))(

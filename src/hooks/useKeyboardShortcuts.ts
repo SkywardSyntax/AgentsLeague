@@ -7,6 +7,7 @@ interface ShortcutActions {
   prevChat: () => void;
   nextChat: () => void;
   togglePanel?: () => void;
+  toggleInjector?: () => void;
   undo?: () => void;
   redo?: () => void;
 }
@@ -83,6 +84,13 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
       if (mod && e.shiftKey && e.key === 'M') {
         e.preventDefault();
         a.togglePanel?.();
+        return;
+      }
+
+      // Ctrl+Shift+I — toggle draw injector
+      if (mod && e.shiftKey && e.key === 'I') {
+        e.preventDefault();
+        a.toggleInjector?.();
         return;
       }
     };

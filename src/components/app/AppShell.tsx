@@ -141,6 +141,7 @@ export function AppShell() {
   const batchCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const injectorToggleRef = useRef<(() => void) | null>(null);
   const streamChatIdRef = useRef<string | null>(null);
   const currentAssistantMessageId = useRef<string | null>(null);
   const turnHadRenderableOutputRef = useRef(false);
@@ -789,6 +790,7 @@ export function AppShell() {
         },
         togglePanel: () =>
           setMobileActivePanel((p) => (p === 'whiteboard' ? 'chat' : 'whiteboard')),
+        toggleInjector: () => injectorToggleRef.current?.(),
         undo: handleUndo,
         redo: handleRedo,
       }),
@@ -939,7 +941,7 @@ export function AppShell() {
               onCopyScene={handleCopySceneJson}
             />
             {!isAgentMode && (
-              <DrawPayloadInjector onInject={handleDrawInject} sessionId={activeChat.id} forceOpen={mobileActivePanel === 'draw'} />
+              <DrawPayloadInjector onInject={handleDrawInject} sessionId={activeChat.id} forceOpen={mobileActivePanel === 'draw'} toggleRef={injectorToggleRef} />
             )}
           </section>
 
