@@ -1,6 +1,7 @@
 import type {
   ArrowElement,
   DrawElement,
+  GraphLayout,
   Point,
   SemanticAnnotationBlock,
   SemanticBatch,
@@ -12,6 +13,8 @@ import type {
   SemanticGraphEdgeBlock,
   SemanticProbabilityTreeRootBlock,
   SemanticProbabilityTreeBranchBlock,
+  SemanticTreeDiagramBlock,
+  TreeNodeSpec,
   StructuredWhiteboardContext,
   StylePreset,
 } from '@/types/agent';
@@ -252,6 +255,7 @@ export function measureBlock(
   if (block.kind === 'annotation') return measureAnnotationBlock(block, regionWidth);
   if (block.kind === 'node' || block.kind === 'edge') return { width: DEFAULT_NODE_SIZE, height: DEFAULT_NODE_SIZE };
   if (block.kind === 'root' || block.kind === 'branch') return { width: DEFAULT_NODE_SIZE, height: DEFAULT_NODE_SIZE };
+  if (block.kind === 'tree_node') return { width: DEFAULT_NODE_SIZE, height: DEFAULT_NODE_SIZE };
   return measureCaptionBlock(block, regionWidth);
 }
 
@@ -656,6 +660,12 @@ function compactSemanticBatchForLegibility(
       continue;
     }
 
+    // Pass through tree_diagram blocks (tree_node) without text compaction
+    if (block.kind === 'tree_node') {
+      compactedBlocks.push({ ...block });
+      continue;
+    }
+
     const text = compactText(block.text, 74);
     if (!text) continue;
     compactedBlocks.push({
@@ -1011,13 +1021,83 @@ interface ResolvedNode {
   x: number;
   y: number;
   color?: string;
+  fillColor?: string;
 }
 
-function autoLayoutNodes(nodes: SemanticGraphNodeBlock[]): Map<string, { x: number; y: number }> {
+function autoLayoutNodes(
+  nodes: SemanticGraphNodeBlock[],
+  edges: SemanticGraphEdgeBlock[],
+  layout?: GraphLayout,
+): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>();
   const count = nodes.length;
   if (count === 0) return positions;
 
+  if (layout === 'circular') {
+    const cx = 700;
+    const cy = 350;
+    const r = Math.max(100, Math.min(300, count * 40));
+    for (let i = 0; i < count; i++) {
+      const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+      positions.set(nodes[i]!.id, {
+        x: Math.round(cx + r * Math.cos(angle)),
+        y: Math.round(cy + r * Math.sin(angle)),
+      });
+    }
+    return positions;
+  }
+
+  if (layout === 'tree') {
+    // BFS tree layout from first node
+    const adj = new Map<string, string[]>();
+    for (const n of nodes) adj.set(n.id, []);
+    for (const e of edges) {
+      if (adj.has(e.from) && adj.has(e.to) && e.from !== e.to) {
+        adj.get(e.from)!.push(e.to);
+      }
+    }
+    const rootId = nodes[0]!.id;
+    const levels: string[][] = [];
+    const visited = new Set<string>();
+    const queue = [rootId];
+    visited.add(rootId);
+    while (queue.length > 0) {
+      const level = [...queue];
+      levels.push(level);
+      queue.length = 0;
+      for (const nid of level) {
+        for (const child of adj.get(nid) ?? []) {
+          if (!visited.has(child)) {
+            visited.add(child);
+            queue.push(child);
+          }
+        }
+      }
+    }
+    // Place unreached nodes in their own level
+    for (const n of nodes) {
+      if (!visited.has(n.id)) {
+        levels.push([n.id]);
+        visited.add(n.id);
+      }
+    }
+    const levelH = 140;
+    const startY = 150;
+    const canvasW = 1200;
+    for (let lvl = 0; lvl < levels.length; lvl++) {
+      const row = levels[lvl]!;
+      const spacing = canvasW / (row.length + 1);
+      for (let i = 0; i < row.length; i++) {
+        positions.set(row[i]!, {
+          x: Math.round(spacing * (i + 1)),
+          y: startY + lvl * levelH,
+        });
+      }
+    }
+    return positions;
+  }
+
+  // Default auto layout
   if (count <= 6) {
     // Circular layout centered at (700, 350) with r=200
     const cx = 700;
@@ -1049,9 +1129,13 @@ function autoLayoutNodes(nodes: SemanticGraphNodeBlock[]): Map<string, { x: numb
   return positions;
 }
 
-function resolveGraphNodes(blocks: SemanticGraphNodeBlock[]): ResolvedNode[] {
+function resolveGraphNodes(
+  blocks: SemanticGraphNodeBlock[],
+  edges: SemanticGraphEdgeBlock[],
+  layout?: GraphLayout,
+): ResolvedNode[] {
   const needsLayout = blocks.some((b) => b.x == null || b.y == null);
-  const autoPositions = needsLayout ? autoLayoutNodes(blocks) : new Map();
+  const autoPositions = needsLayout ? autoLayoutNodes(blocks, edges, layout) : new Map();
 
   return blocks.map((b) => {
     const autoPos = autoPositions.get(b.id);
@@ -1062,31 +1146,32 @@ function resolveGraphNodes(blocks: SemanticGraphNodeBlock[]): ResolvedNode[] {
       x: b.x ?? autoPos?.x ?? 400,
       y: b.y ?? autoPos?.y ?? 300,
       color: b.color,
+      fillColor: b.fillColor,
     };
   });
 }
 
 function placeGraphNode(node: ResolvedNode, state: BuildState): void {
-  const { id, label, shape, x, y, color } = node;
+  const { id, label, shape, x, y, color, fillColor } = node;
   const r = DEFAULT_NODE_RADIUS;
   const s = DEFAULT_NODE_SIZE;
 
   switch (shape) {
     case 'circle':
-      pushElement(state, { id, type: 'ellipse', cx: x, cy: y, rx: r, ry: r, color });
+      pushElement(state, { id, type: 'ellipse', cx: x, cy: y, rx: r, ry: r, color, ...(fillColor ? { fillColor } : {}) });
       break;
 
     case 'double_circle':
-      pushElement(state, { id: `${id}-outer`, type: 'ellipse', cx: x, cy: y, rx: r + 6, ry: r + 6, color });
-      pushElement(state, { id, type: 'ellipse', cx: x, cy: y, rx: r, ry: r, color });
+      pushElement(state, { id: `${id}-outer`, type: 'ellipse', cx: x, cy: y, rx: r + 6, ry: r + 6, color, ...(fillColor ? { fillColor } : {}) });
+      pushElement(state, { id, type: 'ellipse', cx: x, cy: y, rx: r, ry: r, color, ...(fillColor ? { fillColor } : {}) });
       break;
 
     case 'rect':
-      pushElement(state, { id, type: 'rect', x: x - s / 2, y: y - s / 2 + 5, w: s * 1.4, h: s - 10, color });
+      pushElement(state, { id, type: 'rect', x: x - s / 2, y: y - s / 2 + 5, w: s * 1.4, h: s - 10, color, ...(fillColor ? { fillColor } : {}) });
       break;
 
     case 'square':
-      pushElement(state, { id, type: 'rect', x: x - s / 2, y: y - s / 2, w: s, h: s, color });
+      pushElement(state, { id, type: 'rect', x: x - s / 2, y: y - s / 2, w: s, h: s, color, ...(fillColor ? { fillColor } : {}) });
       break;
 
     case 'diamond': {
@@ -1162,6 +1247,7 @@ function placeGraphEdge(
   edge: SemanticGraphEdgeBlock,
   nodeMap: Map<string, ResolvedNode>,
   state: BuildState,
+  bidirectionalPairs: Set<string>,
 ): void {
   const fromNode = nodeMap.get(edge.from);
   const toNode = nodeMap.get(edge.to);
@@ -1172,6 +1258,7 @@ function placeGraphEdge(
 
   const isSelfLoop = edge.from === edge.to;
   const directed = edge.directed ?? true;
+  const edgeLabel = edge.label ?? (edge.weight != null ? String(edge.weight) : undefined);
 
   if (isSelfLoop) {
     // Self-loop: small ellipse arc at top of node
@@ -1186,7 +1273,6 @@ function placeGraphEdge(
       ry: loopR,
     });
     if (directed) {
-      // Small arrowhead at re-entry point
       pushElement(state, {
         id: `${edge.id}-head`,
         type: 'arrow',
@@ -1194,21 +1280,36 @@ function placeGraphEdge(
         to: { x: fromNode.x + 4, y: fromNode.y - DEFAULT_NODE_RADIUS },
       });
     }
-    if (edge.label) {
+    if (edgeLabel) {
       pushElement(state, {
         id: `${edge.id}-label`,
         type: 'text',
-        x: fromNode.x - edge.label.length * 4,
+        x: fromNode.x - edgeLabel.length * 4,
         y: topY - 6,
-        text: edge.label,
+        text: edgeLabel,
         size: 13,
+        color: edge.color,
+      });
+    }
+    if (edge.weight != null && edge.label) {
+      // If both label and weight exist, draw weight separately at midpoint
+      pushElement(state, {
+        id: `${edge.id}-weight`,
+        type: 'text',
+        x: fromNode.x + loopR + 4,
+        y: topY + loopR - 6,
+        text: String(edge.weight),
+        size: 12,
         color: edge.color,
       });
     }
     return;
   }
 
-  if (edge.curved) {
+  // Auto-curve bidirectional edges
+  const shouldCurve = edge.curved || bidirectionalPairs.has(`${edge.from}:${edge.to}`);
+
+  if (shouldCurve) {
     // Bézier-approximated curve with 5 line segments, curving to the right of direction
     const fromPt = nodeBoundaryPoint(fromNode, { x: toNode.x, y: toNode.y });
     const toPt = nodeBoundaryPoint(toNode, { x: fromNode.x, y: fromNode.y });
@@ -1229,7 +1330,6 @@ function placeGraphEdge(
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
       const u = 1 - t;
-      // Quadratic Bézier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
       pts.push({
         x: u * u * fromPt.x + 2 * u * t * cx + t * t * toPt.x,
         y: u * u * fromPt.y + 2 * u * t * cy + t * t * toPt.y,
@@ -1247,15 +1347,25 @@ function placeGraphEdge(
       });
     }
 
-    if (edge.label) {
-      // Place label at the midpoint of the curve (the control point area)
+    if (edgeLabel) {
       pushElement(state, {
         id: `${edge.id}-label`,
         type: 'text',
-        x: cx - (edge.label.length * 4),
+        x: cx - (edgeLabel.length * 4),
         y: cy - 12,
-        text: edge.label,
+        text: edgeLabel,
         size: 13,
+        color: edge.color,
+      });
+    }
+    if (edge.weight != null && edge.label) {
+      pushElement(state, {
+        id: `${edge.id}-weight`,
+        type: 'text',
+        x: cx - (String(edge.weight).length * 4),
+        y: cy + 4,
+        text: String(edge.weight),
+        size: 12,
         color: edge.color,
       });
     }
@@ -1274,23 +1384,35 @@ function placeGraphEdge(
     color: edge.color,
   });
 
-  if (edge.label) {
-    const mx = (fromPt.x + toPt.x) / 2;
-    const my = (fromPt.y + toPt.y) / 2;
-    const dx = toPt.x - fromPt.x;
-    const dy = toPt.y - fromPt.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    // Offset perpendicular to edge direction
-    const perpX = len > 0 ? -dy / len : 0;
-    const perpY = len > 0 ? dx / len : 0;
-    const offset = 14;
+  const mx = (fromPt.x + toPt.x) / 2;
+  const my = (fromPt.y + toPt.y) / 2;
+  const dx = toPt.x - fromPt.x;
+  const dy = toPt.y - fromPt.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const perpX = len > 0 ? -dy / len : 0;
+  const perpY = len > 0 ? dx / len : 0;
+  const offset = 14;
+
+  if (edgeLabel) {
     pushElement(state, {
       id: `${edge.id}-label`,
       type: 'text',
-      x: mx + perpX * offset - edge.label.length * 4,
+      x: mx + perpX * offset - edgeLabel.length * 4,
       y: my + perpY * offset - 7,
-      text: edge.label,
+      text: edgeLabel,
       size: 13,
+      color: edge.color,
+    });
+  }
+  if (edge.weight != null && edge.label) {
+    // Draw weight separately below the label
+    pushElement(state, {
+      id: `${edge.id}-weight`,
+      type: 'text',
+      x: mx + perpX * (offset + 14) - String(edge.weight).length * 4,
+      y: my + perpY * (offset + 14) - 7,
+      text: String(edge.weight),
+      size: 12,
       color: edge.color,
     });
   }
@@ -1307,10 +1429,27 @@ export function buildGraphDiagramLayout(
     (b): b is SemanticGraphEdgeBlock => b.kind === 'edge',
   );
 
-  const resolved = resolveGraphNodes(nodeBlocks);
+  // Detect layout hint from the batch (stored as property on the batch object)
+  const layout = (semanticBatch as SemanticBatch & { layout?: GraphLayout }).layout;
+
+  const resolved = resolveGraphNodes(nodeBlocks, edgeBlocks, layout);
   const nodeMap = new Map<string, ResolvedNode>();
   for (const n of resolved) {
     nodeMap.set(n.id, n);
+  }
+
+  // Detect bidirectional pairs for auto-curving
+  const edgeSet = new Set<string>();
+  const bidirectionalPairs = new Set<string>();
+  for (const e of edgeBlocks) {
+    if (e.from === e.to) continue;
+    const key = `${e.from}:${e.to}`;
+    const reverseKey = `${e.to}:${e.from}`;
+    if (edgeSet.has(reverseKey)) {
+      bidirectionalPairs.add(key);
+      bidirectionalPairs.add(reverseKey);
+    }
+    edgeSet.add(key);
   }
 
   // Place nodes first, then edges on top
@@ -1318,7 +1457,7 @@ export function buildGraphDiagramLayout(
     placeGraphNode(n, state);
   }
   for (const e of edgeBlocks) {
-    placeGraphEdge(e, nodeMap, state);
+    placeGraphEdge(e, nodeMap, state, bidirectionalPairs);
   }
 }
 
@@ -1475,6 +1614,132 @@ function buildProbabilityTreeLayout(batch: SemanticBatch, state: BuildState): vo
   renderNode(tree, tree.children.length === 0);
 }
 
+// ---------------------------------------------------------------------------
+// tree_diagram template — generic tree diagrams
+// ---------------------------------------------------------------------------
+
+interface PositionedTreeNode {
+  label: string;
+  value?: string | number;
+  color?: string;
+  x: number;
+  y: number;
+  children: PositionedTreeNode[];
+}
+
+function computeSubtreeWidth(node: TreeNodeSpec, nodeRadius: number): number {
+  if (!node.children || node.children.length === 0) {
+    return nodeRadius * 2 + 20;
+  }
+  const childWidths = node.children.map((c) => computeSubtreeWidth(c, nodeRadius));
+  const totalChildWidth = childWidths.reduce((a, b) => a + b, 0);
+  const gaps = (node.children.length - 1) * 20;
+  return Math.max(nodeRadius * 2 + 20, totalChildWidth + gaps);
+}
+
+function positionTreeNodes(
+  node: TreeNodeSpec,
+  cx: number,
+  y: number,
+  levelHeight: number,
+  nodeRadius: number,
+): PositionedTreeNode {
+  const positioned: PositionedTreeNode = {
+    label: node.label,
+    value: node.value,
+    color: node.color,
+    x: cx,
+    y,
+    children: [],
+  };
+
+  if (!node.children || node.children.length === 0) return positioned;
+
+  const childWidths = node.children.map((c) => computeSubtreeWidth(c, nodeRadius));
+  const totalWidth = childWidths.reduce((a, b) => a + b, 0) + (node.children.length - 1) * 20;
+  let childX = cx - totalWidth / 2;
+
+  for (let i = 0; i < node.children.length; i++) {
+    const childWidth = childWidths[i]!;
+    const childCx = childX + childWidth / 2;
+    positioned.children.push(
+      positionTreeNodes(node.children[i]!, childCx, y + levelHeight, levelHeight, nodeRadius),
+    );
+    childX += childWidth + 20;
+  }
+
+  return positioned;
+}
+
+export function buildTreeDiagramLayout(
+  semanticBatch: SemanticBatch,
+  state: BuildState,
+): void {
+  const treeBlocks = semanticBatch.blocks.filter(
+    (b): b is SemanticTreeDiagramBlock => b.kind === 'tree_node',
+  );
+
+  if (treeBlocks.length === 0) {
+    state.warnings.push('tree_diagram: no tree_node block found');
+    return;
+  }
+
+  let elemIdx = 0;
+
+  for (const block of treeBlocks) {
+    const nodeRadius = block.nodeRadius ?? 20;
+    const levelHeight = block.levelHeight ?? 80;
+    const strokeColor = block.strokeColor ?? '#1f2a44';
+
+    const positioned = positionTreeNodes(block.root, block.cx, block.cy, levelHeight, nodeRadius);
+
+    function renderTreeNode(ptn: PositionedTreeNode): void {
+      const nodeColor = ptn.color ?? strokeColor;
+      // Draw node circle
+      pushElement(state, {
+        id: `${block.id}-node-${elemIdx}`,
+        type: 'ellipse',
+        cx: ptn.x,
+        cy: ptn.y,
+        rx: nodeRadius,
+        ry: nodeRadius,
+        color: nodeColor,
+        stroke_width: 2,
+      });
+
+      // Node label
+      const displayText = ptn.value != null ? `${ptn.label}: ${ptn.value}` : ptn.label;
+      pushElement(state, {
+        id: `${block.id}-nlbl-${elemIdx}`,
+        type: 'text',
+        x: ptn.x - (displayText.length * 4),
+        y: ptn.y - 6,
+        text: displayText,
+        size: 13,
+        color: nodeColor,
+      });
+
+      elemIdx++;
+
+      for (const child of ptn.children) {
+        // Draw edge from parent to child
+        pushElement(state, {
+          id: `${block.id}-edge-${elemIdx}`,
+          type: 'line',
+          from: { x: ptn.x, y: ptn.y + nodeRadius },
+          to: { x: child.x, y: child.y - nodeRadius },
+          color: strokeColor,
+          stroke_width: 1.5,
+        });
+        elemIdx++;
+        renderTreeNode(child);
+      }
+    }
+
+    renderTreeNode(positioned);
+  }
+}
+
 export function planSemanticBatch(
   semanticBatch: SemanticBatch,
   context?: StructuredWhiteboardContext,
@@ -1507,6 +1772,12 @@ export function planSemanticBatch(
       trace.span('template', 'buildProbabilityTreeLayout', () => { buildProbabilityTreeLayout(normalizedSemantic, state); return undefined; });
     } else {
       buildProbabilityTreeLayout(normalizedSemantic, state);
+    }
+  } else if (normalizedSemantic.template === 'tree_diagram') {
+    if (trace) {
+      trace.span('template', 'buildTreeDiagramLayout', () => { buildTreeDiagramLayout(normalizedSemantic, state); return undefined; });
+    } else {
+      buildTreeDiagramLayout(normalizedSemantic, state);
     }
   } else if (trace) {
     trace.span('template', 'buildAdaptiveLayout', () => { buildAdaptiveLayout(normalizedSemantic, regions, state); return undefined; });

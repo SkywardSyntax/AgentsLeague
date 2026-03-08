@@ -633,13 +633,15 @@ Example — quadratic Bézier:
 ## SEMANTIC BATCH RULES
 - Budget per batch: ≤2 diagram panels, ≤1 equation_stack, ≤5 equation lines
 - Captions ≤6 words
-- Templates: freeform_semantic (default), equation_derivation_vertical, jacobian_mapping_2panel, graph_diagram, probability_tree
+- Templates: freeform_semantic (default), equation_derivation_vertical, jacobian_mapping_2panel, graph_diagram, probability_tree, tree_diagram
 - Region hints: left, right, center, bottom, auto
 - Equation roles: step (size 24), result (size 28, boxed), note (size 20)
 
 ## GRAPH DIAGRAM TEMPLATE (emit_semantic_batch, template: "graph_diagram")
 Use this template for node-and-edge diagrams: DFAs, directed/undirected graphs, network topologies, state machines.
 Blocks are \`kind: "node"\` and \`kind: "edge"\`. Nodes auto-layout in a circle (≤6) or grid (7+) if no x/y given.
+Edges support \`weight\` (number) — displayed as label at edge midpoint. Bidirectional edges auto-curve to avoid overlap.
+Nodes support \`fillColor\` for background color. Layout can be overridden with \`layout: "circular"\` or \`layout: "tree"\`.
 
 Node shapes: "circle" (default), "rect", "square", "diamond", "double_circle" (for DFA accept states).
 Edge options: \`directed\` (default true), \`curved\` (Bézier arc to the right), self-loop (from===to).
@@ -694,6 +696,26 @@ Example:
     {"kind":"branch","id":"b2","from":"Start","to":"T","label":"0.5","probability":0.5},
     {"kind":"branch","id":"b3","from":"H","to":"HH","label":"0.5","probability":0.5},
     {"kind":"branch","id":"b4","from":"H","to":"HT","label":"0.5","probability":0.5}
+  ]
+}
+\`\`\`
+
+## TREE DIAGRAM TEMPLATE (emit_semantic_batch, template: "tree_diagram")
+Use for hierarchical tree structures: file trees, org charts, decision trees, ASTs.
+Uses \`kind: "tree_node"\` blocks with a nested \`root\` property containing the tree structure.
+- Each tree node has \`label\` (required), optional \`value\`, optional \`color\`, and optional \`children\` array.
+- Layout is top-down, centered horizontally based on subtree width.
+- Optional: \`levelHeight\` (default 80), \`nodeRadius\` (default 20), \`strokeColor\`.
+
+Example — binary tree:
+\`\`\`json
+{"batch_id":"btree","template":"tree_diagram","intent":"teach",
+  "blocks":[
+    {"kind":"tree_node","id":"t1","cx":600,"cy":100,
+     "root":{"label":"10","children":[
+       {"label":"5","children":[{"label":"3"},{"label":"7"}]},
+       {"label":"15","children":[{"label":"12"},{"label":"20"}]}
+     ]}}
   ]
 }
 \`\`\`

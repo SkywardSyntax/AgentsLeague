@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { COORD_MIN, COORD_MAX } from '@/lib/whiteboard/coord-bounds';
 import { parseMathExpression } from '@/lib/whiteboard/graph-script';
+import type { TreeNodeSpec } from '@/types/agent';
 
 /** Validate a math expression string without evaluating it. */
 function validateExpression(expr: string): { valid: boolean; error?: string } {
@@ -501,10 +502,31 @@ const SemanticCaptionBlockSchema = z.object({
   region_hint: z.enum(['bottom', 'center', 'auto']).optional(),
 });
 
+const TreeNodeSpecSchema: z.ZodType<TreeNodeSpec> = z.lazy(() =>
+  z.object({
+    label: z.string().min(1),
+    value: z.union([z.string(), z.number()]).optional(),
+    color: z.string().optional(),
+    children: z.array(TreeNodeSpecSchema).optional(),
+  }),
+);
+
+const SemanticTreeDiagramBlockSchema = z.object({
+  id: z.string().min(1).max(64),
+  kind: z.literal('tree_node'),
+  root: TreeNodeSpecSchema,
+  cx: z.number(),
+  cy: z.number(),
+  levelHeight: z.number().optional(),
+  nodeRadius: z.number().optional(),
+  strokeColor: z.string().optional(),
+});
+
 const SemanticBlockSchema = z.discriminatedUnion('kind', [
   SemanticEquationStackBlockSchema,
   SemanticDiagramPanelBlockSchema,
   SemanticCaptionBlockSchema,
+  SemanticTreeDiagramBlockSchema,
 ]);
 
 const SemanticRelationSchema = z.object({
@@ -520,7 +542,7 @@ const SemanticRelationSchema = z.object({
 export const SemanticBatchSchema = z.object({
   batch_id: z.string().min(1).max(64),
   style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical']).optional(),
-  template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic', 'probability_tree']),
+  template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic', 'probability_tree', 'tree_diagram']),
   blocks: z.array(SemanticBlockSchema).min(1).max(50),
   relations: z.array(SemanticRelationSchema).max(100).optional(),
   intent: z.enum(['teach', 'derive', 'compare', 'summarize']).optional(),
@@ -563,6 +585,7 @@ const SEMANTIC_TEMPLATES = [
   'jacobian_mapping_2panel',
   'freeform_semantic',
   'probability_tree',
+  'tree_diagram',
 ] as const;
 
 const SemanticBatchRefSchema = z.object({
@@ -652,7 +675,7 @@ import { clamp } from '@/lib/whiteboard/geometry';
 
 export const STYLE_PRESETS = ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical'] as const;
 export const LINE_STYLES = ['solid', 'dashed', 'dotted'] as const;
-export const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic', 'probability_tree'] as const;
+export const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic', 'probability_tree', 'tree_diagram'] as const;
 export const INTENTS = ['teach', 'derive', 'compare', 'summarize'] as const;
 export const EQUATION_ROLES = ['step', 'result', 'note'] as const;
 export const EQUATION_ALIGN = ['left', 'center'] as const;
@@ -1553,7 +1576,7 @@ export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as c
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
 export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'riemann_sum', 'tangent_line', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve', 'complex_plane', 'number_theory_grid'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
-export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch'] as const;
+export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch', 'tree_node'] as const;
 
 export function isEnumMember<T extends readonly string[]>(allowed: T, value: string): value is T[number] {
   return (allowed as readonly string[]).includes(value);
@@ -1792,6 +1815,18 @@ export function normalizeSemanticBatchPayload(payload: unknown): {
         text,
         ...(region_hint ? { region_hint } : {}),
       });
+      continue;
+    }
+
+    // tree_node blocks are passed through with minimal validation
+    if (kind === 'tree_node') {
+      const root = asRecord(rawBlock.root);
+      if (!root || !asString(root.label)) {
+        warnings.push(`tree_node ${id} dropped: missing root or root.label`);
+        continue;
+      }
+      // Pass through — validated at template level
+      blocks.push(rawBlock as SemanticBatchInput['blocks'][number]);
       continue;
     }
 

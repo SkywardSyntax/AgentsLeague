@@ -156,6 +156,15 @@ function recentBlocksFromSemanticBatch(batch: SemanticBatch): StructuredWhiteboa
         };
       }
 
+      if (block.kind === 'tree_node') {
+        return {
+          id: `${batch.batch_id}:${block.id}`,
+          kind: block.kind,
+          region: 'auto',
+          text_preview: block.root.label?.slice(0, 80),
+        };
+      }
+
       return {
         id: `${batch.batch_id}:${block.id}`,
         kind: block.kind,

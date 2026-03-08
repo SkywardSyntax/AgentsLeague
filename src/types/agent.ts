@@ -26,6 +26,7 @@ export type LineStyle = 'solid' | 'dashed' | 'dotted';
 interface BaseDrawElement {
   id: string;
   color?: string;
+  fillColor?: string;
   stroke_width?: number;
   lineStyle?: LineStyle;
 }
@@ -632,7 +633,8 @@ export type SemanticTemplate =
   | 'jacobian_mapping_2panel'
   | 'freeform_semantic'
   | 'graph_diagram'
-  | 'probability_tree';
+  | 'probability_tree'
+  | 'tree_diagram';
 
 export type RegionHint = 'left' | 'right' | 'center' | 'bottom' | 'auto';
 
@@ -707,7 +709,10 @@ export interface SemanticGraphNodeBlock {
   x?: number;
   y?: number;
   color?: string;
+  fillColor?: string;
 }
+
+export type GraphLayout = 'auto' | 'circular' | 'tree';
 
 export interface SemanticGraphEdgeBlock {
   id: string;
@@ -715,6 +720,7 @@ export interface SemanticGraphEdgeBlock {
   from: string;
   to: string;
   label?: string;
+  weight?: number;
   directed?: boolean;
   curved?: boolean;
   color?: string;
@@ -735,6 +741,24 @@ export interface SemanticProbabilityTreeBranchBlock {
   probability?: number;
 }
 
+export interface TreeNodeSpec {
+  label: string;
+  value?: string | number;
+  color?: string;
+  children?: TreeNodeSpec[];
+}
+
+export interface SemanticTreeDiagramBlock {
+  id: string;
+  kind: 'tree_node';
+  root: TreeNodeSpec;
+  cx: number;
+  cy: number;
+  levelHeight?: number;
+  nodeRadius?: number;
+  strokeColor?: string;
+}
+
 export type SemanticBlock =
   | SemanticEquationStackBlock
   | SemanticDiagramPanelBlock
@@ -743,7 +767,8 @@ export type SemanticBlock =
   | SemanticGraphNodeBlock
   | SemanticGraphEdgeBlock
   | SemanticProbabilityTreeRootBlock
-  | SemanticProbabilityTreeBranchBlock;
+  | SemanticProbabilityTreeBranchBlock
+  | SemanticTreeDiagramBlock;
 
 export interface SemanticRelation {
   id: string;
