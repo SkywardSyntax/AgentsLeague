@@ -7,9 +7,11 @@ interface AppHeaderProps {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
+  inspectorOpen?: boolean;
+  onToggleInspector?: () => void;
 }
 
-export function AppHeader({ status, canUndo, canRedo, onUndo, onRedo }: AppHeaderProps) {
+export function AppHeader({ status, canUndo, canRedo, onUndo, onRedo, inspectorOpen, onToggleInspector }: AppHeaderProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -56,6 +58,21 @@ export function AppHeader({ status, canUndo, canRedo, onUndo, onRedo }: AppHeade
             <polyline points="23 4 23 10 17 10" />
             <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
           </svg>
+        </button>
+        <button
+          type="button"
+          aria-label={inspectorOpen ? 'Close Inspector' : 'Open Inspector'}
+          title="🔍 Inspector"
+          onClick={onToggleInspector}
+          data-testid="inspector-toggle"
+          className={`flex h-8 items-center gap-1 rounded-full border border-[var(--color-border)] px-2.5 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
+            inspectorOpen
+              ? 'bg-[var(--color-accent-faint)] text-[var(--color-accent)]'
+              : 'bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'
+          }`}
+        >
+          🔍
+          <span className="hidden sm:inline">Inspector</span>
         </button>
         <button
           type="button"

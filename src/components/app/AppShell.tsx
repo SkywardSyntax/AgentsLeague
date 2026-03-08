@@ -32,6 +32,8 @@ import { MobilePanelSwitcher } from '@/components/app/MobilePanelSwitcher';
 import { DrawPayloadInjector } from '@/components/whiteboard/DrawPayloadInjector';
 import { DrawingStatusPill, type DrawingPillState } from '@/components/whiteboard/DrawingStatusPill';
 import { DrawingStatistics, type DrawSource } from '@/components/whiteboard/DrawingStatistics';
+import { ElementInspector } from '@/components/whiteboard/ElementInspector';
+import { KeyboardShortcutsModal } from '@/components/whiteboard/KeyboardShortcutsModal';
 import type { StreamPhase, DrawingProgressInfo } from '@/components/chat/StreamProgress';
 import { friendlyEventErrorMessage } from '@/lib/client/error-messages';
 import { useScenePersistence } from '@/hooks/useScenePersistence';
@@ -144,6 +146,9 @@ export function AppShell() {
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const injectorToggleRef = useRef<(() => void) | null>(null);
+  const exportToggleRef = useRef<(() => void) | null>(null);
+  const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const streamChatIdRef = useRef<string | null>(null);
   const currentAssistantMessageId = useRef<string | null>(null);
   const turnHadRenderableOutputRef = useRef(false);
@@ -867,8 +872,30 @@ export function AppShell() {
         toggleInjector: () => injectorToggleRef.current?.(),
         undo: handleUndo,
         redo: handleRedo,
+        openExport: () => exportToggleRef.current?.(),
+        saveSnapshot: () => {
+          if (activeChat && activeChat.batches.length > 0) {
+            saveSnapshot(activeChat.batches);
+          }
+        },
+        copyShareUrl: async () => {
+          if (!activeChat || activeChat.batches.length === 0) return;
+          try {
+            const { compressShareData } = await import('@/lib/share-url');
+            const json = JSON.stringify(activeChat.batches);
+            const compressed = await compressShareData(json);
+            const url = `${window.location.origin}${window.location.pathname}?scene=${compressed}`;
+            await navigator.clipboard.writeText(url);
+          } catch { /* clipboard may not be available */ }
+        },
+        showShortcuts: () => setShortcutsModalOpen((v) => !v),
+        selectAll: () => {
+          // Focus the whiteboard canvas section for accessibility
+          const el = document.getElementById('panel-whiteboard');
+          el?.focus();
+        },
       }),
-      [activeChatId, cancel, chatSessions, createChat, handleRedo, handleUndo, resetStreamState, selectChat, status],
+      [activeChatId, activeChat, cancel, chatSessions, createChat, handleRedo, handleUndo, resetStreamState, saveSnapshot, selectChat, status],
     ),
   );
 
@@ -995,7 +1022,7 @@ export function AppShell() {
     <main id="main-content" className="relative h-screen w-screen overflow-hidden p-2 text-[var(--color-text-primary)] sm:p-4" style={{ height: '100dvh' }}>
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:text-[var(--color-text-primary)] focus:shadow-lg">Skip to main content</a>
       <div className="app-card glass-panel animate-rise-in relative flex h-full min-h-0 flex-col overflow-hidden border-[var(--color-border)]">
-        <AppHeader status={status} canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+        <AppHeader status={status} canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} inspectorOpen={inspectorOpen} onToggleInspector={() => setInspectorOpen((p) => !p)} />
 
         {/* Restore saved scene banner */}
         {showRestoreBanner && (
@@ -1058,6 +1085,9 @@ export function AppShell() {
               key={activeChat.id}
               batches={activeChat.batches}
               onWarning={(warning) => pushWarning(warning, activeChat.id)}
+              exportToggleRef={exportToggleRef}
+              autoSaved={savedSceneExists}
+              elementCount={activeChat.scene.length}
             />
             <DrawingStatusPill state={drawingPillState} />
             <DrawingStatistics
@@ -1082,6 +1112,12 @@ export function AppShell() {
                 }
               }}
               onDeleteSnapshot={deleteSnapshot}
+            />
+            <ElementInspector
+              scene={activeChat.scene}
+              batches={activeChat.batches}
+              open={inspectorOpen}
+              onClose={() => setInspectorOpen(false)}
             />
             {!isAgentMode && (
               <DrawPayloadInjector onInject={handleDrawInject} sessionId={activeChat.id} forceOpen={mobileActivePanel === 'draw'} toggleRef={injectorToggleRef} />
@@ -1193,6 +1229,7 @@ export function AppShell() {
           onSwitch={setMobileActivePanel}
         />
       )}
+      <KeyboardShortcutsModal open={shortcutsModalOpen} onClose={() => setShortcutsModalOpen(false)} />
     </main>
     </ErrorBoundary>
   );
