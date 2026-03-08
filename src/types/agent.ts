@@ -13,7 +13,7 @@ export interface ChatMessage {
   errorMeta?: ChatMessageErrorMeta;
 }
 
-export type StylePreset = 'clean_pen_sketch' | 'rough_sketch' | 'blueprint_neat';
+export type StylePreset = 'clean_pen_sketch' | 'rough_sketch' | 'blueprint_neat' | 'mathematical';
 export type PlannerMode = 'semantic_preferred' | 'legacy_draw_only';
 
 export interface Point {
@@ -21,10 +21,13 @@ export interface Point {
   y: number;
 }
 
+export type LineStyle = 'solid' | 'dashed' | 'dotted';
+
 interface BaseDrawElement {
   id: string;
   color?: string;
   stroke_width?: number;
+  lineStyle?: LineStyle;
 }
 
 export interface RectElement extends BaseDrawElement {
@@ -105,6 +108,10 @@ export interface NumberLineElement extends BaseDrawElement {
   max: number;
   label?: string;
   style?: StylePreset;
+  /** Points to highlight with filled dots */
+  highlights?: Array<{ value: number; label?: string }>;
+  /** Intervals to show as thicker line segments */
+  intervals?: Array<{ from: number; to: number; color?: string }>;
 }
 
 export interface VectorArrowElement extends BaseDrawElement {
@@ -408,6 +415,10 @@ export interface StrokeTrajectory {
   bounds?: { minX: number; minY: number; maxX: number; maxY: number };
   /** Hint for animation speed; inferred automatically when omitted. */
   drawingSpeed?: DrawingSpeed;
+  /** Line dash style for mathematical drawings (asymptotes, gridlines). */
+  lineStyle?: LineStyle;
+  /** When true, skip sinusoidal width modulation for precise mathematical lines. */
+  mathematical?: boolean;
 }
 
 export interface ActiveStroke extends StrokeTrajectory {

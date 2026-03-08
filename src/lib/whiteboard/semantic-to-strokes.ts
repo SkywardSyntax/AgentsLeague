@@ -205,6 +205,8 @@ async function compileOneElement(
   const warnings: string[] = [];
   const color = element.color ?? DEFAULT_COLOR;
   const baseWidth = strokeWidthForPreset(preset, element.stroke_width ?? DEFAULT_BASE_WIDTH);
+  const isMathematical = preset === 'mathematical' || preset === 'blueprint_neat';
+  const lineStyle = ('lineStyle' in element ? element.lineStyle : undefined) ?? undefined;
 
   if (element.type === 'clear') {
     return { strokes, warnings, clear: true };
@@ -212,25 +214,25 @@ async function compileOneElement(
 
   if (element.type === 'rect') {
     const points = withJitter(resamplePolyline(rectPoints(element), 4), element.id, preset);
-    strokes.push({ id: `${element.id}-rect`, elementId: element.id, points, color, baseWidth });
+    strokes.push({ id: `${element.id}-rect`, elementId: element.id, points, color, baseWidth, lineStyle, mathematical: isMathematical });
     return { strokes, warnings, clear: false };
   }
 
   if (element.type === 'ellipse') {
     const points = withJitter(resamplePolyline(ellipsePoints(element), 4), element.id, preset);
-    strokes.push({ id: `${element.id}-ellipse`, elementId: element.id, points, color, baseWidth });
+    strokes.push({ id: `${element.id}-ellipse`, elementId: element.id, points, color, baseWidth, lineStyle, mathematical: isMathematical });
     return { strokes, warnings, clear: false };
   }
 
   if (element.type === 'line') {
     const points = withJitter(resamplePolyline(linePoints(element), 3), element.id, preset);
-    strokes.push({ id: `${element.id}-line`, elementId: element.id, points, color, baseWidth });
+    strokes.push({ id: `${element.id}-line`, elementId: element.id, points, color, baseWidth, lineStyle, mathematical: isMathematical });
     return { strokes, warnings, clear: false };
   }
 
   if (element.type === 'arrow') {
     const main = withJitter(resamplePolyline(linePoints(element), 3), `${element.id}-main`, preset);
-    strokes.push({ id: `${element.id}-arrow-main`, elementId: element.id, points: main, color, baseWidth });
+    strokes.push({ id: `${element.id}-arrow-main`, elementId: element.id, points: main, color, baseWidth, lineStyle, mathematical: isMathematical });
     const heads = arrowHeadPoints(element);
     heads.forEach((head, idx) => {
       strokes.push({
@@ -239,6 +241,7 @@ async function compileOneElement(
         points: withJitter(resamplePolyline(head, 3), `${element.id}-head-${idx}`, preset),
         color,
         baseWidth,
+        mathematical: isMathematical,
       });
     });
     return { strokes, warnings, clear: false };
@@ -444,19 +447,14 @@ async function compileOneElement(
   }
 
   // Math primitives with lowering support: expand to basic elements and compile
-  if (element.type === 'cartesian_axes' || element.type === 'number_line' || element.type === 'vector_arrow') {
+  if (element.type === 'cartesian_axes' || element.type === 'number_line' || element.type === 'vector_arrow'
+    || element.type === 'function_curve' || element.type === 'angle_arc' || element.type === 'integral_region') {
     const lowered = lowerMathPrimitive(element);
     for (const lowEl of lowered) {
       const sub = await compileOneElement(lowEl, preset);
       strokes.push(...sub.strokes);
       warnings.push(...sub.warnings);
     }
-    return { strokes, warnings, clear: false };
-  }
-
-  // Math primitives without lowering yet — skip with a warning.
-  if (element.type === 'function_curve' || element.type === 'angle_arc' || element.type === 'integral_region') {
-    warnings.push(`Math primitive "${element.type}" for element ${element.id} requires lowering pass; skipped`);
     return { strokes, warnings, clear: false };
   }
 

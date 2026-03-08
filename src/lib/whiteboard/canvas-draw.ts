@@ -1,4 +1,4 @@
-import type { Point } from '@/types/agent';
+import type { Point, LineStyle } from '@/types/agent';
 import { catmullRomToBezier, screenStrokePx } from './geometry';
 
 interface Camera {
@@ -7,9 +7,23 @@ interface Camera {
   zoom: number;
 }
 
+/** Apply ctx.setLineDash based on lineStyle, scaled to world coords. */
+function applyLineDash(ctx: CanvasRenderingContext2D, lineStyle: LineStyle | undefined, zoom: number, dpr: number): void {
+  if (!lineStyle || lineStyle === 'solid') {
+    ctx.setLineDash([]);
+    return;
+  }
+  const scale = 1 / (zoom * dpr);
+  if (lineStyle === 'dashed') {
+    ctx.setLineDash([8 * scale, 4 * scale]);
+  } else {
+    ctx.setLineDash([2 * scale, 3 * scale]);
+  }
+}
+
 /**
  * Draw a stroke with per-segment width modulation (sinusoidal ±8%).
- * Accepts pre-computed screenWidth to avoid recalculating screenStrokePx per segment.
+ * When `mathematical` is true, uses uniform width for precise rendering.
  */
 export function drawStroke(
   ctx: CanvasRenderingContext2D,
@@ -18,11 +32,33 @@ export function drawStroke(
   baseWidth: number,
   camera: Camera,
   dpr: number,
+  options?: { lineStyle?: LineStyle; mathematical?: boolean },
 ) {
   if (points.length < 2) return;
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  applyLineDash(ctx, options?.lineStyle, camera.zoom, dpr);
+
+  const uniform = options?.mathematical === true;
+
+  if (uniform) {
+    const px = screenStrokePx(baseWidth, camera.zoom, dpr);
+    const worldLineWidth = px / (camera.zoom * dpr);
+    ctx.lineWidth = worldLineWidth;
+    ctx.beginPath();
+    const a = points[0]!;
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) { ctx.setLineDash([]); return; }
+    ctx.moveTo(a.x, a.y);
+    for (let i = 1; i < points.length; i++) {
+      const b = points[i]!;
+      if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    return;
+  }
 
   const n = points.length - 1;
   for (let i = 1; i < points.length; i++) {
@@ -43,6 +79,7 @@ export function drawStroke(
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 }
 
 /** Max segments for per-segment width modulation; beyond this use single-path fast-path. */
@@ -51,9 +88,7 @@ const SMOOTH_STROKE_MODULATION_LIMIT = 200;
 /**
  * Draw a smooth stroke using Catmull-Rom → Bézier conversion.
  * Falls back to drawStroke for fewer than 4 points.
- * Uses per-segment width modulation (matching drawStroke's sinusoidal style)
- * for strokes with ≤ SMOOTH_STROKE_MODULATION_LIMIT segments, and a uniform
- * single-path fast-path for longer strokes.
+ * When `mathematical` is true, always uses uniform single-path rendering.
  */
 export function drawSmoothStroke(
   ctx: CanvasRenderingContext2D,
@@ -62,10 +97,11 @@ export function drawSmoothStroke(
   baseWidth: number,
   camera: Camera,
   dpr: number,
+  options?: { lineStyle?: LineStyle; mathematical?: boolean },
 ) {
   if (points.length < 2) return;
   if (points.length < 4) {
-    drawStroke(ctx, points, color, baseWidth, camera, dpr);
+    drawStroke(ctx, points, color, baseWidth, camera, dpr, options);
     return;
   }
 
@@ -74,16 +110,19 @@ export function drawSmoothStroke(
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  applyLineDash(ctx, options?.lineStyle, camera.zoom, dpr);
 
-  if (segs.length > SMOOTH_STROKE_MODULATION_LIMIT) {
-    // Fast-path: single beginPath/stroke with uniform width
+  const uniform = options?.mathematical === true;
+
+  if (uniform || segs.length > SMOOTH_STROKE_MODULATION_LIMIT) {
+    // Uniform-width single-path rendering (mathematical or fast-path)
     const px = screenStrokePx(baseWidth, camera.zoom, dpr);
     const worldLineWidth = px / (camera.zoom * dpr);
     ctx.lineWidth = worldLineWidth;
 
     ctx.beginPath();
     const start = points[0]!;
-    if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) return;
+    if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) { ctx.setLineDash([]); return; }
     ctx.moveTo(start.x, start.y);
     for (const seg of segs) {
       if (!Number.isFinite(seg.cp1.x) || !Number.isFinite(seg.cp1.y) ||
@@ -92,6 +131,7 @@ export function drawSmoothStroke(
       ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
     }
     ctx.stroke();
+    ctx.setLineDash([]);
     return;
   }
 
@@ -115,4 +155,5 @@ export function drawSmoothStroke(
     ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 }

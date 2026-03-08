@@ -785,9 +785,6 @@ export function AppShell() {
           const idx = chatSessions.findIndex((c) => c.id === activeChatId);
           if (idx < chatSessions.length - 1) selectChat(chatSessions[idx + 1]!.id);
         },
-        resetZoom: () => {
-          /* handled by WhiteboardCanvas internally */
-        },
         togglePanel: () =>
           setMobileActivePanel((p) => (p === 'whiteboard' ? 'chat' : 'whiteboard')),
         undo: handleUndo,
@@ -899,7 +896,7 @@ export function AppShell() {
               lastDrawSource={lastDrawSource}
             />
             {!isAgentMode && (
-              <DrawPayloadInjector onInject={handleDrawInject} forceOpen={mobileActivePanel === 'draw'} />
+              <DrawPayloadInjector onInject={handleDrawInject} sessionId={activeChat.id} forceOpen={mobileActivePanel === 'draw'} />
             )}
           </section>
 

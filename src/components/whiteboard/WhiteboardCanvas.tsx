@@ -1,7 +1,7 @@
 'use client';
 
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { ActiveStroke, DrawBatch, DrawElement, StrokeTrajectory } from '@/types/agent';
+import type { ActiveStroke, DrawBatch, DrawElement, LineStyle, StrokeTrajectory } from '@/types/agent';
 import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
 import { createActiveBatch, easeOutCubic, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import type { BatchCompleteCallback } from '@/lib/whiteboard/stroke-scheduler';
@@ -14,7 +14,7 @@ import {
   clamp,
   strokesBoundingBox,
 } from '@/lib/whiteboard/geometry';
-import { drawSmoothStroke } from '@/lib/whiteboard/canvas-draw';
+import { drawSmoothStroke, drawStroke as drawStrokeImported } from '@/lib/whiteboard/canvas-draw';
 import { computeFps, isDebugShortcut, createDrawCallCounter, formatFps } from '@/lib/whiteboard/canvas-debug';
 import type { WhiteboardExportHandle } from '@/lib/whiteboard/canvas-export';
 import {
@@ -70,30 +70,9 @@ function drawLinearStroke(
   baseWidth: number,
   camera: Camera,
   dpr: number,
+  options?: { lineStyle?: LineStyle; mathematical?: boolean },
 ) {
-  if (points.length < 2) return;
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  const n = points.length - 1;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1]!;
-    const b = points[i]!;
-    if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
-    const t = i / n;
-
-    const widthMod = 1 + 0.08 * Math.sin(t * Math.PI);
-    const worldWidth = baseWidth * widthMod;
-    const px = screenStrokePx(worldWidth, camera.zoom, dpr);
-    const worldLineWidth = px / (camera.zoom * dpr);
-
-    ctx.lineWidth = worldLineWidth;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
+  drawStrokeImported(ctx, points, color, baseWidth, camera, dpr, options);
 }
 
 /**
@@ -107,11 +86,12 @@ function drawStroke(
   baseWidth: number,
   camera: Camera,
   dpr: number,
+  options?: { lineStyle?: LineStyle; mathematical?: boolean },
 ) {
   if (points.length <= 2 || isCollinear(points)) {
-    drawLinearStroke(ctx, points, color, baseWidth, camera, dpr);
+    drawLinearStroke(ctx, points, color, baseWidth, camera, dpr, options);
   } else {
-    drawSmoothStroke(ctx, points, color, baseWidth, camera, dpr);
+    drawSmoothStroke(ctx, points, color, baseWidth, camera, dpr, options);
   }
 }
 
@@ -615,7 +595,8 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
               continue;
             }
           }
-          drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr);
+          drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr,
+            { lineStyle: stroke.lineStyle, mathematical: stroke.mathematical });
           drawCallCounterRef.current.increment();
         }
         committedDirtyRef.current = false;
@@ -654,7 +635,8 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
           }
         }
 
-        drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr);
+        drawStroke(activeCtx, partial, stroke.color, stroke.baseWidth, camera, dpr,
+            { lineStyle: stroke.lineStyle, mathematical: stroke.mathematical });
           drawCallCounterRef.current.increment();
 
         if (rawT >= 1) {

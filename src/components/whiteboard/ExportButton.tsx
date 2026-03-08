@@ -121,6 +121,11 @@ export function ExportButton({ whiteboardRef, className }: ExportButtonProps) {
               role="menuitemradio"
               aria-checked={format === f}
               onClick={() => setFormat(f)}
+              title={
+                f === 'png' ? `PNG image (~${scale === 1 ? '50–200' : scale === 2 ? '150–500' : '400KB–1.5M'}KB)`
+                : f === 'svg' ? 'SVG vector (~5–50KB)'
+                : 'Copy to clipboard'
+              }
               className={`flex-1 rounded-md px-2 py-1 text-xs transition-all duration-150
                 ${format === f
                   ? 'bg-[var(--color-accent)] text-white shadow-sm'

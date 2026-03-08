@@ -25,11 +25,13 @@ export interface InjectError {
 
 export type InjectResponse = InjectResult | InjectError;
 
-export function useDrawInjector() {
+export function useDrawInjector(sessionId?: string) {
   const [isInjecting, setIsInjecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<InjectResult | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
 
   const inject = useCallback(async (batch: DrawBatch): Promise<InjectResult | null> => {
     // Validate client-side first
@@ -50,9 +52,14 @@ export function useDrawInjector() {
     setError(null);
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (sessionIdRef.current) {
+        headers['X-Session-Id'] = sessionIdRef.current;
+      }
+
       const res = await fetch('/api/whiteboard/inject', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(batch),
         signal: controller.signal,
       });

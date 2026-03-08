@@ -12,6 +12,7 @@ const BaseElementSchema = z.object({
   id: z.string().min(1).max(64),
   color: z.string().max(30).regex(COLOR_REGEX).optional(),
   stroke_width: z.number().positive().optional(),
+  lineStyle: z.enum(['solid', 'dashed', 'dotted']).optional(),
 });
 
 const RectSchema = BaseElementSchema.extend({
@@ -64,7 +65,7 @@ const ClearSchema = BaseElementSchema.extend({
   type: z.literal('clear'),
 });
 
-const StylePresetSchema = z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']);
+const StylePresetSchema = z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical']);
 
 const CartesianAxesSchema = BaseElementSchema.extend({
   type: z.literal('cartesian_axes'),
@@ -89,6 +90,15 @@ const NumberLineSchema = BaseElementSchema.extend({
   max: z.number().finite(),
   label: z.string().max(100).optional(),
   style: StylePresetSchema.optional(),
+  highlights: z.array(z.object({
+    value: z.number().finite(),
+    label: z.string().max(100).optional(),
+  })).max(50).optional(),
+  intervals: z.array(z.object({
+    from: z.number().finite(),
+    to: z.number().finite(),
+    color: z.string().max(30).regex(COLOR_REGEX).optional(),
+  })).max(50).optional(),
 });
 
 const VectorArrowSchema = BaseElementSchema.extend({
@@ -161,7 +171,7 @@ const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optiona
 
 export const DrawBatchSchema = z.object({
   batch_id: z.string().min(1).max(64),
-  style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
+  style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical']).optional(),
   elements: z.array(DrawElementSchema).max(200),
   source: BatchSourceSchema,
   schemaVersion: z.number().int().default(1),
@@ -339,7 +349,7 @@ const SemanticRelationSchema = z.object({
 
 export const SemanticBatchSchema = z.object({
   batch_id: z.string().min(1).max(64),
-  style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
+  style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical']).optional(),
   template: z.enum(['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic']),
   blocks: z.array(SemanticBlockSchema).min(1).max(50),
   relations: z.array(SemanticRelationSchema).max(100).optional(),
@@ -386,7 +396,7 @@ const SEMANTIC_TEMPLATES = [
 
 const SemanticBatchRefSchema = z.object({
   batch_id: z.string().min(1),
-  style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat']).optional(),
+  style_preset: z.enum(['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical']).optional(),
   template: z.enum(SEMANTIC_TEMPLATES),
   blocks: z.array(SemanticBlockSchema).min(1),
   relations: z.array(SemanticRelationSchema).optional(),
@@ -469,6 +479,17 @@ function asString(input: unknown): string | null {
 
 import { clamp } from '@/lib/whiteboard/geometry';
 
+export const STYLE_PRESETS = ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat', 'mathematical'] as const;
+export const LINE_STYLES = ['solid', 'dashed', 'dotted'] as const;
+export const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic'] as const;
+export const INTENTS = ['teach', 'derive', 'compare', 'summarize'] as const;
+export const EQUATION_ROLES = ['step', 'result', 'note'] as const;
+export const EQUATION_ALIGN = ['left', 'center'] as const;
+export const REGION_HINTS = ['left', 'right', 'center', 'bottom', 'auto'] as const;
+export const PANEL_REGION_HINTS = ['left', 'right', 'center', 'auto'] as const;
+export const CAPTION_REGION_HINTS = ['bottom', 'center', 'auto'] as const;
+export const PANEL_SHAPE_TYPES = ['rect', 'parallelogram', 'line', 'arrow'] as const;
+
 function pointFrom(input: unknown): { x: number; y: number } | null {
   const rec = asRecord(input);
   if (!rec) return null;
@@ -505,6 +526,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
     const id = asString(raw.id) ?? `element-${idx + 1}`;
     const color = asString(raw.color) ?? undefined;
     const stroke_width = asNumber(raw.stroke_width) ?? undefined;
+    const lineStyle = asEnum(raw.lineStyle, LINE_STYLES) ?? undefined;
 
     if (type === 'clear') {
       elements.push({ id, type });
@@ -523,7 +545,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const cw = Math.max(1, Math.abs(w));
       const ch = Math.max(1, Math.abs(h));
       if (cw !== w || ch !== h) warnings.push(`Rect ${id} dimensions clamped to positive`);
-      elements.push({ id, type, x, y, w: cw, h: ch, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      elements.push({ id, type, x, y, w: cw, h: ch, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}), ...(lineStyle ? { lineStyle } : {}) });
       continue;
     }
 
@@ -539,7 +561,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       const crx = Math.max(1, Math.abs(rx));
       const cry = Math.max(1, Math.abs(ry));
       if (crx !== rx || cry !== ry) warnings.push(`Ellipse ${id} radii clamped to positive`);
-      elements.push({ id, type, cx, cy, rx: crx, ry: cry, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      elements.push({ id, type, cx, cy, rx: crx, ry: cry, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}), ...(lineStyle ? { lineStyle } : {}) });
       continue;
     }
 
@@ -550,7 +572,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         warnings.push(`${type} ${id} has invalid endpoints`);
         continue;
       }
-      elements.push({ id, type, from, to, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      elements.push({ id, type, from, to, ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}), ...(lineStyle ? { lineStyle } : {}) });
       continue;
     }
 
@@ -563,7 +585,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
         warnings.push(`Text ${id} has invalid payload`);
         continue;
       }
-      elements.push({ id, type, x, y, text, ...(size ? { size } : {}), ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}) });
+      elements.push({ id, type, x, y, text, ...(size ? { size } : {}), ...(color ? { color } : {}), ...(stroke_width ? { stroke_width } : {}), ...(lineStyle ? { lineStyle } : {}) });
       continue;
     }
 
@@ -747,7 +769,8 @@ export function normalizeDrawBatchPayload(payload: unknown): {
   const style_preset =
     rec.style_preset === 'clean_pen_sketch' ||
     rec.style_preset === 'rough_sketch' ||
-    rec.style_preset === 'blueprint_neat'
+    rec.style_preset === 'blueprint_neat' ||
+    rec.style_preset === 'mathematical'
       ? rec.style_preset
       : undefined;
 
@@ -760,16 +783,6 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 
   return { normalized, warnings };
 }
-
-export const STYLE_PRESETS = ['clean_pen_sketch', 'rough_sketch', 'blueprint_neat'] as const;
-export const TEMPLATES = ['equation_derivation_vertical', 'jacobian_mapping_2panel', 'freeform_semantic'] as const;
-export const INTENTS = ['teach', 'derive', 'compare', 'summarize'] as const;
-export const EQUATION_ROLES = ['step', 'result', 'note'] as const;
-export const EQUATION_ALIGN = ['left', 'center'] as const;
-export const REGION_HINTS = ['left', 'right', 'center', 'bottom', 'auto'] as const;
-export const PANEL_REGION_HINTS = ['left', 'right', 'center', 'auto'] as const;
-export const CAPTION_REGION_HINTS = ['bottom', 'center', 'auto'] as const;
-export const PANEL_SHAPE_TYPES = ['rect', 'parallelogram', 'line', 'arrow'] as const;
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
 export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'angle_arc', 'integral_region'] as const;

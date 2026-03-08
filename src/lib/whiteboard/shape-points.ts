@@ -6,6 +6,8 @@ export function strokeWidthForPreset(preset: StylePreset | undefined, base: numb
       return base * 1.15;
     case 'blueprint_neat':
       return base * 0.88;
+    case 'mathematical':
+      return base * 0.82;
     default:
       return base;
   }

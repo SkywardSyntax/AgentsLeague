@@ -6,7 +6,6 @@ interface ShortcutActions {
   cancelStream: () => void;
   prevChat: () => void;
   nextChat: () => void;
-  resetZoom: () => void;
   togglePanel?: () => void;
   undo?: () => void;
   redo?: () => void;
@@ -78,12 +77,7 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
         return;
       }
 
-      // Ctrl+0 — reset zoom
-      if (mod && e.key === '0') {
-        e.preventDefault();
-        a.resetZoom();
-        return;
-      }
+      // Ctrl+0 — fit-to-content (handled by WhiteboardCanvas)
 
       // Ctrl+Shift+M — toggle panel (mobile)
       if (mod && e.shiftKey && e.key === 'M') {

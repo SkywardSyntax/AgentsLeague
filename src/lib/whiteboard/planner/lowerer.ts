@@ -196,6 +196,11 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
   const [yMin, yMax] = el.yRange;
   const xSpan = xMax - xMin || 1;
   const ySpan = yMax - yMin || 1;
+  const curveColor = el.color ?? '#1f2a44';
+
+  // Use thinner stroke for mathematical/blueprint styles
+  const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
+  const curveWidth = el.stroke_width ?? (isMathStyle ? 1.5 : 1.8);
 
   const toCanvasX = (lx: number) => el.x + ((lx - xMin) / xSpan) * el.width;
   const toCanvasY = (ly: number) => el.y + el.height - ((ly - yMin) / ySpan) * el.height;
@@ -249,6 +254,9 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
   }
   if (current.length > 0) segments.push(current);
 
+  // Detect x-axis intercepts for marker rendering
+  const intercepts: Array<{ x: number; y: number }> = [];
+
   // Convert each segment to line DrawElements
   let segIdx = 0;
   for (const seg of segments) {
@@ -260,11 +268,32 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
         type: 'line',
         from: { x: toCanvasX(from.x), y: toCanvasY(from.y) },
         to: { x: toCanvasX(to.x), y: toCanvasY(to.y) },
-        color: el.color,
-        stroke_width: el.stroke_width,
+        color: curveColor,
+        stroke_width: curveWidth,
       });
+      // Detect zero crossings for intercept markers
+      if (from.y * to.y < 0 && isMathStyle) {
+        const t = from.y / (from.y - to.y);
+        const ix = from.x + t * (to.x - from.x);
+        intercepts.push({ x: ix, y: 0 });
+      }
     }
     segIdx++;
+  }
+
+  // Render x-intercept markers as small filled dots (mathematical styles only)
+  for (let i = 0; i < intercepts.length; i++) {
+    const pt = intercepts[i]!;
+    result.push({
+      id: `${el.id}-xint-${i}`,
+      type: 'ellipse',
+      cx: toCanvasX(pt.x),
+      cy: toCanvasY(0),
+      rx: 3,
+      ry: 3,
+      color: curveColor,
+      stroke_width: 1.5,
+    });
   }
 
   // Label
@@ -276,7 +305,7 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
       y: el.y + 4,
       text: el.label,
       size: 14,
-      color: el.color,
+      color: curveColor,
     });
   }
 
@@ -297,61 +326,67 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
   const ySpan = yRange[1] - yRange[0];
   if (xSpan <= 0 || ySpan <= 0) return result;
 
-  const xScale = width / xSpan;
-  const yScale = height / ySpan;
+  // Map logical coordinates to canvas coordinates (consistent with expandFunctionCurve)
+  const toCanvasX = (lx: number) => x + ((lx - xRange[0]) / xSpan) * width;
+  const toCanvasY = (ly: number) => y + height - ((ly - yRange[0]) / ySpan) * height;
 
-  // Axis endpoints
-  const xAxisFrom: Point = { x: x + xRange[0] * xScale, y };
-  const xAxisTo: Point = { x: x + xRange[1] * xScale, y };
-  const yAxisFrom: Point = { x, y: y - yRange[0] * yScale };
-  const yAxisTo: Point = { x, y: y - yRange[1] * yScale };
+  // Origin position (where logical 0 maps, clamped to plot bounds)
+  const clampedZeroX = Math.max(xRange[0], Math.min(xRange[1], 0));
+  const clampedZeroY = Math.max(yRange[0], Math.min(yRange[1], 0));
+  const originX = toCanvasX(clampedZeroX);
+  const originY = toCanvasY(clampedZeroY);
 
-  const TICK_HALF = 4;
+  const TICK_HALF = 5;
 
   // --- Gridlines (render first so they appear behind axes) ---
   if (el.gridlines) {
     const xTicks = tickMarksForRange(xRange[0], xRange[1], 10);
     for (let i = 0; i < xTicks.length; i++) {
       const t = xTicks[i]!;
-      const sx = x + t.value * xScale;
+      if (t.value === 0) continue;
+      const sx = toCanvasX(t.value);
       result.push({
         id: `${el.id}-xgrid-${i}`,
         type: 'line' as const,
-        from: { x: sx, y: yAxisTo.y },
-        to: { x: sx, y: yAxisFrom.y },
+        from: { x: sx, y },
+        to: { x: sx, y: y + height },
         color: '#cccccc',
-        stroke_width: 0.5,
+        stroke_width: 0.4,
+        lineStyle: 'dotted' as const,
       });
     }
     const yTicks = tickMarksForRange(yRange[0], yRange[1], 10);
     for (let i = 0; i < yTicks.length; i++) {
       const t = yTicks[i]!;
-      const sy = y - t.value * yScale;
+      if (t.value === 0) continue;
+      const sy = toCanvasY(t.value);
       result.push({
         id: `${el.id}-ygrid-${i}`,
         type: 'line' as const,
-        from: { x: xAxisFrom.x, y: sy },
-        to: { x: xAxisTo.x, y: sy },
+        from: { x, y: sy },
+        to: { x: x + width, y: sy },
         color: '#cccccc',
-        stroke_width: 0.5,
+        stroke_width: 0.4,
+        lineStyle: 'dotted' as const,
       });
     }
   }
 
-  // --- Axis arrows ---
+  // --- Axis arrows (extend slightly beyond plot for clean arrow tips) ---
+  const ARROW_EXT = 6;
   result.push({
     id: `${el.id}-x-axis`,
     type: 'arrow' as const,
-    from: xAxisFrom,
-    to: xAxisTo,
+    from: { x: x - ARROW_EXT, y: originY },
+    to: { x: x + width + ARROW_EXT, y: originY },
     color,
     stroke_width: sw,
   });
   result.push({
     id: `${el.id}-y-axis`,
     type: 'arrow' as const,
-    from: yAxisFrom,
-    to: yAxisTo,
+    from: { x: originX, y: y + height + ARROW_EXT },
+    to: { x: originX, y: y - ARROW_EXT },
     color,
     stroke_width: sw,
   });
@@ -361,12 +396,12 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
   for (let i = 0; i < xTicks.length; i++) {
     const t = xTicks[i]!;
     if (t.value === 0) continue;
-    const sx = x + t.value * xScale;
+    const sx = toCanvasX(t.value);
     result.push({
       id: `${el.id}-xtick-${i}`,
       type: 'line' as const,
-      from: { x: sx, y: y - TICK_HALF },
-      to: { x: sx, y: y + TICK_HALF },
+      from: { x: sx, y: originY - TICK_HALF },
+      to: { x: sx, y: originY + TICK_HALF },
       color,
       stroke_width: 1,
     });
@@ -374,7 +409,7 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
       id: `${el.id}-xtlbl-${i}`,
       type: 'text' as const,
       x: sx,
-      y: y + TICK_HALF + 14,
+      y: originY + TICK_HALF + 12,
       text: t.label,
       size: 10,
       color,
@@ -386,19 +421,19 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
   for (let i = 0; i < yTicks.length; i++) {
     const t = yTicks[i]!;
     if (t.value === 0) continue;
-    const sy = y - t.value * yScale;
+    const sy = toCanvasY(t.value);
     result.push({
       id: `${el.id}-ytick-${i}`,
       type: 'line' as const,
-      from: { x: x - TICK_HALF, y: sy },
-      to: { x: x + TICK_HALF, y: sy },
+      from: { x: originX - TICK_HALF, y: sy },
+      to: { x: originX + TICK_HALF, y: sy },
       color,
       stroke_width: 1,
     });
     result.push({
       id: `${el.id}-ytlbl-${i}`,
       type: 'text' as const,
-      x: x - TICK_HALF - 8,
+      x: originX - TICK_HALF - 10,
       y: sy,
       text: t.label,
       size: 10,
@@ -406,13 +441,33 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
     });
   }
 
+  // --- Origin label (only if origin is inside plot and won't overlap nearby ticks) ---
+  const originInsidePlot =
+    originX >= x && originX <= x + width &&
+    originY >= y && originY <= y + height;
+  if (originInsidePlot) {
+    const xTickStep = xTicks.length >= 2 ? Math.abs(toCanvasX(xTicks[1]!.value) - toCanvasX(xTicks[0]!.value)) : Infinity;
+    const yTickStep = yTicks.length >= 2 ? Math.abs(toCanvasY(yTicks[1]!.value) - toCanvasY(yTicks[0]!.value)) : Infinity;
+    if (xTickStep > 16 && yTickStep > 16) {
+      result.push({
+        id: `${el.id}-origin`,
+        type: 'text' as const,
+        x: originX - 10,
+        y: originY + TICK_HALF + 12,
+        text: '0',
+        size: 10,
+        color,
+      });
+    }
+  }
+
   // --- Axis labels (near arrowheads) ---
   if (el.xLabel) {
     result.push({
       id: `${el.id}-x-label`,
       type: 'text' as const,
-      x: xAxisTo.x + 8,
-      y: xAxisTo.y + 4,
+      x: x + width + ARROW_EXT + 4,
+      y: originY + 4,
       text: el.xLabel,
       size: 13,
       color,
@@ -422,8 +477,8 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
     result.push({
       id: `${el.id}-y-label`,
       type: 'text' as const,
-      x: yAxisTo.x + 8,
-      y: yAxisTo.y - 4,
+      x: originX + 8,
+      y: y - ARROW_EXT - 2,
       text: el.yLabel,
       size: 13,
       color,
@@ -442,23 +497,44 @@ function expandNumberLine(el: NumberLineElement): DrawElement[] {
   const span = max - min;
   if (span <= 0 || length <= 0) return result;
   const scale = length / span;
+  const toCanvasX = (v: number) => x + (v - min) * scale;
 
-  // Main axis arrow
+  // Arrow extension for clean endpoints
+  const ARROW_EXT = 6;
+
+  // Main axis arrow with clean extended endpoints
   result.push({
     id: `${el.id}-axis`,
     type: 'arrow' as const,
-    from: { x, y },
-    to: { x: x + length, y },
+    from: { x: x - ARROW_EXT, y },
+    to: { x: x + length + ARROW_EXT, y },
     color,
     stroke_width: sw,
   });
 
-  // Tick marks + labels
-  const TICK_HALF = 4;
+  // Intervals (thicker line segments, rendered before ticks)
+  if (el.intervals) {
+    for (let i = 0; i < el.intervals.length; i++) {
+      const iv = el.intervals[i]!;
+      const fromX = toCanvasX(Math.max(min, iv.from));
+      const toX = toCanvasX(Math.min(max, iv.to));
+      result.push({
+        id: `${el.id}-interval-${i}`,
+        type: 'line' as const,
+        from: { x: fromX, y },
+        to: { x: toX, y },
+        color: iv.color ?? color,
+        stroke_width: sw * 2.5,
+      });
+    }
+  }
+
+  // Tick marks + labels (below the line)
+  const TICK_HALF = 5;
   const ticks = tickMarksForRange(min, max, 10);
   for (let i = 0; i < ticks.length; i++) {
     const t = ticks[i]!;
-    const sx = x + (t.value - min) * scale;
+    const sx = toCanvasX(t.value);
     result.push({
       id: `${el.id}-tick-${i}`,
       type: 'line' as const,
@@ -471,11 +547,40 @@ function expandNumberLine(el: NumberLineElement): DrawElement[] {
       id: `${el.id}-tlbl-${i}`,
       type: 'text' as const,
       x: sx,
-      y: y + TICK_HALF + 14,
+      y: y + TICK_HALF + 12,
       text: t.label,
       size: 10,
       color,
     });
+  }
+
+  // Highlighted points (filled dots as small ellipses)
+  if (el.highlights) {
+    for (let i = 0; i < el.highlights.length; i++) {
+      const h = el.highlights[i]!;
+      const hx = toCanvasX(h.value);
+      result.push({
+        id: `${el.id}-hl-${i}`,
+        type: 'ellipse' as const,
+        cx: hx,
+        cy: y,
+        rx: 3.5,
+        ry: 3.5,
+        color,
+        stroke_width: 2,
+      });
+      if (h.label) {
+        result.push({
+          id: `${el.id}-hllbl-${i}`,
+          type: 'text' as const,
+          x: hx,
+          y: y - TICK_HALF - 8,
+          text: h.label,
+          size: 11,
+          color,
+        });
+      }
+    }
   }
 
   // Label (centered above line)
@@ -586,7 +691,7 @@ function expandMathPrimitives(elements: DrawElement[]): DrawElement[] {
  * elements arrive without having been through the planner lowering pass.
  */
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement,
 ): DrawElement[] {
   switch (el.type) {
     case 'cartesian_axes':
@@ -595,6 +700,12 @@ export function lowerMathPrimitive(
       return expandNumberLine(el);
     case 'vector_arrow':
       return expandVectorArrow(el);
+    case 'function_curve':
+      return expandFunctionCurve(el);
+    case 'angle_arc':
+      return expandAngleArc(el);
+    case 'integral_region':
+      return expandIntegralRegion(el);
   }
 }
 

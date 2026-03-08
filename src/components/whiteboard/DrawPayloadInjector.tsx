@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { DrawBatchSchema } from '@/lib/schema';
 import { useDrawInjector } from '@/hooks/useDrawInjector';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -401,12 +401,15 @@ const DEFAULT_JSON = JSON.stringify(
 
 interface DrawPayloadInjectorProps {
   onInject: (batch: DrawBatch) => void;
+  /** Session ID passed to the inject API for rate limiting. */
+  sessionId?: string;
   /** When true the panel is rendered open (controlled by MobilePanelSwitcher). */
   forceOpen?: boolean;
 }
 
 export const DrawPayloadInjector = memo(function DrawPayloadInjector({
   onInject,
+  sessionId,
   forceOpen,
 }: DrawPayloadInjectorProps) {
   const [open, setOpen] = useState(false);
@@ -418,7 +421,8 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>('All');
 
-  const { inject, isInjecting, error: hookError, clearError } = useDrawInjector();
+  const { inject, isInjecting, error: hookError, clearError } = useDrawInjector(sessionId);
+  const [copiedError, setCopiedError] = useState(false);
 
   const filteredTemplates = useMemo(() => {
     return Object.entries(TEMPLATES).filter(
@@ -432,23 +436,37 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
       const parsed = JSON.parse(jsonText);
       const result = DrawBatchSchema.safeParse(parsed);
       if (result.success) {
-        return { ok: true as const, data: result.data as DrawBatch };
+        return { ok: true as const, data: result.data as DrawBatch, elementCount: (result.data as DrawBatch).elements?.length ?? 0 };
       }
       return {
         ok: false as const,
         errors: result.error.issues.map(
           (i) => `${i.path.join('.')}: ${i.message}`,
         ),
+        rawIssues: result.error.issues,
       };
     } catch {
-      return { ok: false as const, errors: ['Invalid JSON syntax'] };
+      return { ok: false as const, errors: ['Invalid JSON syntax'], rawIssues: [] as { path: (string | number)[]; message: string }[] };
     }
   }, [jsonText]);
 
   // Update inline errors on validation change
-  useMemo(() => {
+  useEffect(() => {
     setValidationErrors(parseResult.ok ? [] : parseResult.errors);
   }, [parseResult]);
+
+  const copyErrorToClipboard = useCallback(() => {
+    const errorPayload = {
+      validationErrors: parseResult.ok ? [] : parseResult.errors,
+      hookError: hookError ?? null,
+      rawIssues: parseResult.ok ? [] : parseResult.rawIssues,
+      inputPayload: (() => { try { return JSON.parse(jsonText); } catch { return jsonText; } })(),
+    };
+    void navigator.clipboard.writeText(JSON.stringify(errorPayload, null, 2)).then(() => {
+      setCopiedError(true);
+      setTimeout(() => setCopiedError(false), 2000);
+    });
+  }, [parseResult, hookError, jsonText]);
 
   const handleInject = useCallback(async () => {
     if (!parseResult.ok) return;
@@ -500,9 +518,19 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     <>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-2">
-        <span className="text-xs font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
-          Draw Injector
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold tracking-[-0.01em] text-[var(--color-text-primary)]">
+            Draw Injector
+          </span>
+          {parseResult.ok && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent-faint)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-accent)]">
+              {parseResult.elementCount} el{parseResult.elementCount !== 1 ? 's' : ''}
+            </span>
+          )}
+          {parseResult.ok && !isInjecting && (
+            <span className="text-[10px] font-medium text-green-600 dark:text-green-400">Ready ✓</span>
+          )}
+        </div>
         {!forceOpen && (
           <button
             type="button"
@@ -546,27 +574,57 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
 
             {/* Validation errors */}
             {validationErrors.length > 0 && (
-              <div className="flex gap-2 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/8 px-2.5 py-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                <div className="flex flex-col gap-0.5">
-                  {validationErrors.map((err, i) => (
-                    <p key={i} className="font-mono text-[11px] leading-snug text-[var(--color-danger)]">
-                      {err}
+              <div className="flex flex-col gap-1.5 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/8 px-2.5 py-2">
+                <div className="flex items-start gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <div className="flex flex-1 flex-col gap-0.5">
+                    <p className="text-[11px] font-medium text-[var(--color-danger)]">
+                      {validationErrors.length === 1 ? 'Validation error' : `${validationErrors.length} validation errors`}
                     </p>
-                  ))}
+                    {validationErrors.map((err, i) => (
+                      <p key={i} className="font-mono text-[10px] leading-snug text-[var(--color-danger)]/80">
+                        • {err}
+                      </p>
+                    ))}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={copyErrorToClipboard}
+                  className="self-end rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)] opacity-70 transition-all hover:bg-[var(--color-danger)]/10 hover:opacity-100"
+                >
+                  {copiedError ? 'Copied ✓' : 'Copy error'}
+                </button>
               </div>
             )}
 
-            {/* Hook error */}
+            {/* Hook error (server / rate limit / network) */}
             {hookError && (
-              <div className="flex items-start gap-2 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-2.5 py-2">
-                <span className="shrink-0 text-sm leading-none">⚠</span>
-                <p className="text-[11px] leading-snug text-[var(--color-warning-text)]">{hookError}</p>
+              <div className="flex flex-col gap-1.5 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-2.5 py-2">
+                <div className="flex items-start gap-2">
+                  <span className="shrink-0 text-sm leading-none">⚠</span>
+                  <div className="flex flex-1 flex-col gap-0.5">
+                    <p className="text-[11px] font-medium text-[var(--color-warning-text)]">
+                      {hookError.includes('rate') || hookError.includes('429')
+                        ? 'Rate limit reached — please wait a moment'
+                        : hookError.includes('fetch') || hookError.includes('network') || hookError.includes('Failed')
+                          ? 'Network error — check your connection'
+                          : 'Injection failed'}
+                    </p>
+                    <p className="font-mono text-[10px] leading-snug text-[var(--color-warning-text)]/80">{hookError}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={copyErrorToClipboard}
+                  className="self-end rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-warning-text)] opacity-70 transition-all hover:bg-[var(--color-warning-bg)] hover:opacity-100"
+                >
+                  {copiedError ? 'Copied ✓' : 'Copy error'}
+                </button>
               </div>
             )}
 
