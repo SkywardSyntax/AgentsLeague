@@ -118,8 +118,8 @@ describe('expandSequencePlot (via lowerMathPrimitive)', () => {
         },
       ],
     });
-    expect(normalized.elements.length).toBe(1);
-    expect(normalized.elements[0]!.type).toBe('sequence_plot');
+    expect(normalized!.elements.length).toBe(1);
+    expect(normalized!.elements[0]!.type).toBe('sequence_plot');
     expect(warnings.filter((w) => w.includes('invalid'))).toHaveLength(0);
   });
 
@@ -137,7 +137,7 @@ describe('expandSequencePlot (via lowerMathPrimitive)', () => {
         },
       ],
     });
-    expect(normalized.elements.length).toBe(0);
+    expect(normalized!.elements.length).toBe(0);
     expect(warnings.some((w) => w.includes('SequencePlot'))).toBe(true);
   });
 });
@@ -216,8 +216,8 @@ describe('expandBezierCurve (via lowerMathPrimitive)', () => {
         },
       ],
     });
-    expect(normalized.elements.length).toBe(1);
-    expect(normalized.elements[0]!.type).toBe('bezier_curve');
+    expect(normalized!.elements.length).toBe(1);
+    expect(normalized!.elements[0]!.type).toBe('bezier_curve');
     expect(warnings.filter((w) => w.includes('invalid'))).toHaveLength(0);
   });
 
@@ -232,7 +232,7 @@ describe('expandBezierCurve (via lowerMathPrimitive)', () => {
         },
       ],
     });
-    expect(normalized.elements.length).toBe(0);
+    expect(normalized!.elements.length).toBe(0);
     expect(warnings.some((w) => w.includes('BezierCurve'))).toBe(true);
   });
 });

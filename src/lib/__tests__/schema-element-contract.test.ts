@@ -79,10 +79,10 @@ describe('DrawElementSchema validates every DrawElement union member', () => {
     expect(result.success).toBe(true);
   });
 
-  it('unknown type polygon is rejected', () => {
+  it('unknown type nonexistent_shape is rejected', () => {
     const result = DrawElementSchema.safeParse({
       id: 'p1',
-      type: 'polygon',
+      type: 'nonexistent_shape',
       points: [],
     });
     expect(result.success).toBe(false);

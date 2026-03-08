@@ -542,6 +542,55 @@ const GeometricConstructionSchema = BaseElementSchema.extend({
   title: z.string().max(200).optional(),
 });
 
+const ProbabilityTreeBranchChildSchema = z.object({
+  label: z.string().max(100),
+  probability: z.number().min(0).max(1),
+  finalProbability: z.number().min(0).max(1).optional(),
+});
+
+const ProbabilityTreeBranchSchema = z.object({
+  label: z.string().max(100),
+  probability: z.number().min(0).max(1),
+  children: z.array(ProbabilityTreeBranchChildSchema).max(20).optional(),
+});
+
+const ProbabilityTreeSchema = BaseElementSchema.extend({
+  type: z.literal('probability_tree'),
+  rootLabel: z.string().max(100).optional(),
+  branches: z.array(ProbabilityTreeBranchSchema).min(1).max(20),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  levelSpacing: z.number().positive().max(COORD_MAX).optional(),
+  branchSpacing: z.number().positive().max(COORD_MAX).optional(),
+  showFinalProb: z.boolean().optional(),
+});
+
+const ScatterPlotPointSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  label: z.string().max(100).optional(),
+  color: z.string().regex(COLOR_OR_RGBA_REGEX).optional(),
+  size: z.number().positive().max(50).optional(),
+});
+
+const ScatterPlotSchema = BaseElementSchema.extend({
+  type: z.literal('scatter_plot'),
+  points: z.array(ScatterPlotPointSchema).min(1).max(500),
+  xMin: z.number().finite().optional(),
+  xMax: z.number().finite().optional(),
+  yMin: z.number().finite().optional(),
+  yMax: z.number().finite().optional(),
+  xLabel: z.string().max(100).optional(),
+  yLabel: z.string().max(100).optional(),
+  title: z.string().max(200).optional(),
+  showRegressionLine: z.boolean().optional(),
+  regressionColor: z.string().regex(COLOR_OR_RGBA_REGEX).optional(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX).optional(),
+  height: z.number().positive().max(COORD_MAX).optional(),
+});
+
 export const DrawElementSchema = z.discriminatedUnion('type', [
   RectSchema,
   EllipseSchema,
@@ -576,6 +625,8 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
   IntervalDiagramSchema,
   PolygonSchema,
   GeometricConstructionSchema,
+  ProbabilityTreeSchema,
+  ScatterPlotSchema,
 ]);
 
 const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optional();

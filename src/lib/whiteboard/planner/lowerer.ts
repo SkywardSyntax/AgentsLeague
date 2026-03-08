@@ -4254,7 +4254,7 @@ function expandProbabilityTree(el: ProbabilityTreeElement): DrawElement[] {
   const id = el.id;
   const startX = el.x ?? 100;
   const startY = el.y ?? 100;
-  const levelSpacing = el.levelSpacing ?? 160;
+  const levelSpacing = el.levelSpacing ?? 120;
   const branchSpacing = el.branchSpacing ?? 60;
   const showFinalProb = el.showFinalProb ?? true;
 
@@ -4275,17 +4275,15 @@ function expandProbabilityTree(el: ProbabilityTreeElement): DrawElement[] {
     return p.toFixed(2);
   }
 
-  function countLeaves(branches: ProbabilityTreeBranch[]): number {
-    if (!branches || branches.length === 0) return 1;
-    return branches.reduce((sum, b) => sum + countLeaves(b.children ?? []), 0);
-  }
+  // Each level-1 branch occupies max(1, children.length) leaf slots
+  const leavesPerBranch = el.branches.map(b => Math.max(1, (b.children ?? []).length));
+  const totalLeaves = leavesPerBranch.reduce((s, n) => s + n, 0) || 1;
 
   let nodeIdx = 0;
   let edgeIdx = 0;
   let probLabelIdx = 0;
   let leafIdx = 0;
 
-  const totalLeaves = countLeaves(el.branches);
   const rootY = startY + ((totalLeaves - 1) * branchSpacing) / 2;
   const rootX = startX;
 
@@ -4305,99 +4303,151 @@ function expandProbabilityTree(el: ProbabilityTreeElement): DrawElement[] {
     id: `${id}-label-${nodeIdx - 1}`,
     x: rootX,
     y: rootY,
-    text: el.rootLabel,
+    text: el.rootLabel ?? '',
     size: 12,
     align: 'center' as const,
     color: '#1f2a44',
   });
 
-  function drawBranches(
-    branches: ProbabilityTreeBranch[],
-    parentX: number,
-    parentY: number,
-    level: number,
-    topY: number,
-    cumulativeProb: number,
-  ): void {
-    let currentTopY = topY;
-    for (const branch of branches) {
-      const leaves = countLeaves(branch.children ?? []);
-      const childY = currentTopY + ((leaves - 1) * branchSpacing) / 2;
-      const childX = startX + (level + 1) * levelSpacing;
+  // Draw level-1 branches
+  let currentTopY = startY;
+  for (let bi = 0; bi < el.branches.length; bi++) {
+    const branch = el.branches[bi];
+    const leafCount = leavesPerBranch[bi];
+    const branchY = currentTopY + ((leafCount - 1) * branchSpacing) / 2;
+    const branchX = startX + levelSpacing;
 
-      // Line from parent node edge to child node edge
-      out.push({
-        type: 'line' as const,
-        id: `${id}-edge-${edgeIdx++}`,
-        from: { x: parentX + 35, y: parentY },
-        to: { x: childX - 35, y: childY },
-        color: '#1f2a44',
-        stroke_width: 1.5,
-      });
+    // Edge: root -> branch
+    out.push({
+      type: 'line' as const,
+      id: `${id}-edge-${edgeIdx++}`,
+      from: { x: rootX + 35, y: rootY },
+      to: { x: branchX - 35, y: branchY },
+      color: '#1f2a44',
+      stroke_width: 1.5,
+    });
 
-      // Probability label on the edge
-      const midX = (parentX + 35 + childX - 35) / 2;
-      const midY = (parentY + childY) / 2 - 10;
-      out.push({
-        type: 'text' as const,
-        id: `${id}-prob-${probLabelIdx++}`,
-        x: midX,
-        y: midY,
-        text: toFraction(branch.probability),
-        size: 11,
-        align: 'center' as const,
-        color: '#555555',
-      });
+    // Edge probability label
+    out.push({
+      type: 'text' as const,
+      id: `${id}-prob-${probLabelIdx++}`,
+      x: (rootX + 35 + branchX - 35) / 2,
+      y: (rootY + branchY) / 2 - 10,
+      text: toFraction(branch.probability),
+      size: 11,
+      align: 'center' as const,
+      color: '#555555',
+    });
 
-      // Child node ellipse
-      out.push({
-        type: 'ellipse' as const,
-        id: `${id}-node-${nodeIdx++}`,
-        cx: childX,
-        cy: childY,
-        rx: 35,
-        ry: 18,
-        color: '#1f2a44',
-        stroke_width: 1.5,
-      });
+    // Branch node
+    out.push({
+      type: 'ellipse' as const,
+      id: `${id}-node-${nodeIdx++}`,
+      cx: branchX,
+      cy: branchY,
+      rx: 35,
+      ry: 18,
+      color: '#1f2a44',
+      stroke_width: 1.5,
+    });
+    out.push({
+      type: 'text' as const,
+      id: `${id}-label-${nodeIdx - 1}`,
+      x: branchX,
+      y: branchY,
+      text: branch.label,
+      size: 12,
+      align: 'center' as const,
+      color: '#1f2a44',
+    });
 
-      // Child node label
-      out.push({
-        type: 'text' as const,
-        id: `${id}-label-${nodeIdx - 1}`,
-        x: childX,
-        y: childY,
-        text: branch.label,
-        size: 12,
-        align: 'center' as const,
-        color: '#1f2a44',
-      });
+    const children = branch.children ?? [];
+    if (children.length === 0) {
+      // Leaf at level 1
+      if (showFinalProb) {
+        out.push({
+          type: 'text' as const,
+          id: `${id}-final-${leafIdx++}`,
+          x: branchX + 45,
+          y: branchY,
+          text: `P = ${toFraction(branch.probability)}`,
+          size: 11,
+          align: 'left' as const,
+          color: '#888888',
+        });
+      }
+    } else {
+      // Draw level-2 children
+      let childTopY = currentTopY;
+      for (let ci = 0; ci < children.length; ci++) {
+        const child = children[ci];
+        const childY = childTopY;
+        const childX = startX + 2 * levelSpacing;
 
-      const newCumProb = cumulativeProb * branch.probability;
+        // Edge: branch -> child
+        out.push({
+          type: 'line' as const,
+          id: `${id}-edge-${edgeIdx++}`,
+          from: { x: branchX + 35, y: branchY },
+          to: { x: childX - 35, y: childY },
+          color: '#1f2a44',
+          stroke_width: 1.5,
+        });
 
-      if (!branch.children || branch.children.length === 0) {
-        // Leaf: show cumulative probability
+        // Edge probability label
+        out.push({
+          type: 'text' as const,
+          id: `${id}-prob-${probLabelIdx++}`,
+          x: (branchX + 35 + childX - 35) / 2,
+          y: (branchY + childY) / 2 - 10,
+          text: toFraction(child.probability),
+          size: 11,
+          align: 'center' as const,
+          color: '#555555',
+        });
+
+        // Child node
+        out.push({
+          type: 'ellipse' as const,
+          id: `${id}-node-${nodeIdx++}`,
+          cx: childX,
+          cy: childY,
+          rx: 35,
+          ry: 18,
+          color: '#1f2a44',
+          stroke_width: 1.5,
+        });
+        out.push({
+          type: 'text' as const,
+          id: `${id}-label-${nodeIdx - 1}`,
+          x: childX,
+          y: childY,
+          text: child.label,
+          size: 12,
+          align: 'center' as const,
+          color: '#1f2a44',
+        });
+
         if (showFinalProb) {
+          const cumProb = child.finalProbability ?? branch.probability * child.probability;
           out.push({
             type: 'text' as const,
             id: `${id}-final-${leafIdx++}`,
             x: childX + 45,
             y: childY,
-            text: `P = ${toFraction(newCumProb)}`,
+            text: `P = ${toFraction(cumProb)}`,
             size: 11,
             align: 'left' as const,
             color: '#888888',
           });
         }
-      } else {
-        drawBranches(branch.children, childX, childY, level + 1, currentTopY, newCumProb);
+
+        childTopY += branchSpacing;
       }
-
-      currentTopY += leaves * branchSpacing;
     }
-  }
 
-  drawBranches(el.branches, rootX, rootY, 0, startY, 1);
+    currentTopY += leafCount * branchSpacing;
+  }
 
   return out;
 }
@@ -4426,8 +4476,7 @@ function expandScatterPlot(el: ScatterPlotElement): DrawElement[] {
 
   const points = el.points ?? [];
   const axisColor = '#1f2a44';
-  const pointColor = el.pointColor ?? '#3b82f6';
-  const pointRadius = el.pointRadius ?? 4;
+  const defaultPointColor = el.color ?? '#3b82f6';
 
   // Data bounds with 5% padding
   let xMin = points.length ? Math.min(...points.map(p => p.x)) : 0;
@@ -4602,23 +4651,23 @@ function expandScatterPlot(el: ScatterPlotElement): DrawElement[] {
   points.forEach((pt, i) => {
     const sx = toScreenX(pt.x);
     const sy = toScreenY(pt.y);
+    const ptColor = pt.color ?? defaultPointColor;
+    const ptRadius = pt.size ?? 4;
     out.push({
       type: 'ellipse' as const,
       id: `${id}-point-${i}`,
       cx: sx,
       cy: sy,
-      rx: pointRadius,
-      ry: pointRadius,
-      color: pointColor,
-      stroke_width: 0,
-      fill: pointColor,
+      rx: ptRadius,
+      ry: ptRadius,
+      color: ptColor,
     });
     if (pt.label) {
       out.push({
         type: 'text' as const,
         id: `${id}-point-label-${i}`,
         x: sx,
-        y: sy - pointRadius - 4,
+        y: sy - ptRadius - 4,
         text: pt.label,
         size: 10,
         align: 'center' as const,
@@ -5538,9 +5587,6 @@ export function lowerMathPrimitive(
       return expandScatterPlot(el);
     case 'interval_diagram':
       return expandIntervalDiagram(el, theme);
-    case 'probability_tree':
-    case 'scatter_plot':
-      return [];
     default: {
       const _exhaustive: never = el;
       return [];

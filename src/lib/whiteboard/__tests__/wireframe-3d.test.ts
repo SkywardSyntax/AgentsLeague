@@ -168,8 +168,8 @@ describe('wireframe_3d schema normalization', () => {
       ],
     });
     expect(warnings.length).toBe(0);
-    expect(normalized.elements.length).toBe(1);
-    expect(normalized.elements[0]!.type).toBe('wireframe_3d');
+    expect(normalized!.elements.length).toBe(1);
+    expect(normalized!.elements[0]!.type).toBe('wireframe_3d');
   });
 
   it('rejects missing shape', () => {
@@ -180,7 +180,7 @@ describe('wireframe_3d schema normalization', () => {
       ],
     });
     expect(warnings.length).toBeGreaterThan(0);
-    expect(normalized.elements.length).toBe(0);
+    expect(normalized!.elements.length).toBe(0);
   });
 
   it('rejects invalid shape value', () => {
@@ -191,7 +191,7 @@ describe('wireframe_3d schema normalization', () => {
       ],
     });
     expect(warnings.length).toBeGreaterThan(0);
-    expect(normalized.elements.length).toBe(0);
+    expect(normalized!.elements.length).toBe(0);
   });
 
   it('preserves optional fields', () => {
@@ -215,8 +215,8 @@ describe('wireframe_3d schema normalization', () => {
         },
       ],
     });
-    expect(normalized.elements.length).toBe(1);
-    const el = normalized.elements[0] as Wireframe3dElement;
+    expect(normalized!.elements.length).toBe(1);
+    const el = normalized!.elements[0] as unknown as Wireframe3dElement;
     expect(el.rotationX).toBe(45);
     expect(el.rotationY).toBe(60);
     expect(el.expression).toBe('sin(x)*cos(y)');

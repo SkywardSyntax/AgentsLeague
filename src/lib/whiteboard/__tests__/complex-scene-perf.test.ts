@@ -25,10 +25,10 @@ function makeLayout(elements: DrawElement[]): PlannedSemanticLayout {
   return {
     batchId: 'perf-test',
     stylePreset: 'blueprint_neat',
-    templateUsed: 'freeform',
+    templateUsed: 'freeform_semantic',
     elements,
     anchors: [],
-    semanticBatch: { blocks: [] },
+    semanticBatch: { batch_id: 'perf-test', template: 'freeform_semantic', blocks: [] },
     warnings: [],
   };
 }

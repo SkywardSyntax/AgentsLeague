@@ -197,7 +197,7 @@ describe('Schema contract stability', () => {
     });
 
     it('rejects unknown element type', () => {
-      const invalid = { id: 'e8', type: 'polygon', points: [] };
+      const invalid = { id: 'e8', type: 'nonexistent_shape', points: [] };
       expect(DrawElementSchema.safeParse(invalid).success).toBe(false);
     });
 
