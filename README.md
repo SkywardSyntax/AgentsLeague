@@ -2,7 +2,7 @@
 
 An AI-powered mathematical whiteboard built with Next.js and the OpenAI Responses API. The model streams prose explanations interleaved with structured draw batches that are animated on a 3-layer HTML5 canvas — producing handwritten-style diagrams of functions, coordinate systems, linear algebra, calculus, and statistics.
 
-The app ships 30 first-class `DrawElement` types covering everything from rectangles and arrows to Riemann sums, slope fields, and wireframe 3-D surfaces. A math expression parser with implicit multiplication support lets the model (or a developer) write `sin(2*PI*x) / x` and have it rendered as a smooth, animated curve. Five colour themes, PNG/SVG/clipboard export, and scene sharing via URL round out the feature set.
+The app ships 45 first-class `DrawElement` types across 13 categories — from rectangles and arrows to Riemann sums, Venn diagrams, scatter plots, and geometric constructions. A math expression parser with implicit multiplication support lets the model (or a developer) write `sin(2*PI*x) / x` and have it rendered as a smooth, animated curve. Five colour themes, PNG/SVG/clipboard export, and scene sharing via URL round out the feature set.
 
 Draw payloads are transport-agnostic: the same `applyDrawBatch` pipeline is used whether the batch arrives from the model's SSE stream or from the direct HTTP injection endpoint, guaranteeing consistent validation, normalisation, and rendering regardless of source.
 
@@ -67,7 +67,7 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 
 ## Drawing Element Reference
 
-30 element types across 9 categories:
+45 element types across 13 categories:
 
 ### Basic
 
@@ -88,6 +88,7 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 | `cartesian_axes` | `x, y, width, height, xRange, yRange, xLabel?, yLabel?, gridlines?, style?` | Coordinate grids for function graphs |
 | `number_line` | `x, y, length, min, max, label?, highlights?, intervals?` | 1-D ranges, inequalities |
 | `vector_arrow` | `x, y, dx, dy, label?` | Physics vectors, basis vectors |
+| `coordinate_grid` | `x, y, width, height, xRange, yRange, gridSpacing?` | Standalone grid overlays |
 
 ### Functions & Curves
 
@@ -96,6 +97,7 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 | `function_curve` | `x, y, width, height, xRange, yRange, expression?, points?` | `y = sin(x)`, piecewise functions |
 | `parametric_curve` | `x, y, width, height, xRange, yRange, tMin, tMax, xExpression, yExpression, steps?` | Lissajous curves, spirals |
 | `polar_plot` | `cx, cy, radius, expression, thetaMin?, thetaMax?, steps?, showPolarGrid?` | Rose curves, cardioids |
+| `conic_section` | `cx, cy, a, b, conicType, rotationDeg?` | Ellipses, parabolas, hyperbolas |
 
 ### Calculus
 
@@ -105,6 +107,7 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 | `integral_region` | `x, y, width, height, xRange, yRange, expression?, topPoints?, bottomPoints?, fillColor?, aLabel?, bLabel?` | Shaded area under a curve |
 | `riemann_sum` | `x, y, width, height, xRange, yRange, expression, n?, method?, showFunction?, showAxes?` | Left/right/midpoint sums |
 | `angle_arc` | `x, y, radius, startAngle, endAngle, label?` | Angle markers in geometry |
+| `interval_diagram` | `intervals, x, y, xMin?, xMax?, width?, title?` | Number-line interval notation |
 
 ### Linear Algebra
 
@@ -113,19 +116,25 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 | `matrix_bracket` | `x, y, rows, bracketStyle, cellWidth?, cellHeight?, augmentedAt?` | Matrix display with brackets |
 | `linear_transform` | `x, y, width, height, matrix, vectors?, showBasisVectors?, showOriginalGrid?, gridRange?` | 2-D transformation visualisation |
 
-### Statistics
+### Statistics & Probability
 
 | Type | Key Props | Example Use |
 |------|-----------|-------------|
-| `histogram` | `x, y, width, height, bins: [{label, value, color?}], yMax?, showValues?, showAxes?, xLabel?, yLabel?` | Frequency distributions |
-| `normal_distribution` | `x, y, width, height, mu, sigma, shadeFrom?, shadeTo?, shadeColor?, showMeanLine?, showSigmaLines?, showLabels?` | Bell curves, z-score shading |
+| `histogram` | `x, y, width, height, bins: [{label, value, color?}], yMax?, showValues?` | Frequency distributions |
+| `normal_distribution` | `x, y, width, height, mu, sigma, shadeFrom?, shadeTo?` | Bell curves, z-score shading |
+| `scatter_plot` | `points: [{x, y}], x, y, width?, height?, showRegressionLine?` | Data visualisation with optional regression |
+| `probability_tree` | `branches, x, y, rootLabel?, showFinalProb?` | Multi-level probability trees |
+| `box_plot` | `groups, x, y, width, height, title?, showOutliers?` | Five-number summary diagrams |
+| `comparison_chart` | `categories, series, x, y, width, height, title?` | Side-by-side bar charts |
 
 ### Geometry
 
 | Type | Key Props | Example Use |
 |------|-----------|-------------|
 | `circle_with_radius` | `cx, cy, r, label?, showCenter?, showRadius?, radiusAngle?` | Labeled circles |
-| `triangle_with_angles` | `vertices: [{x, y, label?} × 3], showAngles?, showSides?, sideLabels?, angleLabels?` | Labeled triangles |
+| `triangle_with_angles` | `vertices: [{x, y, label?} × 3], showAngles?, showSides?` | Labeled triangles |
+| `polygon` | `vertices?, sides?, centerX?, centerY?, radius?, showAngles?` | Regular and irregular polygons |
+| `geometric_construction` | `steps: [{type, ...coords}], title?` | Compass-and-ruler style constructions |
 
 ### Differential Equations
 
@@ -143,6 +152,22 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 | `sequence_plot` | `expression, nMin, nMax, x, y, width, height, xRange, yRange, limit?, showLines?` | Sequence convergence plots |
 | `complex_plane` | `points?, vectors?, showUnitCircle?, xRange, yRange, strokeColor?` | Argand diagram with unit circle |
 | `number_theory_grid` | `n, cx, cy, cellSize?, highlights?, showConnections?, modulus?` | Number grid with modular colouring |
+
+### Logic & Discrete Math
+
+| Type | Key Props | Example Use |
+|------|-----------|-------------|
+| `venn_diagram` | `sets: [{label}], x, y, intersectionLabel?, title?` | Set operations, logic |
+| `truth_table` | `variables, outputs, x, y, cellWidth?, cellHeight?` | Propositional logic truth tables |
+
+### Annotation & Layout
+
+| Type | Key Props | Example Use |
+|------|-----------|-------------|
+| `annotation_arrow` | `text, targetX, targetY, labelX, labelY, fontSize?` | Curved annotation arrows with labels |
+| `formula_box` | `formula, x, y, width?, height?, title?` | Boxed LaTeX formulas |
+| `symbol_grid` | `symbols: [{latex, name?}], x, y, columns?` | Symbol reference grids |
+| `equation_system` | `equations: [{tex}], x, y, showBrace?, title?` | Systems of equations with braces |
 
 ---
 
@@ -170,6 +195,25 @@ curl -X POST http://localhost:3000/api/whiteboard/inject \
     "elements": [
       { "type": "rect", "id": "r1", "x": 50, "y": 50, "w": 200, "h": 100, "color": "#3b82f6" },
       { "type": "text", "id": "t1", "x": 100, "y": 90, "text": "Hello from curl" }
+    ]
+  }'
+```
+
+**Math primitive injection (scatter plot with regression):**
+
+```bash
+curl -X POST http://localhost:3000/api/whiteboard/inject \
+  -H "Content-Type: application/json" \
+  -d '{
+    "batch_id": "scatter-demo",
+    "elements": [
+      {
+        "id": "sp1", "type": "scatter_plot",
+        "x": 100, "y": 50, "width": 500, "height": 350,
+        "points": [{"x":1,"y":2},{"x":2,"y":4.1},{"x":3,"y":5.8},{"x":4,"y":8.2},{"x":5,"y":9.7}],
+        "xLabel": "Time", "yLabel": "Growth",
+        "showRegressionLine": true, "title": "Linear Regression"
+      }
     ]
   }'
 ```
@@ -292,7 +336,7 @@ SSE events emitted:
 ```bash
 npm run dev          # Start Next.js dev server
 npm test             # Run Vitest in watch mode
-npm run test:run     # Run all 4 200+ unit tests with coverage
+npm run test:run     # Run all 4 600+ unit tests with coverage
 npm run build        # Production build
 npm run lint         # ESLint
 npm run type-check   # TypeScript type checking (tsc --noEmit)
