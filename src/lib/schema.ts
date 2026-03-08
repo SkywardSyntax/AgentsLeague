@@ -107,6 +107,7 @@ const NumberLineSchema = BaseElementSchema.extend({
   style: StylePresetSchema.optional(),
   highlights: z.array(z.object({
     value: z.number().finite(),
+    color: z.string().max(30).regex(COLOR_REGEX).optional(),
     label: z.string().max(100).optional(),
   })).max(50).optional(),
   intervals: z.array(z.object({
@@ -114,6 +115,11 @@ const NumberLineSchema = BaseElementSchema.extend({
     to: z.number().finite(),
     color: z.string().max(30).regex(COLOR_REGEX).optional(),
   })).max(50).optional(),
+  region: z.object({
+    start: z.number().finite(),
+    end: z.number().finite(),
+    color: z.string().max(30).regex(COLOR_REGEX).optional(),
+  }).optional(),
 });
 
 const VectorArrowSchema = BaseElementSchema.extend({
@@ -294,6 +300,199 @@ const NumberTheoryGridSchema = BaseElementSchema.extend({
   cellSize: z.number().positive().max(200).optional(),
 });
 
+const ConicSectionSchema = BaseElementSchema.extend({
+  type: z.literal('conic_section'),
+  conicType: z.enum(['ellipse', 'hyperbola', 'parabola']),
+  cx: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  cy: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  a: z.number().positive().max(COORD_MAX).optional(),
+  b: z.number().positive().max(COORD_MAX).optional(),
+  p: z.number().positive().max(COORD_MAX).optional(),
+  horizontal: z.boolean().optional(),
+  showFoci: z.boolean().optional(),
+  showDirectrix: z.boolean().optional(),
+  showAsymptotes: z.boolean().optional(),
+  showVertices: z.boolean().optional(),
+  showEquation: z.boolean().optional(),
+  strokeColor: z.string().max(30).regex(COLOR_REGEX).optional(),
+  label: z.string().max(200).optional(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  scale: z.number().positive().max(1000).optional(),
+});
+
+const CoordinateGridSchema = BaseElementSchema.extend({
+  type: z.literal('coordinate_grid'),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX).optional(),
+  height: z.number().positive().max(COORD_MAX).optional(),
+  majorSpacing: z.number().positive().max(COORD_MAX).optional(),
+  minorSpacing: z.number().positive().max(COORD_MAX).optional(),
+  majorColor: z.string().max(50).optional(),
+  minorColor: z.string().max(50).optional(),
+  showAxes: z.boolean().optional(),
+  showLabels: z.boolean().optional(),
+  xMin: z.number().finite().optional(),
+  xMax: z.number().finite().optional(),
+  yMin: z.number().finite().optional(),
+  yMax: z.number().finite().optional(),
+});
+
+const SymbolGridSymbolSchema = z.object({
+  latex: z.string().max(500),
+  name: z.string().max(100).optional(),
+  category: z.string().max(100).optional(),
+});
+
+const SymbolGridSchema = BaseElementSchema.extend({
+  type: z.literal('symbol_grid'),
+  symbols: z.array(SymbolGridSymbolSchema).min(1).max(200),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  columns: z.number().int().positive().max(20).optional(),
+  cellWidth: z.number().positive().max(400).optional(),
+  cellHeight: z.number().positive().max(400).optional(),
+  title: z.string().max(200).optional(),
+  showNames: z.boolean().optional(),
+});
+
+const EquationSystemSchema = BaseElementSchema.extend({
+  type: z.literal('equation_system'),
+  equations: z.array(z.string().max(500)).min(1).max(50),
+  title: z.string().max(200).optional(),
+  showBrace: z.boolean().optional(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  lineSpacing: z.number().positive().max(200).optional(),
+  fontSize: z.number().positive().max(200).optional(),
+});
+
+const ComparisonChartSeriesSchema = z.object({
+  name: z.string().max(100),
+  values: z.array(z.number().finite()).min(1).max(100),
+  color: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+});
+
+const ComparisonChartSchema = BaseElementSchema.extend({
+  type: z.literal('comparison_chart'),
+  categories: z.array(z.string().max(100)).min(1).max(100),
+  series: z.array(ComparisonChartSeriesSchema).min(1).max(20),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX).optional(),
+  height: z.number().positive().max(COORD_MAX).optional(),
+  xLabel: z.string().max(200).optional(),
+  yLabel: z.string().max(200).optional(),
+  title: z.string().max(200).optional(),
+  barPadding: z.number().min(0).max(1).optional(),
+  showValues: z.boolean().optional(),
+  showLegend: z.boolean().optional(),
+  horizontal: z.boolean().optional(),
+});
+
+const BoxPlotGroupSchema = z.object({
+  label: z.string().max(100),
+  min: z.number().finite(),
+  q1: z.number().finite(),
+  median: z.number().finite(),
+  q3: z.number().finite(),
+  max: z.number().finite(),
+  outliers: z.array(z.number().finite()).max(100).optional(),
+  color: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+});
+
+const BoxPlotSchema = BaseElementSchema.extend({
+  type: z.literal('box_plot'),
+  groups: z.array(BoxPlotGroupSchema).min(1).max(50),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX).optional(),
+  height: z.number().positive().max(COORD_MAX).optional(),
+  xLabel: z.string().max(200).optional(),
+  yLabel: z.string().max(200).optional(),
+  title: z.string().max(200).optional(),
+  showMean: z.boolean().optional(),
+  orientation: z.enum(['vertical', 'horizontal']).optional(),
+});
+
+const AnnotationArrowSchema = BaseElementSchema.extend({
+  type: z.literal('annotation_arrow'),
+  text: z.string().max(500),
+  isLatex: z.boolean().optional(),
+  targetX: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  targetY: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  labelX: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  labelY: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  strokeColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  fontSize: z.number().positive().max(200).optional(),
+});
+
+const FormulaBoxSchema = BaseElementSchema.extend({
+  type: z.literal('formula_box'),
+  formula: z.string().max(1000),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX).optional(),
+  height: z.number().positive().max(COORD_MAX).optional(),
+  borderColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  fillColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  padding: z.number().nonnegative().max(200).optional(),
+  title: z.string().max(200).optional(),
+});
+
+const VennDiagramSetSchema = z.object({
+  label: z.string().max(100),
+  color: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+});
+
+const VennDiagramSchema = BaseElementSchema.extend({
+  type: z.literal('venn_diagram'),
+  sets: z.array(VennDiagramSetSchema).min(2).max(3),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  radius: z.number().positive().max(COORD_MAX).optional(),
+  intersectionLabel: z.string().max(200).optional(),
+  leftOnlyLabel: z.string().max(200).optional(),
+  rightOnlyLabel: z.string().max(200).optional(),
+  title: z.string().max(200).optional(),
+});
+
+const TruthTableSchema = BaseElementSchema.extend({
+  type: z.literal('truth_table'),
+  variables: z.array(z.string().max(50)).min(1).max(8),
+  outputs: z.array(z.string().max(200)).min(1).max(20),
+  rows: z.array(z.array(z.boolean())).optional(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  cellWidth: z.number().positive().max(400).optional(),
+  cellHeight: z.number().positive().max(200).optional(),
+  headerColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  trueColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  falseColor: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+});
+
+const IntervalDiagramIntervalSchema = z.object({
+  start: z.number(),
+  end: z.number(),
+  startOpen: z.boolean().optional(),
+  endOpen: z.boolean().optional(),
+  color: z.string().max(60).regex(COLOR_OR_RGBA_REGEX).optional(),
+  label: z.string().max(100).optional(),
+});
+
+const IntervalDiagramSchema = BaseElementSchema.extend({
+  type: z.literal('interval_diagram'),
+  intervals: z.array(IntervalDiagramIntervalSchema).min(1).max(50),
+  xMin: z.number().optional(),
+  xMax: z.number().optional(),
+  x: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  y: z.number().finite().min(COORD_MIN).max(COORD_MAX),
+  width: z.number().positive().max(COORD_MAX).optional(),
+  title: z.string().max(200).optional(),
+  showNotation: z.boolean().optional(),
+});
+
 export const DrawElementSchema = z.discriminatedUnion('type', [
   RectSchema,
   EllipseSchema,
@@ -315,6 +514,17 @@ export const DrawElementSchema = z.discriminatedUnion('type', [
   NormalDistributionSchema,
   ComplexPlaneSchema,
   NumberTheoryGridSchema,
+  ConicSectionSchema,
+  CoordinateGridSchema,
+  SymbolGridSchema,
+  EquationSystemSchema,
+  ComparisonChartSchema,
+  BoxPlotSchema,
+  AnnotationArrowSchema,
+  FormulaBoxSchema,
+  VennDiagramSchema,
+  TruthTableSchema,
+  IntervalDiagramSchema,
 ]);
 
 const BatchSourceSchema = z.enum(['ai-stream', 'injection', 'template']).optional();
@@ -1551,6 +1761,248 @@ export function normalizeDrawBatchPayload(payload: unknown): {
       continue;
     }
 
+    // symbol_grid: pass through with validation (lowered later)
+    if (type === 'symbol_grid') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const rawSymbols = Array.isArray(raw.symbols) ? raw.symbols : null;
+      if (x == null || y == null || !rawSymbols || rawSymbols.length === 0) {
+        warnings.push(`SymbolGrid ${id} has invalid coordinates or empty symbols`);
+        continue;
+      }
+      const symbols: Array<{ latex: string; name?: string; category?: string }> = [];
+      for (const rs of rawSymbols) {
+        const latex = asString((rs as Record<string, unknown>)?.latex);
+        if (latex) {
+          const name = asString((rs as Record<string, unknown>)?.name) ?? undefined;
+          const category = asString((rs as Record<string, unknown>)?.category) ?? undefined;
+          symbols.push({ latex, ...(name ? { name } : {}), ...(category ? { category } : {}) });
+        }
+      }
+      if (symbols.length === 0) {
+        warnings.push(`SymbolGrid ${id} has no valid symbols`);
+        continue;
+      }
+      const columns = asNumber(raw.columns) ?? undefined;
+      const cellWidth = asNumber(raw.cellWidth) ?? undefined;
+      const cellHeight = asNumber(raw.cellHeight) ?? undefined;
+      const title = asString(raw.title) ?? undefined;
+      const showNames = typeof raw.showNames === 'boolean' ? raw.showNames : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        symbols,
+        x,
+        y,
+        ...(columns != null ? { columns } : {}),
+        ...(cellWidth != null ? { cellWidth } : {}),
+        ...(cellHeight != null ? { cellHeight } : {}),
+        ...(title ? { title } : {}),
+        ...(showNames != null ? { showNames } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // equation_system: pass through with validation (lowered later)
+    if (type === 'equation_system') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const rawEquations = Array.isArray(raw.equations) ? raw.equations : null;
+      if (x == null || y == null || !rawEquations || rawEquations.length === 0) {
+        warnings.push(`EquationSystem ${id} has invalid coordinates or empty equations`);
+        continue;
+      }
+      const equations: string[] = [];
+      for (const re of rawEquations) {
+        const s = typeof re === 'string' ? re : null;
+        if (s) equations.push(s);
+      }
+      if (equations.length === 0) {
+        warnings.push(`EquationSystem ${id} has no valid equations`);
+        continue;
+      }
+      const title = asString(raw.title) ?? undefined;
+      const showBrace = typeof raw.showBrace === 'boolean' ? raw.showBrace : undefined;
+      const lineSpacing = asNumber(raw.lineSpacing) ?? undefined;
+      const fontSize = asNumber(raw.fontSize) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        equations,
+        x,
+        y,
+        ...(title ? { title } : {}),
+        ...(showBrace != null ? { showBrace } : {}),
+        ...(lineSpacing != null ? { lineSpacing } : {}),
+        ...(fontSize != null ? { fontSize } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // annotation_arrow: curved callout arrow with text label
+    if (type === 'annotation_arrow') {
+      const text = asString(raw.text);
+      const targetX = asNumber(raw.targetX);
+      const targetY = asNumber(raw.targetY);
+      const labelX = asNumber(raw.labelX);
+      const labelY = asNumber(raw.labelY);
+      if (!text || targetX == null || targetY == null || labelX == null || labelY == null) {
+        warnings.push(`AnnotationArrow ${id} missing required fields (text, targetX/Y, labelX/Y)`);
+        continue;
+      }
+      const fontSize = asNumber(raw.fontSize) ?? undefined;
+      const isLatex = typeof raw.isLatex === 'boolean' ? raw.isLatex : undefined;
+      const strokeColor = asString(raw.strokeColor) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        text,
+        targetX,
+        targetY,
+        labelX,
+        labelY,
+        ...(fontSize != null ? { fontSize } : {}),
+        ...(isLatex != null ? { isLatex } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // formula_box: bordered formula display with optional title
+    if (type === 'formula_box') {
+      const formula = asString(raw.formula);
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      if (!formula || x == null || y == null) {
+        warnings.push(`FormulaBox ${id} missing required fields (formula, x, y)`);
+        continue;
+      }
+      const width = asNumber(raw.width) ?? undefined;
+      const height = asNumber(raw.height) ?? undefined;
+      const fontSize = asNumber(raw.fontSize) ?? undefined;
+      const borderColor = asString(raw.borderColor) ?? undefined;
+      const fillColor = asString(raw.fillColor) ?? undefined;
+      const padding = asNumber(raw.padding) ?? undefined;
+      const title = asString(raw.title) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        formula,
+        x,
+        y,
+        ...(width != null ? { width } : {}),
+        ...(height != null ? { height } : {}),
+        ...(fontSize != null ? { fontSize } : {}),
+        ...(borderColor ? { borderColor } : {}),
+        ...(fillColor ? { fillColor } : {}),
+        ...(padding != null ? { padding } : {}),
+        ...(title ? { title } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // venn_diagram: overlapping circles with set labels
+    if (type === 'venn_diagram') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const rawSets = Array.isArray(raw.sets) ? raw.sets : null;
+      if (x == null || y == null || !rawSets || rawSets.length < 2) {
+        warnings.push(`VennDiagram ${id} missing required fields (x, y, sets with >=2 items)`);
+        continue;
+      }
+      const sets: Array<{ label: string; color?: string }> = [];
+      for (const rs of rawSets) {
+        const label = asString((rs as Record<string, unknown>)?.label);
+        if (label) {
+          const setColor = asString((rs as Record<string, unknown>)?.color) ?? undefined;
+          sets.push({ label, ...(setColor ? { color: setColor } : {}) });
+        }
+      }
+      if (sets.length < 2) {
+        warnings.push(`VennDiagram ${id} needs at least 2 valid sets`);
+        continue;
+      }
+      const radius = asNumber(raw.radius) ?? undefined;
+      const intersectionLabel = asString(raw.intersectionLabel) ?? undefined;
+      const leftOnlyLabel = asString(raw.leftOnlyLabel) ?? undefined;
+      const rightOnlyLabel = asString(raw.rightOnlyLabel) ?? undefined;
+      const title = asString(raw.title) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        sets,
+        x,
+        y,
+        ...(radius != null ? { radius } : {}),
+        ...(intersectionLabel ? { intersectionLabel } : {}),
+        ...(leftOnlyLabel ? { leftOnlyLabel } : {}),
+        ...(rightOnlyLabel ? { rightOnlyLabel } : {}),
+        ...(title ? { title } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
+    // truth_table: logical truth table with auto-generated rows
+    if (type === 'truth_table') {
+      const x = asNumber(raw.x);
+      const y = asNumber(raw.y);
+      const rawVars = Array.isArray(raw.variables) ? raw.variables : null;
+      if (x == null || y == null || !rawVars || rawVars.length === 0) {
+        warnings.push(`TruthTable ${id} missing required fields (x, y, variables)`);
+        continue;
+      }
+      const variables: string[] = [];
+      for (const rv of rawVars) {
+        const s = typeof rv === 'string' ? rv : null;
+        if (s) variables.push(s);
+      }
+      if (variables.length === 0) {
+        warnings.push(`TruthTable ${id} has no valid variables`);
+        continue;
+      }
+      const rawOutputs = Array.isArray(raw.outputs) ? raw.outputs : undefined;
+      const outputs: string[] | undefined = rawOutputs
+        ? rawOutputs.filter((o): o is string => typeof o === 'string')
+        : undefined;
+      const cellWidth = asNumber(raw.cellWidth) ?? undefined;
+      const cellHeight = asNumber(raw.cellHeight) ?? undefined;
+      const headerColor = asString(raw.headerColor) ?? undefined;
+      const trueColor = asString(raw.trueColor) ?? undefined;
+      const falseColor = asString(raw.falseColor) ?? undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (elements as any[]).push({
+        id,
+        type,
+        variables,
+        x,
+        y,
+        ...(outputs && outputs.length > 0 ? { outputs } : {}),
+        ...(cellWidth != null ? { cellWidth } : {}),
+        ...(cellHeight != null ? { cellHeight } : {}),
+        ...(headerColor ? { headerColor } : {}),
+        ...(trueColor ? { trueColor } : {}),
+        ...(falseColor ? { falseColor } : {}),
+        ...(color ? { color } : {}),
+        ...(stroke_width ? { stroke_width } : {}),
+      });
+      continue;
+    }
+
     warnings.push(`Unsupported element type at ${idx}`);
   }
 
@@ -1574,7 +2026,7 @@ export function normalizeDrawBatchPayload(payload: unknown): {
 }
 export const CAPTION_ANCHORS = ['top', 'bottom', 'left', 'right', 'center'] as const;
 export const RELATION_TYPES = ['maps_to', 'explains', 'derived_from', 'points_to'] as const;
-export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'riemann_sum', 'tangent_line', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve', 'complex_plane', 'number_theory_grid'] as const;
+export const DRAW_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'arrow', 'text', 'latex', 'clear', 'cartesian_axes', 'number_line', 'vector_arrow', 'function_curve', 'matrix_bracket', 'linear_transform', 'angle_arc', 'integral_region', 'circle_with_radius', 'triangle_with_angles', 'parametric_curve', 'polar_plot', 'riemann_sum', 'tangent_line', 'histogram', 'normal_distribution', 'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve', 'complex_plane', 'number_theory_grid', 'conic_section', 'coordinate_grid', 'symbol_grid', 'equation_system', 'comparison_chart', 'box_plot', 'annotation_arrow', 'formula_box', 'venn_diagram', 'truth_table', 'interval_diagram'] as const;
 export const LATEX_ALIGN = ['left', 'center', 'right'] as const;
 export const BLOCK_KINDS = ['equation_stack', 'diagram_panel', 'caption', 'root', 'branch', 'tree_node'] as const;
 

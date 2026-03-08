@@ -112,9 +112,11 @@ export interface NumberLineElement extends BaseDrawElement {
   label?: string;
   style?: StylePreset;
   /** Points to highlight with filled dots */
-  highlights?: Array<{ value: number; label?: string }>;
+  highlights?: Array<{ value: number; color?: string; label?: string }>;
   /** Intervals to show as thicker line segments */
   intervals?: Array<{ from: number; to: number; color?: string }>;
+  /** Shaded region on the number line (e.g. where f(x)>0) */
+  region?: { start: number; end: number; color?: string };
 }
 
 export interface VectorArrowElement extends BaseDrawElement {
@@ -571,6 +573,517 @@ export interface NumberTheoryGridElement extends BaseDrawElement {
   cellSize?: number;
 }
 
+export interface ConicSectionElement extends BaseDrawElement {
+  type: 'conic_section';
+  /** Conic type */
+  conicType: 'ellipse' | 'hyperbola' | 'parabola';
+  /** Center x for ellipse/hyperbola, vertex x for parabola (math coords) */
+  cx: number;
+  /** Center y for ellipse/hyperbola, vertex y for parabola (math coords) */
+  cy: number;
+  /** Semi-major axis (ellipse/hyperbola), default 100 */
+  a?: number;
+  /** Semi-minor axis (ellipse/hyperbola), default 60 */
+  b?: number;
+  /** Distance to focus (parabola), default 40 */
+  p?: number;
+  /** Parabola opens right/left (true) or up/down (false), default false */
+  horizontal?: boolean;
+  /** Show foci markers, default true */
+  showFoci?: boolean;
+  /** Show directrix for parabola, default true */
+  showDirectrix?: boolean;
+  /** Show asymptotes for hyperbola, default true */
+  showAsymptotes?: boolean;
+  /** Show vertex markers, default true */
+  showVertices?: boolean;
+  /** Show equation as latex, default true */
+  showEquation?: boolean;
+  strokeColor?: string;
+  label?: string;
+  /** Canvas position of the center */
+  x: number;
+  /** Canvas position of the center */
+  y: number;
+  /** Pixels per unit, default 1 */
+  scale?: number;
+}
+
+export interface CoordinateGridElement extends BaseDrawElement {
+  type: 'coordinate_grid';
+  /** Top-left canvas x */
+  x: number;
+  /** Top-left canvas y */
+  y: number;
+  /** Grid width in pixels, default 600 */
+  width?: number;
+  /** Grid height in pixels, default 400 */
+  height?: number;
+  /** Major gridline spacing in pixels, default 50 */
+  majorSpacing?: number;
+  /** Minor gridline spacing in pixels, default 10 */
+  minorSpacing?: number;
+  /** Major gridline color, default 'rgba(0,0,0,0.2)' */
+  majorColor?: string;
+  /** Minor gridline color, default 'rgba(0,0,0,0.08)' */
+  minorColor?: string;
+  /** Show bold x/y axes, default true */
+  showAxes?: boolean;
+  /** Show numeric labels on major gridlines, default true */
+  showLabels?: boolean;
+  /** Math x-axis min */
+  xMin?: number;
+  /** Math x-axis max */
+  xMax?: number;
+  /** Math y-axis min */
+  yMin?: number;
+  /** Math y-axis max */
+  yMax?: number;
+}
+
+export interface ProbabilityTreeBranch {
+  label: string;
+  probability: number;
+  children?: Array<{
+    label: string;
+    probability: number;
+    finalProbability?: number;
+  }>;
+}
+
+export interface ProbabilityTreeElement extends BaseDrawElement {
+  type: 'probability_tree';
+  /** Root event label */
+  rootLabel?: string;
+  /** Branches: each level is an array of options */
+  branches: ProbabilityTreeBranch[];
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Horizontal spacing between levels (default 120) */
+  levelSpacing?: number;
+  /** Vertical spacing between branches (default 60) */
+  branchSpacing?: number;
+  /** Show P(outcome) at leaf nodes (default true) */
+  showFinalProb?: boolean;
+}
+
+export interface ScatterPlotElement extends BaseDrawElement {
+  type: 'scatter_plot';
+  /** Data points */
+  points: Array<{
+    x: number;
+    y: number;
+    label?: string;
+    color?: string;
+    size?: number;
+  }>;
+  /** Axis bounds (auto-computed from data if omitted) */
+  xMin?: number;
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+  /** Axis labels */
+  xLabel?: string;
+  yLabel?: string;
+  /** Chart title */
+  title?: string;
+  /** Show linear regression line */
+  showRegressionLine?: boolean;
+  /** Regression line color (default '#e74c3c') */
+  regressionColor?: string;
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Plot width (default 400) */
+  width?: number;
+  /** Plot height (default 300) */
+  height?: number;
+}
+
+export interface SymbolGridElement extends BaseDrawElement {
+  type: 'symbol_grid';
+  /** Symbols to display — each with LaTeX and optional description */
+  symbols: Array<{
+    latex: string;
+    name?: string;
+    category?: string;
+  }>;
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Number of columns (default: sqrt(n) rounded) */
+  columns?: number;
+  /** Width of each cell in pixels (default 60) */
+  cellWidth?: number;
+  /** Height of each cell in pixels (default 50) */
+  cellHeight?: number;
+  /** Optional title above the grid */
+  title?: string;
+  /** Show text name below symbol (default true) */
+  showNames?: boolean;
+}
+
+export interface EquationSystemElement extends BaseDrawElement {
+  type: 'equation_system';
+  /** Each equation as a LaTeX string */
+  equations: string[];
+  /** Optional title above the system */
+  title?: string;
+  /** Show a left curly brace (default true) */
+  showBrace?: boolean;
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Vertical gap between equations in pixels (default 35) */
+  lineSpacing?: number;
+  /** Font size for equations (default 16) */
+  fontSize?: number;
+}
+
+export interface ComparisonChartElement extends BaseDrawElement {
+  type: 'comparison_chart';
+  /** X-axis category labels */
+  categories: string[];
+  /** One or more data series; each series has one value per category */
+  series: Array<{
+    name: string;
+    values: number[];
+    color?: string;
+  }>;
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Plot width (default 400) */
+  width?: number;
+  /** Plot height (default 250) */
+  height?: number;
+  /** X-axis label */
+  xLabel?: string;
+  /** Y-axis label */
+  yLabel?: string;
+  /** Chart title */
+  title?: string;
+  /** Padding between category groups, 0-1 (default 0.2) */
+  barPadding?: number;
+  /** Show value above each bar (default false) */
+  showValues?: boolean;
+  /** Show legend (default true if multiple series) */
+  showLegend?: boolean;
+  /** Horizontal bars (default false = vertical) */
+  horizontal?: boolean;
+}
+
+export interface BoxPlotElement extends BaseDrawElement {
+  type: 'box_plot';
+  /** One or more box-and-whisker groups */
+  groups: Array<{
+    label: string;
+    min: number;
+    q1: number;
+    median: number;
+    q3: number;
+    max: number;
+    outliers?: number[];
+    color?: string;
+  }>;
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Plot width (default 400) */
+  width?: number;
+  /** Plot height (default 200) */
+  height?: number;
+  /** X-axis label */
+  xLabel?: string;
+  /** Y-axis label */
+  yLabel?: string;
+  /** Chart title */
+  title?: string;
+  /** Show mean as × marker (default false) */
+  showMean?: boolean;
+  /** Orientation (default 'vertical') */
+  orientation?: 'vertical' | 'horizontal';
+}
+
+export interface AnnotationArrowElement extends BaseDrawElement {
+  type: 'annotation_arrow';
+  /** Annotation text (auto-detects LaTeX) */
+  text: string;
+  /** Force LaTeX rendering */
+  isLatex?: boolean;
+  /** X coordinate of the point being annotated */
+  targetX: number;
+  /** Y coordinate of the point being annotated */
+  targetY: number;
+  /** X coordinate where the annotation label sits */
+  labelX: number;
+  /** Y coordinate where the annotation label sits */
+  labelY: number;
+  /** Stroke color (default '#333') */
+  strokeColor?: string;
+  /** Font size for the label (default 14) */
+  fontSize?: number;
+}
+
+export interface FormulaBoxElement extends BaseDrawElement {
+  type: 'formula_box';
+  /** LaTeX formula, e.g. "\\int_a^b f(x)\\,dx = F(b)-F(a)" */
+  formula: string;
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Box width (auto-computed if omitted) */
+  width?: number;
+  /** Box height (auto-computed if omitted) */
+  height?: number;
+  /** Border color (default '#333') */
+  borderColor?: string;
+  /** Background fill color (default 'rgba(255,255,240,0.95)') */
+  fillColor?: string;
+  /** Padding inside box (default 12) */
+  padding?: number;
+  /** Optional title above formula */
+  title?: string;
+}
+
+export interface VennDiagramElement extends BaseDrawElement {
+  type: 'venn_diagram';
+  /** 2 or 3 sets (circles) */
+  sets: Array<{
+    label: string;
+    color?: string;
+  }>;
+  /** Center X of the whole diagram */
+  x: number;
+  /** Center Y of the whole diagram */
+  y: number;
+  /** Radius of each circle (default 80) */
+  radius?: number;
+  /** Label for the intersection region (2-set: A∩B) */
+  intersectionLabel?: string;
+  /** Label for the left-only region (A\B) */
+  leftOnlyLabel?: string;
+  /** Label for the right-only region (B\A) */
+  rightOnlyLabel?: string;
+  /** Optional diagram title */
+  title?: string;
+}
+
+export interface TruthTableElement extends BaseDrawElement {
+  type: 'truth_table';
+  /** Variable names, e.g. ["P", "Q"] */
+  variables: string[];
+  /** Output column headers (formulas), e.g. ["P∧Q", "P∨Q"] */
+  outputs: string[];
+  /** Custom rows; if omitted, all 2^n combinations are generated */
+  rows?: boolean[][];
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Width of each cell (default 50) */
+  cellWidth?: number;
+  /** Height of each cell (default 25) */
+  cellHeight?: number;
+  /** Header row background color */
+  headerColor?: string;
+  /** Color for T (true) cells */
+  trueColor?: string;
+  /** Color for F (false) cells */
+  falseColor?: string;
+}
+
+export interface AnnotationArrowElement extends BaseDrawElement {
+  type: 'annotation_arrow';
+  /** Text label for the annotation */
+  text: string;
+  /** X coordinate of the point being annotated */
+  targetX: number;
+  /** Y coordinate of the point being annotated */
+  targetY: number;
+  /** X coordinate where the label sits */
+  labelX: number;
+  /** Y coordinate where the label sits */
+  labelY: number;
+  /** Font size (default 16) */
+  fontSize?: number;
+  /** Force LaTeX rendering (auto-detected if omitted) */
+  isLatex?: boolean;
+}
+
+export interface FormulaBoxElement extends BaseDrawElement {
+  type: 'formula_box';
+  /** LaTeX formula string */
+  formula: string;
+  /** Top-left X */
+  x: number;
+  /** Top-left Y */
+  y: number;
+  /** Box width (auto-computed from formula length if omitted) */
+  width?: number;
+  /** Box height (auto-computed if omitted) */
+  height?: number;
+  /** Font size (default 16) */
+  fontSize?: number;
+  /** Border color (default '#333') */
+  borderColor?: string;
+  /** Fill color (default 'rgba(255,255,240,0.95)') */
+  fillColor?: string;
+  /** Inner padding (default 12) */
+  padding?: number;
+  /** Optional title above the formula */
+  title?: string;
+}
+
+export interface VennDiagramElement extends BaseDrawElement {
+  type: 'venn_diagram';
+  /** 2 or 3 sets */
+  sets: Array<{ label: string; color?: string }>;
+  /** Center X */
+  x: number;
+  /** Center Y */
+  y: number;
+  /** Circle radius (default 80) */
+  radius?: number;
+  /** Intersection label */
+  intersectionLabel?: string;
+  /** Left-only region label */
+  leftOnlyLabel?: string;
+  /** Right-only region label */
+  rightOnlyLabel?: string;
+  /** Optional title */
+  title?: string;
+}
+
+export interface TruthTableElement extends BaseDrawElement {
+  type: 'truth_table';
+  /** Variable column names */
+  variables: string[];
+  /** Output formula columns */
+  outputs?: string[];
+  /** Custom rows (auto-generated from variables if omitted) */
+  rows?: Array<Record<string, boolean | string>>;
+  /** Top-left X */
+  x: number;
+  /** Top-left Y */
+  y: number;
+  /** Cell width (default 60) */
+  cellWidth?: number;
+  /** Cell height (default 30) */
+  cellHeight?: number;
+  /** Header row color */
+  headerColor?: string;
+  /** True cell color */
+  trueColor?: string;
+  /** False cell color */
+  falseColor?: string;
+}
+
+export interface PolygonElement extends BaseDrawElement {
+  type: 'polygon';
+  /** Explicit vertices — if provided, draw lines connecting them in order (closed) */
+  vertices?: Array<{ x: number; y: number; label?: string }>;
+  /** Number of sides for a regular polygon (3=triangle, 4=square, 5=pentagon, etc.) */
+  sides?: number;
+  /** Center X for regular polygon */
+  centerX?: number;
+  /** Center Y for regular polygon */
+  centerY?: number;
+  /** Circumradius for regular polygon (default 80) */
+  radius?: number;
+  /** Rotation in degrees for regular polygon (default 0) */
+  rotationDeg?: number;
+  /** Stroke color */
+  strokeColor?: string;
+  /** Fill color (default none) */
+  fillColor?: string;
+  /** Fill opacity (default 0.1) */
+  fillOpacity?: number;
+  /** Draw angle arcs at each vertex */
+  showAngles?: boolean;
+  /** Show side length labels at midpoints */
+  showSideLabels?: boolean;
+  /** Show vertex labels (A, B, C...) offset outward from center */
+  showVertexLabels?: boolean;
+  /** Optional title above the polygon */
+  title?: string;
+}
+
+export interface GeometricConstructionElement extends BaseDrawElement {
+  type: 'geometric_construction';
+  /** Construction steps rendered in order */
+  steps: Array<{
+    type: 'point' | 'line' | 'circle' | 'arc' | 'angle_bisector' | 'perpendicular';
+    /** Point X */
+    x?: number;
+    /** Point Y */
+    y?: number;
+    /** Label for a point or step */
+    label?: string;
+    /** Line/segment start X */
+    x1?: number;
+    /** Line/segment start Y */
+    y1?: number;
+    /** Line/segment end X */
+    x2?: number;
+    /** Line/segment end Y */
+    y2?: number;
+    /** Circle/arc center X */
+    cx?: number;
+    /** Circle/arc center Y */
+    cy?: number;
+    /** Circle/arc radius */
+    r?: number;
+    /** Arc start angle in degrees */
+    startAngle?: number;
+    /** Arc end angle in degrees */
+    endAngle?: number;
+    /** Tick marks on equal segments (1, 2, or 3) */
+    ticks?: number;
+    /** Step color */
+    color?: string;
+    /** Dashed for construction lines */
+    dashed?: boolean;
+  }>;
+  /** Optional title above the construction */
+  title?: string;
+}
+
+export interface IntervalDiagramElement extends BaseDrawElement {
+  type: 'interval_diagram';
+  /** The intervals to display */
+  intervals: Array<{
+    start: number;
+    end: number;
+    startOpen?: boolean;
+    endOpen?: boolean;
+    color?: string;
+    label?: string;
+  }>;
+  /** Axis range left bound (auto from intervals if omitted) */
+  xMin?: number;
+  /** Axis range right bound (auto from intervals if omitted) */
+  xMax?: number;
+  /** Top-left X position */
+  x: number;
+  /** Top-left Y position */
+  y: number;
+  /** Width in pixels (default 400) */
+  width?: number;
+  /** Optional diagram title */
+  title?: string;
+  /** Show interval notation like [-2,3)∪(5,∞) as text below */
+  showNotation?: boolean;
+}
+
 export type DrawElement =
   | RectElement
   | EllipseElement
@@ -601,7 +1114,22 @@ export type DrawElement =
   | SequencePlotElement
   | BezierCurveElement
   | ComplexPlaneElement
-  | NumberTheoryGridElement;
+  | NumberTheoryGridElement
+  | ConicSectionElement
+  | CoordinateGridElement
+  | ProbabilityTreeElement
+  | ScatterPlotElement
+  | SymbolGridElement
+  | EquationSystemElement
+  | ComparisonChartElement
+  | BoxPlotElement
+  | AnnotationArrowElement
+  | FormulaBoxElement
+  | VennDiagramElement
+  | TruthTableElement
+  | PolygonElement
+  | GeometricConstructionElement
+  | IntervalDiagramElement;
 
 /**
  * Exhaustive-check helper for the DrawElement discriminated union.

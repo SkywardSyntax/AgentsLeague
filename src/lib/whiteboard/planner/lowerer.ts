@@ -24,12 +24,18 @@ import type {
   BezierCurveElement,
   ComplexPlaneElement,
   NumberTheoryGridElement,
+  ConicSectionElement,
+  CoordinateGridElement,
+  ProbabilityTreeElement,
+  ScatterPlotElement,
   AnnotationArrowElement,
   FormulaBoxElement,
   VennDiagramElement,
   TruthTableElement,
   SymbolGridElement,
   EquationSystemElement,
+  ComparisonChartElement,
+  BoxPlotElement,
   Point,
 } from '@/types/agent';
 import { assertNeverDrawElement } from '@/types/agent';
@@ -131,6 +137,15 @@ function drawOrderPriority(el: DrawElement): number {
     case 'truth_table':
     case 'symbol_grid':
     case 'equation_system':
+    case 'conic_section':
+    case 'coordinate_grid':
+    case 'comparison_chart':
+    case 'box_plot':
+    case 'probability_tree':
+    case 'scatter_plot':
+    case 'polygon':
+    case 'geometric_construction':
+    case 'interval_diagram':
       return 0; // math primitives render at shape level
     default:
       // Exhaustive check — compile-time error when a new DrawElement variant is added.
@@ -2998,6 +3013,144 @@ function expandFormulaBox(el: FormulaBoxElement): DrawElement[] {
 }
 
 // ---------------------------------------------------------------------------
+// Venn diagram expansion (stub — produces label-only placeholders)
+// ---------------------------------------------------------------------------
+
+function expandVennDiagram(el: VennDiagramElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const r = el.radius ?? 80;
+  const cx = el.x;
+  const cy = el.y;
+  const sets = el.sets ?? [];
+  const sw = el.stroke_width ?? 2;
+  const baseColor = el.color ?? '#1f2a44';
+
+  // Draw circles for each set
+  const offsets = sets.length === 3
+    ? [{ dx: -r * 0.5, dy: -r * 0.3 }, { dx: r * 0.5, dy: -r * 0.3 }, { dx: 0, dy: r * 0.4 }]
+    : [{ dx: -r * 0.4, dy: 0 }, { dx: r * 0.4, dy: 0 }];
+
+  sets.forEach((s, i) => {
+    const off = offsets[i] ?? { dx: 0, dy: 0 };
+    const sc = cx + off.dx;
+    const sy = cy + off.dy;
+    const setColor = s.color ?? baseColor;
+    // Draw circle as an ellipse
+    out.push({
+      id: `${id}-circle-${i}`,
+      type: 'ellipse' as const,
+      x: sc - r,
+      y: sy - r,
+      w: r * 2,
+      h: r * 2,
+      color: setColor,
+      stroke_width: sw,
+      fill: 'transparent',
+    });
+    // Set label
+    out.push({
+      id: `${id}-label-${i}`,
+      type: 'text' as const,
+      x: sc + off.dx * 0.6,
+      y: sy + off.dy * 0.6 - 10,
+      text: s.label,
+      fontSize: 14,
+      color: setColor,
+    });
+  });
+
+  // Intersection label
+  if (el.intersectionLabel) {
+    out.push({
+      id: `${id}-intersection`,
+      type: 'text' as const,
+      x: cx,
+      y: cy,
+      text: el.intersectionLabel,
+      fontSize: 12,
+      color: baseColor,
+    });
+  }
+
+  // Title
+  if (el.title) {
+    out.push({
+      id: `${id}-title`,
+      type: 'text' as const,
+      x: cx,
+      y: cy - r - 30,
+      text: el.title,
+      fontSize: 16,
+      color: baseColor,
+    });
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Truth table expansion (stub — produces grid of text elements)
+// ---------------------------------------------------------------------------
+
+function expandTruthTable(el: TruthTableElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const vars = el.variables ?? [];
+  const outputs = el.outputs ?? [];
+  const cw = el.cellWidth ?? 60;
+  const ch = el.cellHeight ?? 30;
+  const headerColor = el.headerColor ?? '#2c3e50';
+  const baseColor = el.color ?? '#333';
+  const cols = [...vars, ...outputs];
+
+  // Header row
+  cols.forEach((col, ci) => {
+    out.push({
+      id: `${id}-hdr-${ci}`,
+      type: 'text' as const,
+      x: el.x + ci * cw + cw / 2,
+      y: el.y + ch / 2,
+      text: col,
+      fontSize: 14,
+      color: headerColor,
+    });
+  });
+
+  // Header bottom line
+  out.push({
+    id: `${id}-hdr-line`,
+    type: 'line' as const,
+    x1: el.x,
+    y1: el.y + ch,
+    x2: el.x + cols.length * cw,
+    y2: el.y + ch,
+    color: baseColor,
+    stroke_width: 1,
+  });
+
+  // Generate rows (2^n)
+  const nRows = Math.pow(2, vars.length);
+  for (let r = 0; r < nRows && r < 32; r++) {
+    const rowY = el.y + (r + 1) * ch + ch / 2;
+    vars.forEach((_, vi) => {
+      const val = (r >> (vars.length - 1 - vi)) & 1;
+      out.push({
+        id: `${id}-r${r}-c${vi}`,
+        type: 'text' as const,
+        x: el.x + vi * cw + cw / 2,
+        y: rowY,
+        text: val ? 'T' : 'F',
+        fontSize: 13,
+        color: val ? (el.trueColor ?? '#27ae60') : (el.falseColor ?? '#e74c3c'),
+      });
+    });
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Symbol grid expansion
 // ---------------------------------------------------------------------------
 
@@ -3145,6 +3298,317 @@ function expandEquationSystem(el: EquationSystemElement): DrawElement[] {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Comparison chart expansion
+// ---------------------------------------------------------------------------
+
+const COMPARISON_CHART_COLORS = ['#4a90d9', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#3498db'];
+
+function expandComparisonChart(el: ComparisonChartElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const id = el.id;
+  const W = el.width ?? 400;
+  const H = el.height ?? 250;
+  const horizontal = el.horizontal ?? false;
+  const barPadding = el.barPadding ?? 0.2;
+  const showValues = el.showValues ?? false;
+  const seriesCount = el.series.length;
+  const catCount = el.categories.length;
+  const showLegend = el.showLegend ?? (seriesCount > 1);
+
+  if (catCount === 0 || seriesCount === 0) return result;
+
+  // Find max value for scaling
+  let maxVal = 0;
+  for (const s of el.series) {
+    for (const v of s.values) {
+      if (v > maxVal) maxVal = v;
+    }
+  }
+  maxVal = maxVal * 1.2 || 1;
+
+  if (horizontal) {
+    // Horizontal bars: categories along Y, values along X
+    const groupHeight = H / catCount;
+    const padPx = groupHeight * barPadding;
+    const usable = groupHeight - padPx;
+    const barH = usable / seriesCount;
+
+    // X-axis (bottom)
+    result.push({ id: `${id}-x-axis`, type: 'line', from: { x: el.x, y: el.y + H }, to: { x: el.x + W, y: el.y + H }, color: '#333', stroke_width: 2 });
+    // Y-axis (left)
+    result.push({ id: `${id}-y-axis`, type: 'line', from: { x: el.x, y: el.y }, to: { x: el.x, y: el.y + H }, color: '#333', stroke_width: 2 });
+
+    for (let ci = 0; ci < catCount; ci++) {
+      const groupY = el.y + ci * groupHeight + padPx / 2;
+      // Category label
+      result.push({ id: `${id}-clbl-${ci}`, type: 'text', x: el.x - 8, y: groupY + usable / 2, text: el.categories[ci]!, size: 11, color: '#333', align: 'right' as const });
+
+      for (let si = 0; si < seriesCount; si++) {
+        const val = el.series[si]!.values[ci] ?? 0;
+        const barW = maxVal > 0 ? (val / maxVal) * W : 0;
+        const by = groupY + si * barH;
+        const barColor = el.series[si]!.color ?? COMPARISON_CHART_COLORS[si % COMPARISON_CHART_COLORS.length]!;
+
+        result.push({ id: `${id}-bar-${ci}-${si}`, type: 'rect', x: el.x, y: by, w: Math.max(1, barW), h: Math.max(1, barH - 1), color: barColor, stroke_width: 1 });
+
+        if (showValues) {
+          result.push({ id: `${id}-val-${ci}-${si}`, type: 'text', x: el.x + barW + 4, y: by + barH / 2, text: String(val), size: 10, color: '#333' });
+        }
+      }
+    }
+
+    // X-axis ticks
+    const tickCount = 5;
+    for (let t = 0; t <= tickCount; t++) {
+      const tickVal = (maxVal / tickCount) * t;
+      const tickX = el.x + (tickVal / maxVal) * W;
+      result.push({ id: `${id}-xtick-${t}`, type: 'line', from: { x: tickX, y: el.y + H }, to: { x: tickX, y: el.y + H + 4 }, color: '#333', stroke_width: 1 });
+      result.push({ id: `${id}-xtick-lbl-${t}`, type: 'text', x: tickX, y: el.y + H + 14, text: tickVal % 1 === 0 ? String(tickVal) : tickVal.toFixed(1), size: 10, color: '#666' });
+    }
+  } else {
+    // Vertical bars (default)
+    const groupWidth = W / catCount;
+    const padPx = groupWidth * barPadding;
+    const usable = groupWidth - padPx;
+    const barW = usable / seriesCount;
+
+    // X-axis
+    result.push({ id: `${id}-x-axis`, type: 'line', from: { x: el.x, y: el.y + H }, to: { x: el.x + W, y: el.y + H }, color: '#333', stroke_width: 2 });
+    // Y-axis
+    result.push({ id: `${id}-y-axis`, type: 'line', from: { x: el.x, y: el.y }, to: { x: el.x, y: el.y + H }, color: '#333', stroke_width: 2 });
+
+    for (let ci = 0; ci < catCount; ci++) {
+      const groupX = el.x + ci * groupWidth + padPx / 2;
+      // Category label
+      result.push({ id: `${id}-clbl-${ci}`, type: 'text', x: groupX + usable / 2, y: el.y + H + 16, text: el.categories[ci]!, size: 11, color: '#333' });
+
+      for (let si = 0; si < seriesCount; si++) {
+        const val = el.series[si]!.values[ci] ?? 0;
+        const barH = maxVal > 0 ? (val / maxVal) * H : 0;
+        const bx = groupX + si * barW;
+        const by = el.y + H - barH;
+        const barColor = el.series[si]!.color ?? COMPARISON_CHART_COLORS[si % COMPARISON_CHART_COLORS.length]!;
+
+        result.push({ id: `${id}-bar-${ci}-${si}`, type: 'rect', x: bx, y: by, w: Math.max(1, barW - 1), h: Math.max(1, barH), color: barColor, stroke_width: 1 });
+
+        if (showValues) {
+          result.push({ id: `${id}-val-${ci}-${si}`, type: 'text', x: bx + barW / 2, y: by - 8, text: String(val), size: 10, color: '#333' });
+        }
+      }
+    }
+
+    // Y-axis ticks
+    const tickCount = 5;
+    for (let t = 0; t <= tickCount; t++) {
+      const tickVal = (maxVal / tickCount) * t;
+      const tickY = el.y + H - (tickVal / maxVal) * H;
+      result.push({ id: `${id}-ytick-${t}`, type: 'line', from: { x: el.x - 4, y: tickY }, to: { x: el.x, y: tickY }, color: '#333', stroke_width: 1 });
+      result.push({ id: `${id}-ytick-lbl-${t}`, type: 'text', x: el.x - 10, y: tickY, text: tickVal % 1 === 0 ? String(tickVal) : tickVal.toFixed(1), size: 10, color: '#666' });
+    }
+  }
+
+  // Title
+  if (el.title) {
+    result.push({ id: `${id}-title`, type: 'text', x: el.x + W / 2, y: el.y - 16, text: el.title, size: 16, color: '#333' });
+  }
+
+  // Axis labels
+  if (el.xLabel) {
+    result.push({ id: `${id}-xlabel`, type: 'text', x: el.x + W / 2, y: el.y + H + 34, text: el.xLabel, size: 14, color: '#333' });
+  }
+  if (el.yLabel) {
+    result.push({ id: `${id}-ylabel`, type: 'text', x: el.x - 30, y: el.y + H / 2, text: el.yLabel, size: 14, color: '#333' });
+  }
+
+  // Legend
+  if (showLegend) {
+    const legendX = el.x + W + 10;
+    for (let si = 0; si < seriesCount; si++) {
+      const s = el.series[si]!;
+      const ly = el.y + si * 20;
+      const legendColor = s.color ?? COMPARISON_CHART_COLORS[si % COMPARISON_CHART_COLORS.length]!;
+      result.push({ id: `${id}-leg-swatch-${si}`, type: 'rect', x: legendX, y: ly, w: 12, h: 12, color: legendColor, stroke_width: 1 });
+      result.push({ id: `${id}-leg-lbl-${si}`, type: 'text', x: legendX + 16, y: ly + 6, text: s.name, size: 11, color: '#333' });
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Box plot expansion
+// ---------------------------------------------------------------------------
+
+function expandBoxPlot(el: BoxPlotElement): DrawElement[] {
+  const result: DrawElement[] = [];
+  const id = el.id;
+  const W = el.width ?? 400;
+  const H = el.height ?? 200;
+  const groups = el.groups;
+  const vertical = (el.orientation ?? 'vertical') === 'vertical';
+  const showMean = el.showMean ?? false;
+
+  if (groups.length === 0) return result;
+
+  // Compute global value range across all groups (including outliers)
+  let globalMin = Infinity;
+  let globalMax = -Infinity;
+  for (const g of groups) {
+    globalMin = Math.min(globalMin, g.min);
+    globalMax = Math.max(globalMax, g.max);
+    if (g.outliers) {
+      for (const o of g.outliers) {
+        globalMin = Math.min(globalMin, o);
+        globalMax = Math.max(globalMax, o);
+      }
+    }
+  }
+  const dataRange = globalMax - globalMin || 1;
+  const padding = dataRange * 0.1;
+  const rangeMin = globalMin - padding;
+  const rangeMax = globalMax + padding;
+  const rangeSpan = rangeMax - rangeMin || 1;
+
+  // Axes
+  if (vertical) {
+    // Y-axis
+    result.push({ id: `${id}-y-axis`, type: 'line', from: { x: el.x, y: el.y }, to: { x: el.x, y: el.y + H }, color: '#333', stroke_width: 2 });
+    // X-axis
+    result.push({ id: `${id}-x-axis`, type: 'line', from: { x: el.x, y: el.y + H }, to: { x: el.x + W, y: el.y + H }, color: '#333', stroke_width: 2 });
+  } else {
+    // X-axis
+    result.push({ id: `${id}-x-axis`, type: 'line', from: { x: el.x, y: el.y + H }, to: { x: el.x + W, y: el.y + H }, color: '#333', stroke_width: 2 });
+    // Y-axis
+    result.push({ id: `${id}-y-axis`, type: 'line', from: { x: el.x, y: el.y }, to: { x: el.x, y: el.y + H }, color: '#333', stroke_width: 2 });
+  }
+
+  // Y-axis ticks (value axis)
+  const tickCount = 5;
+  for (let t = 0; t <= tickCount; t++) {
+    const tickVal = rangeMin + (rangeSpan / tickCount) * t;
+    if (vertical) {
+      const tickY = el.y + H - ((tickVal - rangeMin) / rangeSpan) * H;
+      result.push({ id: `${id}-ytick-${t}`, type: 'line', from: { x: el.x - 4, y: tickY }, to: { x: el.x, y: tickY }, color: '#333', stroke_width: 1 });
+      result.push({ id: `${id}-ytick-lbl-${t}`, type: 'text', x: el.x - 10, y: tickY, text: tickVal % 1 === 0 ? String(Math.round(tickVal)) : tickVal.toFixed(1), size: 10, color: '#666' });
+    } else {
+      const tickX = el.x + ((tickVal - rangeMin) / rangeSpan) * W;
+      result.push({ id: `${id}-xtick-${t}`, type: 'line', from: { x: tickX, y: el.y + H }, to: { x: tickX, y: el.y + H + 4 }, color: '#333', stroke_width: 1 });
+      result.push({ id: `${id}-xtick-lbl-${t}`, type: 'text', x: tickX, y: el.y + H + 14, text: tickVal % 1 === 0 ? String(Math.round(tickVal)) : tickVal.toFixed(1), size: 10, color: '#666' });
+    }
+  }
+
+  const groupCount = groups.length;
+  const slotSize = vertical ? W / groupCount : H / groupCount;
+  const boxThickness = slotSize * 0.5;
+
+  for (let gi = 0; gi < groupCount; gi++) {
+    const g = groups[gi]!;
+    const defaultColor = g.color ?? '#4a90d9';
+    const toVal = (v: number) => (v - rangeMin) / rangeSpan;
+
+    if (vertical) {
+      const centerX = el.x + (gi + 0.5) * slotSize;
+      const halfBox = boxThickness / 2;
+
+      const yQ1 = el.y + H - toVal(g.q1) * H;
+      const yQ3 = el.y + H - toVal(g.q3) * H;
+      const yMed = el.y + H - toVal(g.median) * H;
+      const yMin = el.y + H - toVal(g.min) * H;
+      const yMax = el.y + H - toVal(g.max) * H;
+
+      // Box (Q1 to Q3)
+      result.push({ id: `${id}-box-${gi}`, type: 'rect', x: centerX - halfBox, y: yQ3, w: boxThickness, h: yQ1 - yQ3, color: defaultColor, stroke_width: 2 });
+
+      // Median line
+      result.push({ id: `${id}-median-${gi}`, type: 'line', from: { x: centerX - halfBox, y: yMed }, to: { x: centerX + halfBox, y: yMed }, color: '#c0392b', stroke_width: 3 });
+
+      // Lower whisker (min to Q1)
+      result.push({ id: `${id}-wlo-${gi}`, type: 'line', from: { x: centerX, y: yQ1 }, to: { x: centerX, y: yMin }, color: defaultColor, stroke_width: 1 });
+      result.push({ id: `${id}-wlo-cap-${gi}`, type: 'line', from: { x: centerX - halfBox * 0.5, y: yMin }, to: { x: centerX + halfBox * 0.5, y: yMin }, color: defaultColor, stroke_width: 1 });
+
+      // Upper whisker (Q3 to max)
+      result.push({ id: `${id}-whi-${gi}`, type: 'line', from: { x: centerX, y: yQ3 }, to: { x: centerX, y: yMax }, color: defaultColor, stroke_width: 1 });
+      result.push({ id: `${id}-whi-cap-${gi}`, type: 'line', from: { x: centerX - halfBox * 0.5, y: yMax }, to: { x: centerX + halfBox * 0.5, y: yMax }, color: defaultColor, stroke_width: 1 });
+
+      // Outliers
+      if (g.outliers) {
+        for (let oi = 0; oi < g.outliers.length; oi++) {
+          const oy = el.y + H - toVal(g.outliers[oi]!) * H;
+          result.push({ id: `${id}-outlier-${gi}-${oi}`, type: 'ellipse', cx: centerX, cy: oy, rx: 3, ry: 3, color: '#e67e22', stroke_width: 1 });
+        }
+      }
+
+      // Mean marker
+      if (showMean) {
+        const mean = (g.min + g.q1 + g.median + g.q3 + g.max) / 5;
+        const yMean = el.y + H - toVal(mean) * H;
+        result.push({ id: `${id}-mean-${gi}`, type: 'text', x: centerX, y: yMean, text: '×', size: 14, color: '#333' });
+      }
+
+      // Group label
+      result.push({ id: `${id}-glbl-${gi}`, type: 'text', x: centerX, y: el.y + H + 16, text: g.label, size: 11, color: '#333' });
+    } else {
+      // Horizontal orientation
+      const centerY = el.y + (gi + 0.5) * slotSize;
+      const halfBox = boxThickness / 2;
+
+      const xQ1 = el.x + toVal(g.q1) * W;
+      const xQ3 = el.x + toVal(g.q3) * W;
+      const xMed = el.x + toVal(g.median) * W;
+      const xMin = el.x + toVal(g.min) * W;
+      const xMax = el.x + toVal(g.max) * W;
+
+      // Box (Q1 to Q3)
+      result.push({ id: `${id}-box-${gi}`, type: 'rect', x: xQ1, y: centerY - halfBox, w: xQ3 - xQ1, h: boxThickness, color: defaultColor, stroke_width: 2 });
+
+      // Median line
+      result.push({ id: `${id}-median-${gi}`, type: 'line', from: { x: xMed, y: centerY - halfBox }, to: { x: xMed, y: centerY + halfBox }, color: '#c0392b', stroke_width: 3 });
+
+      // Lower whisker
+      result.push({ id: `${id}-wlo-${gi}`, type: 'line', from: { x: xMin, y: centerY }, to: { x: xQ1, y: centerY }, color: defaultColor, stroke_width: 1 });
+      result.push({ id: `${id}-wlo-cap-${gi}`, type: 'line', from: { x: xMin, y: centerY - halfBox * 0.5 }, to: { x: xMin, y: centerY + halfBox * 0.5 }, color: defaultColor, stroke_width: 1 });
+
+      // Upper whisker
+      result.push({ id: `${id}-whi-${gi}`, type: 'line', from: { x: xQ3, y: centerY }, to: { x: xMax, y: centerY }, color: defaultColor, stroke_width: 1 });
+      result.push({ id: `${id}-whi-cap-${gi}`, type: 'line', from: { x: xMax, y: centerY - halfBox * 0.5 }, to: { x: xMax, y: centerY + halfBox * 0.5 }, color: defaultColor, stroke_width: 1 });
+
+      // Outliers
+      if (g.outliers) {
+        for (let oi = 0; oi < g.outliers.length; oi++) {
+          const ox = el.x + toVal(g.outliers[oi]!) * W;
+          result.push({ id: `${id}-outlier-${gi}-${oi}`, type: 'ellipse', cx: ox, cy: centerY, rx: 3, ry: 3, color: '#e67e22', stroke_width: 1 });
+        }
+      }
+
+      // Mean marker
+      if (showMean) {
+        const mean = (g.min + g.q1 + g.median + g.q3 + g.max) / 5;
+        const xMean = el.x + toVal(mean) * W;
+        result.push({ id: `${id}-mean-${gi}`, type: 'text', x: xMean, y: centerY, text: '×', size: 14, color: '#333' });
+      }
+
+      // Group label
+      result.push({ id: `${id}-glbl-${gi}`, type: 'text', x: el.x - 8, y: centerY, text: g.label, size: 11, color: '#333', align: 'right' as const });
+    }
+  }
+
+  // Title
+  if (el.title) {
+    result.push({ id: `${id}-title`, type: 'text', x: el.x + W / 2, y: el.y - 16, text: el.title, size: 16, color: '#333' });
+  }
+
+  // Axis labels
+  if (el.xLabel) {
+    result.push({ id: `${id}-xlabel`, type: 'text', x: el.x + W / 2, y: el.y + H + 34, text: el.xLabel, size: 14, color: '#333' });
+  }
+  if (el.yLabel) {
+    result.push({ id: `${id}-ylabel`, type: 'text', x: el.x - 30, y: el.y + H / 2, text: el.yLabel, size: 14, color: '#333' });
+  }
+
+  return result;
+}
+
 function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): DrawElement[] {
   const result: DrawElement[] = [];
   let curveIndex = 0;
@@ -3209,6 +3673,18 @@ function expandMathPrimitives(elements: DrawElement[], theme?: ColorTheme): Draw
       result.push(...expandVennDiagram(el));
     } else if (el.type === 'truth_table') {
       result.push(...expandTruthTable(el));
+    } else if (el.type === 'conic_section') {
+      result.push(...expandConicSection(el));
+    } else if (el.type === 'coordinate_grid') {
+      result.push(...expandCoordinateGrid(el));
+    } else if (el.type === 'symbol_grid') {
+      result.push(...expandSymbolGrid(el));
+    } else if (el.type === 'equation_system') {
+      result.push(...expandEquationSystem(el));
+    } else if (el.type === 'comparison_chart') {
+      result.push(...expandComparisonChart(el));
+    } else if (el.type === 'box_plot') {
+      result.push(...expandBoxPlot(el));
     } else {
       result.push(el);
     }
@@ -3425,13 +3901,533 @@ function expandNumberTheoryGrid(el: NumberTheoryGridElement): DrawElement[] {
   return out;
 }
 
-/**
- * Lower a single math primitive element to basic DrawElements.
- * Exported for use in semantic-to-strokes.ts as a fallback when
- * elements arrive without having been through the planner lowering pass.
- */
+// ---------------------------------------------------------------------------
+// Conic section expansion
+// ---------------------------------------------------------------------------
+
+function expandConicSection(el: ConicSectionElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const scale = el.scale ?? 1;
+  const curveColor = el.strokeColor ?? el.color ?? '#1f2a44';
+  const sw = el.stroke_width ?? 2;
+  const showFoci = el.showFoci !== false;
+  const showVertices = el.showVertices !== false;
+  const showEquation = el.showEquation !== false;
+  const steps = 200;
+
+  // Convert math coordinates to canvas pixels
+  const cx = el.x;
+  const cy = el.y;
+  const toCanvas = (mx: number, my: number): Point => ({
+    x: cx + mx * scale,
+    y: cy - my * scale, // canvas y is inverted
+  });
+
+  if (el.conicType === 'ellipse') {
+    const a = (el.a ?? 100) * scale;
+    const b = (el.b ?? 60) * scale;
+    const c = Math.sqrt(Math.abs(a * a - b * b));
+
+    // Parametric ellipse
+    for (let i = 0; i < steps; i++) {
+      const t0 = (i / steps) * 2 * Math.PI;
+      const t1 = ((i + 1) / steps) * 2 * Math.PI;
+      out.push({
+        id: `${id}-seg-${i}`,
+        type: 'line',
+        from: { x: cx + a * Math.cos(t0), y: cy - b * Math.sin(t0) },
+        to: { x: cx + a * Math.cos(t1), y: cy - b * Math.sin(t1) },
+        color: curveColor,
+        stroke_width: sw,
+      });
+    }
+
+    // Foci at (±c, 0) relative to center
+    if (showFoci) {
+      const fociColor = '#dc2626';
+      for (const sign of [-1, 1]) {
+        out.push({
+          id: `${id}-focus-${sign > 0 ? 'p' : 'n'}`,
+          type: 'ellipse',
+          cx: cx + sign * c,
+          cy,
+          rx: 4,
+          ry: 4,
+          color: fociColor,
+          fillColor: fociColor,
+        });
+        out.push({
+          id: `${id}-focus-${sign > 0 ? 'p' : 'n'}-label`,
+          type: 'text',
+          x: cx + sign * c,
+          y: cy + 12,
+          text: `F${sign > 0 ? '₂' : '₁'}`,
+          size: 12,
+          color: fociColor,
+        });
+      }
+    }
+
+    // Vertices at (±a, 0)
+    if (showVertices) {
+      for (const sign of [-1, 1]) {
+        out.push({
+          id: `${id}-vertex-${sign > 0 ? 'p' : 'n'}`,
+          type: 'ellipse',
+          cx: cx + sign * a,
+          cy,
+          rx: 3,
+          ry: 3,
+          color: curveColor,
+          fillColor: curveColor,
+        });
+      }
+    }
+
+    if (showEquation) {
+      const aVal = el.a ?? 100;
+      const bVal = el.b ?? 60;
+      out.push({
+        id: `${id}-equation`,
+        type: 'latex',
+        x: cx - a,
+        y: cy + b + 20,
+        tex: `\\frac{x^2}{${aVal}^2}+\\frac{y^2}{${bVal}^2}=1`,
+        fontSize: 16,
+      });
+    }
+  } else if (el.conicType === 'hyperbola') {
+    const a = (el.a ?? 100) * scale;
+    const b = (el.b ?? 60) * scale;
+    const c = Math.sqrt(a * a + b * b);
+    const showAsymptotes = el.showAsymptotes !== false;
+    const tRange = 2.5;
+
+    // Right branch: (a·cosh(t), b·sinh(t))
+    for (let i = 0; i < steps; i++) {
+      const t0 = -tRange + (i / steps) * 2 * tRange;
+      const t1 = -tRange + ((i + 1) / steps) * 2 * tRange;
+      out.push({
+        id: `${id}-right-${i}`,
+        type: 'line',
+        from: { x: cx + a * Math.cosh(t0), y: cy - b * Math.sinh(t0) },
+        to: { x: cx + a * Math.cosh(t1), y: cy - b * Math.sinh(t1) },
+        color: curveColor,
+        stroke_width: sw,
+      });
+    }
+
+    // Left branch: (-a·cosh(t), b·sinh(t))
+    for (let i = 0; i < steps; i++) {
+      const t0 = -tRange + (i / steps) * 2 * tRange;
+      const t1 = -tRange + ((i + 1) / steps) * 2 * tRange;
+      out.push({
+        id: `${id}-left-${i}`,
+        type: 'line',
+        from: { x: cx - a * Math.cosh(t0), y: cy - b * Math.sinh(t0) },
+        to: { x: cx - a * Math.cosh(t1), y: cy - b * Math.sinh(t1) },
+        color: curveColor,
+        stroke_width: sw,
+      });
+    }
+
+    // Asymptotes y = ±(b/a)x
+    if (showAsymptotes) {
+      const extent = Math.max(a, b) * 2;
+      const asymColor = '#6b7280';
+      out.push({
+        id: `${id}-asym-pos`,
+        type: 'line',
+        from: { x: cx - extent, y: cy + (b / a) * extent },
+        to: { x: cx + extent, y: cy - (b / a) * extent },
+        color: asymColor,
+        stroke_width: 1,
+        lineStyle: 'dashed' as const,
+      });
+      out.push({
+        id: `${id}-asym-neg`,
+        type: 'line',
+        from: { x: cx - extent, y: cy - (b / a) * extent },
+        to: { x: cx + extent, y: cy + (b / a) * extent },
+        color: asymColor,
+        stroke_width: 1,
+        lineStyle: 'dashed' as const,
+      });
+    }
+
+    // Foci at (±c, 0)
+    if (showFoci) {
+      const fociColor = '#dc2626';
+      for (const sign of [-1, 1]) {
+        out.push({
+          id: `${id}-focus-${sign > 0 ? 'p' : 'n'}`,
+          type: 'ellipse',
+          cx: cx + sign * c,
+          cy,
+          rx: 4,
+          ry: 4,
+          color: fociColor,
+          fillColor: fociColor,
+        });
+        out.push({
+          id: `${id}-focus-${sign > 0 ? 'p' : 'n'}-label`,
+          type: 'text',
+          x: cx + sign * c,
+          y: cy + 12,
+          text: `F${sign > 0 ? '₂' : '₁'}`,
+          size: 12,
+          color: fociColor,
+        });
+      }
+    }
+
+    // Vertices at (±a, 0)
+    if (showVertices) {
+      for (const sign of [-1, 1]) {
+        out.push({
+          id: `${id}-vertex-${sign > 0 ? 'p' : 'n'}`,
+          type: 'ellipse',
+          cx: cx + sign * a,
+          cy,
+          rx: 3,
+          ry: 3,
+          color: curveColor,
+          fillColor: curveColor,
+        });
+      }
+    }
+
+    if (showEquation) {
+      const aVal = el.a ?? 100;
+      const bVal = el.b ?? 60;
+      out.push({
+        id: `${id}-equation`,
+        type: 'latex',
+        x: cx - a,
+        y: cy + b + 20,
+        tex: `\\frac{x^2}{${aVal}^2}-\\frac{y^2}{${bVal}^2}=1`,
+        fontSize: 16,
+      });
+    }
+  } else if (el.conicType === 'parabola') {
+    const p = (el.p ?? 40) * scale;
+    const horizontal = el.horizontal ?? false;
+    const showDirectrix = el.showDirectrix !== false;
+    const tRange = Math.sqrt(4 * p * 300);
+
+    // Parametric parabola
+    for (let i = 0; i < steps; i++) {
+      const t0 = -tRange + (i / steps) * 2 * tRange;
+      const t1 = -tRange + ((i + 1) / steps) * 2 * tRange;
+      let from: Point, to: Point;
+      if (horizontal) {
+        // y² = 4px → x = t²/(4p), y = t
+        from = { x: cx + (t0 * t0) / (4 * p), y: cy - t0 };
+        to = { x: cx + (t1 * t1) / (4 * p), y: cy - t1 };
+      } else {
+        // x² = 4py → x = t, y = t²/(4p)
+        from = { x: cx + t0, y: cy - (t0 * t0) / (4 * p) };
+        to = { x: cx + t1, y: cy - (t1 * t1) / (4 * p) };
+      }
+      out.push({
+        id: `${id}-seg-${i}`,
+        type: 'line',
+        from,
+        to,
+        color: curveColor,
+        stroke_width: sw,
+      });
+    }
+
+    // Focus
+    if (showFoci) {
+      const fociColor = '#dc2626';
+      const focusPos = horizontal
+        ? { x: cx + p, y: cy }
+        : { x: cx, y: cy - p };
+      out.push({
+        id: `${id}-focus`,
+        type: 'ellipse',
+        cx: focusPos.x,
+        cy: focusPos.y,
+        rx: 4,
+        ry: 4,
+        color: fociColor,
+        fillColor: fociColor,
+      });
+      out.push({
+        id: `${id}-focus-label`,
+        type: 'text',
+        x: focusPos.x + 8,
+        y: focusPos.y - 8,
+        text: 'F',
+        size: 12,
+        color: fociColor,
+      });
+    }
+
+    // Vertex at origin (already at cx, cy)
+    if (showVertices) {
+      out.push({
+        id: `${id}-vertex`,
+        type: 'ellipse',
+        cx,
+        cy,
+        rx: 3,
+        ry: 3,
+        color: curveColor,
+        fillColor: curveColor,
+      });
+    }
+
+    // Directrix
+    if (showDirectrix) {
+      const dirColor = '#6b7280';
+      if (horizontal) {
+        // x = -p
+        out.push({
+          id: `${id}-directrix`,
+          type: 'line',
+          from: { x: cx - p, y: cy - tRange },
+          to: { x: cx - p, y: cy + tRange },
+          color: dirColor,
+          stroke_width: 1,
+          lineStyle: 'dashed' as const,
+        });
+      } else {
+        // y = -p (canvas: cy + p)
+        out.push({
+          id: `${id}-directrix`,
+          type: 'line',
+          from: { x: cx - tRange, y: cy + p },
+          to: { x: cx + tRange, y: cy + p },
+          color: dirColor,
+          stroke_width: 1,
+          lineStyle: 'dashed' as const,
+        });
+      }
+    }
+
+    if (showEquation) {
+      const pVal = el.p ?? 40;
+      const tex = horizontal
+        ? `y^2 = ${4 * pVal}x`
+        : `x^2 = ${4 * pVal}y`;
+      out.push({
+        id: `${id}-equation`,
+        type: 'latex',
+        x: cx + 20,
+        y: cy + tRange * 0.3 + 20,
+        tex,
+        fontSize: 16,
+      });
+    }
+  }
+
+  // Optional label
+  if (el.label) {
+    out.push({
+      id: `${id}-label`,
+      type: 'text',
+      x: cx,
+      y: cy - ((el.b ?? 60) * scale) - 20,
+      text: el.label,
+      size: 14,
+      color: curveColor,
+    });
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Coordinate grid expansion
+// ---------------------------------------------------------------------------
+
+function expandCoordinateGrid(el: CoordinateGridElement): DrawElement[] {
+  const out: DrawElement[] = [];
+  const id = el.id;
+  const width = el.width ?? 600;
+  const height = el.height ?? 400;
+  const majorSpacing = el.majorSpacing ?? 50;
+  const minorSpacing = el.minorSpacing ?? 10;
+  const majorColor = el.majorColor ?? 'rgba(0,0,0,0.2)';
+  const minorColor = el.minorColor ?? 'rgba(0,0,0,0.08)';
+  const showAxes = el.showAxes !== false;
+  const showLabels = el.showLabels !== false;
+  const originX = el.x;
+  const originY = el.y;
+
+  // Minor gridlines
+  let idx = 0;
+  for (let px = 0; px <= width; px += minorSpacing) {
+    out.push({
+      id: `${id}-minor-v-${idx}`,
+      type: 'line',
+      from: { x: originX + px, y: originY },
+      to: { x: originX + px, y: originY + height },
+      color: minorColor,
+      stroke_width: 0.5,
+    });
+    idx++;
+  }
+  idx = 0;
+  for (let py = 0; py <= height; py += minorSpacing) {
+    out.push({
+      id: `${id}-minor-h-${idx}`,
+      type: 'line',
+      from: { x: originX, y: originY + py },
+      to: { x: originX + width, y: originY + py },
+      color: minorColor,
+      stroke_width: 0.5,
+    });
+    idx++;
+  }
+
+  // Major gridlines
+  idx = 0;
+  for (let px = 0; px <= width; px += majorSpacing) {
+    out.push({
+      id: `${id}-major-v-${idx}`,
+      type: 'line',
+      from: { x: originX + px, y: originY },
+      to: { x: originX + px, y: originY + height },
+      color: majorColor,
+      stroke_width: 1,
+    });
+    idx++;
+  }
+  idx = 0;
+  for (let py = 0; py <= height; py += majorSpacing) {
+    out.push({
+      id: `${id}-major-h-${idx}`,
+      type: 'line',
+      from: { x: originX, y: originY + py },
+      to: { x: originX + width, y: originY + py },
+      color: majorColor,
+      stroke_width: 1,
+    });
+    idx++;
+  }
+
+  // Bold axis lines
+  if (showAxes) {
+    const axisColor = 'rgba(0,0,0,0.6)';
+    // Determine axis positions based on math range or default to center
+    const xMin = el.xMin ?? 0;
+    const xMax = el.xMax ?? (width / majorSpacing);
+    const yMin = el.yMin ?? 0;
+    const yMax = el.yMax ?? (height / majorSpacing);
+    const xSpan = xMax - xMin || 1;
+    const ySpan = yMax - yMin || 1;
+    const axisXPx = originX + (-xMin / xSpan) * width;
+    const axisYPx = originY + (yMax / ySpan) * height;
+
+    // Only draw axes if they fall within the grid bounds
+    if (axisXPx >= originX && axisXPx <= originX + width) {
+      out.push({
+        id: `${id}-y-axis`,
+        type: 'line',
+        from: { x: axisXPx, y: originY },
+        to: { x: axisXPx, y: originY + height },
+        color: axisColor,
+        stroke_width: 2,
+      });
+    }
+    if (axisYPx >= originY && axisYPx <= originY + height) {
+      out.push({
+        id: `${id}-x-axis`,
+        type: 'line',
+        from: { x: originX, y: axisYPx },
+        to: { x: originX + width, y: axisYPx },
+        color: axisColor,
+        stroke_width: 2,
+      });
+    }
+  }
+
+  // Numeric labels at major gridline intersections
+  if (showLabels) {
+    const xMin = el.xMin;
+    const xMax = el.xMax;
+    const yMin = el.yMin;
+    const yMax = el.yMax;
+    const labelColor = 'rgba(0,0,0,0.5)';
+
+    if (xMin != null && xMax != null && yMin != null && yMax != null) {
+      const xSpan = xMax - xMin || 1;
+      const ySpan = yMax - yMin || 1;
+      const mathMajorX = (majorSpacing / width) * xSpan;
+      const mathMajorY = (majorSpacing / height) * ySpan;
+
+      idx = 0;
+      for (let px = 0; px <= width; px += majorSpacing) {
+        const val = xMin + (px / width) * xSpan;
+        out.push({
+          id: `${id}-xlabel-${idx}`,
+          type: 'text',
+          x: originX + px,
+          y: originY + height + 14,
+          text: formatTickLabel(val, mathMajorX),
+          size: 10,
+          color: labelColor,
+          align: 'center' as const,
+        });
+        idx++;
+      }
+      idx = 0;
+      for (let py = 0; py <= height; py += majorSpacing) {
+        const val = yMax - (py / height) * ySpan;
+        out.push({
+          id: `${id}-ylabel-${idx}`,
+          type: 'text',
+          x: originX - 8,
+          y: originY + py - 4,
+          text: formatTickLabel(val, mathMajorY),
+          size: 10,
+          color: labelColor,
+          align: 'right' as const,
+        });
+        idx++;
+      }
+    } else {
+      // Pixel-based labels
+      idx = 0;
+      for (let px = 0; px <= width; px += majorSpacing) {
+        out.push({
+          id: `${id}-xlabel-${idx}`,
+          type: 'text',
+          x: originX + px,
+          y: originY + height + 14,
+          text: String(Math.round(px)),
+          size: 10,
+          color: labelColor,
+          align: 'center' as const,
+        });
+        idx++;
+      }
+      idx = 0;
+      for (let py = 0; py <= height; py += majorSpacing) {
+        out.push({
+          id: `${id}-ylabel-${idx}`,
+          type: 'text',
+          x: originX - 8,
+          y: originY + py - 4,
+          text: String(Math.round(py)),
+          size: 10,
+          color: labelColor,
+          align: 'right' as const,
+        });
+        idx++;
+      }
+    }
+  }
+
+  return out;
+}
 export function lowerMathPrimitive(
-  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement | ComplexPlaneElement | NumberTheoryGridElement | AnnotationArrowElement | FormulaBoxElement | VennDiagramElement | TruthTableElement,
+  el: CartesianAxesElement | NumberLineElement | VectorArrowElement | FunctionCurveElement | AngleArcElement | IntegralRegionElement | CircleWithRadiusElement | TriangleWithAnglesElement | ParametricCurveElement | PolarPlotElement | RiemannSumElement | TangentLineElement | MatrixBracketElement | LinearTransformElement | HistogramElement | NormalDistributionCurveElement | SlopeFieldElement | VectorField2dElement | Wireframe3dElement | SequencePlotElement | BezierCurveElement | ComplexPlaneElement | NumberTheoryGridElement | AnnotationArrowElement | FormulaBoxElement | VennDiagramElement | TruthTableElement | ConicSectionElement | CoordinateGridElement | ProbabilityTreeElement | ScatterPlotElement | SymbolGridElement | EquationSystemElement | ComparisonChartElement | BoxPlotElement | PolygonElement | GeometricConstructionElement,
   theme?: ColorTheme,
 ): DrawElement[] {
   switch (el.type) {
@@ -3489,6 +4485,22 @@ export function lowerMathPrimitive(
       return expandVennDiagram(el);
     case 'truth_table':
       return expandTruthTable(el);
+    case 'conic_section':
+      return expandConicSection(el);
+    case 'coordinate_grid':
+      return expandCoordinateGrid(el);
+    case 'symbol_grid':
+      return expandSymbolGrid(el);
+    case 'equation_system':
+      return expandEquationSystem(el);
+    case 'comparison_chart':
+      return expandComparisonChart(el);
+    case 'box_plot':
+      return expandBoxPlot(el);
+    case 'polygon':
+      return expandPolygon(el);
+    case 'geometric_construction':
+      return expandGeometricConstruction(el);
   }
 }
 

@@ -129,6 +129,16 @@ function clampElement(el: DrawElement): DrawElement {
     case 'wireframe_3d':
     case 'complex_plane':
     case 'number_theory_grid':
+    case 'conic_section':
+    case 'coordinate_grid':
+    case 'probability_tree':
+    case 'scatter_plot':
+    case 'symbol_grid':
+    case 'equation_system':
+    case 'annotation_arrow':
+    case 'formula_box':
+    case 'venn_diagram':
+    case 'truth_table':
       return el;
     default:
       return el;

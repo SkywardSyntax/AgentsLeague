@@ -82,6 +82,18 @@ function elementPosition(el: DrawElement): string {
     case 'bezier_curve':
     case 'complex_plane':
     case 'number_theory_grid':
+    case 'conic_section':
+    case 'coordinate_grid':
+    case 'probability_tree':
+    case 'scatter_plot':
+    case 'symbol_grid':
+    case 'equation_system':
+    case 'comparison_chart':
+    case 'box_plot':
+    case 'annotation_arrow':
+    case 'formula_box':
+    case 'venn_diagram':
+    case 'truth_table':
     default:
       return el.type;
   }
