@@ -30,7 +30,7 @@ import { assertNeverDrawElement } from '@/types/agent';
 import type { PlannedSemanticLayout } from './types';
 import type { PlannerTraceContext } from './trace';
 import { boundsOf } from './bounds';
-import { tickMarksForRange, computeArrowHead } from '../math-sampling';
+import { tickMarksForRange, computeArrowHead, formatTickLabel, toLatex } from '../math-sampling';
 import { parseMathExpression, parseMathExpression2Var } from '../graph-script';
 import type { ColorTheme } from '../color-theme';
 import { getCurveColor, getThemeColors } from '../color-theme';
@@ -162,15 +162,29 @@ function expandAngleArc(el: AngleArcElement): DrawElement[] {
   if (el.label) {
     const midRad = (startRad + endRad) / 2;
     const labelR = el.radius * 1.4;
-    result.push({
-      id: `${el.id}-label`,
-      type: 'text',
-      x: el.x + labelR * Math.cos(midRad),
-      y: el.y - labelR * Math.sin(midRad),
-      text: el.label,
-      size: 14,
-      color: el.color,
-    });
+    const lx = el.x + labelR * Math.cos(midRad);
+    const ly = el.y - labelR * Math.sin(midRad);
+    if (shouldUseLaTeX(el.label)) {
+      result.push({
+        id: `${el.id}-label`,
+        type: 'latex',
+        x: lx,
+        y: ly,
+        tex: el.label,
+        fontSize: 14,
+        displayMode: false,
+      });
+    } else {
+      result.push({
+        id: `${el.id}-label`,
+        type: 'text',
+        x: lx,
+        y: ly,
+        text: el.label,
+        size: 14,
+        color: el.color,
+      });
+    }
   }
 
   return result;
@@ -920,14 +934,17 @@ function expandCartesianAxes(el: CartesianAxesElement, _theme?: ColorTheme): Dra
     }
   }
 
-  // --- Axis labels (near arrowheads) ---
+  // --- Axis labels (positioned at arrow endpoints) ---
   if (el.xLabel) {
+    // x-axis label at right end, offset 15px right and 10px down
+    const xLabelX = x + width + ARROW_EXT + 15;
+    const xLabelY = originY + 10;
     if (shouldUseLaTeX(el.xLabel)) {
       result.push({
         id: `${el.id}-x-label`,
         type: 'latex' as const,
-        x: x + width + ARROW_EXT + 4,
-        y: originY + 4,
+        x: xLabelX,
+        y: xLabelY,
         tex: el.xLabel,
         fontSize: 13,
         displayMode: false,
@@ -936,8 +953,8 @@ function expandCartesianAxes(el: CartesianAxesElement, _theme?: ColorTheme): Dra
       result.push({
         id: `${el.id}-x-label`,
         type: 'text' as const,
-        x: x + width + ARROW_EXT + 4,
-        y: originY + 4,
+        x: xLabelX,
+        y: xLabelY,
         text: el.xLabel,
         size: 13,
         color,
@@ -945,12 +962,15 @@ function expandCartesianAxes(el: CartesianAxesElement, _theme?: ColorTheme): Dra
     }
   }
   if (el.yLabel) {
+    // y-axis label at top end, offset 10px left and 15px up
+    const yLabelX = originX - 10;
+    const yLabelY = y - ARROW_EXT - 15;
     if (shouldUseLaTeX(el.yLabel)) {
       result.push({
         id: `${el.id}-y-label`,
         type: 'latex' as const,
-        x: originX + 8,
-        y: y - ARROW_EXT - 2,
+        x: yLabelX,
+        y: yLabelY,
         tex: el.yLabel,
         fontSize: 13,
         displayMode: false,
@@ -959,8 +979,8 @@ function expandCartesianAxes(el: CartesianAxesElement, _theme?: ColorTheme): Dra
       result.push({
         id: `${el.id}-y-label`,
         type: 'text' as const,
-        x: originX + 8,
-        y: y - ARROW_EXT - 2,
+        x: yLabelX,
+        y: yLabelY,
         text: el.yLabel,
         size: 13,
         color,

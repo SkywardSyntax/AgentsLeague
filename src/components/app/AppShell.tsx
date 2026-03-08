@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatPanel, type ChatThreadMeta } from '@/components/chat/ChatPanel';
 import { WhiteboardCanvas } from '@/components/whiteboard/WhiteboardCanvas';
 import { useAgentStream } from '@/hooks/useAgentStream';
@@ -902,25 +902,30 @@ export function AppShell() {
 
       // Determine source from batch_id prefix
       const source: DrawSource = batch.batch_id.startsWith('tpl-') ? 'Template' : 'Injected';
-      setLastDrawSource(source);
-      const drawableEls = batch.elements.filter((el) => el.type !== 'clear');
-      const injectCount = drawableEls.length;
-      const injectTypeCounts: Partial<Record<DrawElement['type'], number>> = {};
-      for (const el of drawableEls) {
-        injectTypeCounts[el.type] = (injectTypeCounts[el.type] ?? 0) + 1;
-      }
-      setDrawingPillState({ kind: 'done', shapeCount: injectCount, typeCounts: injectTypeCounts });
 
-      // Build type breakdown for toast
-      const typeBreakdown = Object.entries(injectTypeCounts)
-        .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0))
-        .slice(0, 3)
-        .map(([type, count]) => `${count} ${type}`)
-        .join(', ');
-      const toastMsg = typeBreakdown
-        ? `✓ Injected ${injectCount} element${injectCount !== 1 ? 's' : ''} (${typeBreakdown})`
-        : `✓ ${injectCount} element${injectCount !== 1 ? 's' : ''} injected`;
-      pushWarning(toastMsg, activeChat.id, 'success');
+      // Mark non-critical UI updates (pill, stats, toast) as non-urgent so they
+      // don't block the canvas animation frame.
+      startTransition(() => {
+        setLastDrawSource(source);
+        const drawableEls = batch.elements.filter((el) => el.type !== 'clear');
+        const injectCount = drawableEls.length;
+        const injectTypeCounts: Partial<Record<DrawElement['type'], number>> = {};
+        for (const el of drawableEls) {
+          injectTypeCounts[el.type] = (injectTypeCounts[el.type] ?? 0) + 1;
+        }
+        setDrawingPillState({ kind: 'done', shapeCount: injectCount, typeCounts: injectTypeCounts });
+
+        // Build type breakdown for toast
+        const typeBreakdown = Object.entries(injectTypeCounts)
+          .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0))
+          .slice(0, 3)
+          .map(([type, count]) => `${count} ${type}`)
+          .join(', ');
+        const toastMsg = typeBreakdown
+          ? `✓ Injected ${injectCount} element${injectCount !== 1 ? 's' : ''} (${typeBreakdown})`
+          : `✓ ${injectCount} element${injectCount !== 1 ? 's' : ''} injected`;
+        pushWarning(toastMsg, activeChat.id, 'success');
+      });
 
       const hasClear = batch.elements.some((el) => el.type === 'clear');
       setChatSessions((prev) =>

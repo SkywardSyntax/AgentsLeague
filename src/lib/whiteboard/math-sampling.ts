@@ -191,6 +191,157 @@ export function sampleParametric(
 }
 
 // ---------------------------------------------------------------------------
+// Mathematical constant detection & formatting
+// ---------------------------------------------------------------------------
+
+const PI = Math.PI;
+const E = Math.E;
+const SQRT2 = Math.SQRT2;
+const TOLERANCE = 0.01;
+
+/** Known multiples of π to detect, mapping multiplier → display string. */
+const PI_MULTIPLES: { mult: number; label: string; latex: string }[] = [
+  { mult: -2,    label: '-2π',   latex: '-2\\pi' },
+  { mult: -3/2,  label: '-3π/2', latex: '-\\frac{3\\pi}{2}' },
+  { mult: -1,    label: '-π',    latex: '-\\pi' },
+  { mult: -1/2,  label: '-π/2',  latex: '-\\frac{\\pi}{2}' },
+  { mult: -1/4,  label: '-π/4',  latex: '-\\frac{\\pi}{4}' },
+  { mult: -1/3,  label: '-π/3',  latex: '-\\frac{\\pi}{3}' },
+  { mult: -2/3,  label: '-2π/3', latex: '-\\frac{2\\pi}{3}' },
+  { mult: -3/4,  label: '-3π/4', latex: '-\\frac{3\\pi}{4}' },
+  { mult: 1/4,   label: 'π/4',   latex: '\\frac{\\pi}{4}' },
+  { mult: 1/3,   label: 'π/3',   latex: '\\frac{\\pi}{3}' },
+  { mult: 1/2,   label: 'π/2',   latex: '\\frac{\\pi}{2}' },
+  { mult: 2/3,   label: '2π/3',  latex: '\\frac{2\\pi}{3}' },
+  { mult: 3/4,   label: '3π/4',  latex: '\\frac{3\\pi}{4}' },
+  { mult: 1,     label: 'π',     latex: '\\pi' },
+  { mult: 3/2,   label: '3π/2',  latex: '\\frac{3\\pi}{2}' },
+  { mult: 2,     label: '2π',    latex: '2\\pi' },
+];
+
+/** Known multiples of e to detect. */
+const E_MULTIPLES: { mult: number; label: string; latex: string }[] = [
+  { mult: -2, label: '-2e', latex: '-2e' },
+  { mult: -1, label: '-e',  latex: '-e' },
+  { mult: 1,  label: 'e',   latex: 'e' },
+  { mult: 2,  label: '2e',  latex: '2e' },
+];
+
+/** Known fractions for LaTeX conversion. */
+const KNOWN_FRACTIONS: { value: number; latex: string }[] = [
+  { value: 1/2,  latex: '\\frac{1}{2}' },
+  { value: 1/3,  latex: '\\frac{1}{3}' },
+  { value: 2/3,  latex: '\\frac{2}{3}' },
+  { value: 1/4,  latex: '\\frac{1}{4}' },
+  { value: 3/4,  latex: '\\frac{3}{4}' },
+  { value: 1/5,  latex: '\\frac{1}{5}' },
+  { value: 2/5,  latex: '\\frac{2}{5}' },
+  { value: 3/5,  latex: '\\frac{3}{5}' },
+  { value: 4/5,  latex: '\\frac{4}{5}' },
+  { value: 1/6,  latex: '\\frac{1}{6}' },
+  { value: 5/6,  latex: '\\frac{5}{6}' },
+  { value: 1/8,  latex: '\\frac{1}{8}' },
+  { value: 3/8,  latex: '\\frac{3}{8}' },
+  { value: 5/8,  latex: '\\frac{5}{8}' },
+  { value: 7/8,  latex: '\\frac{7}{8}' },
+];
+
+/**
+ * Format a tick value as a human-readable label.
+ *
+ * - Integer values → "0", "1", "-3"
+ * - Multiples of π (within tolerance) → "π/2", "π", "3π/2", etc.
+ * - Multiples of e → "e", "2e"
+ * - Simple decimals → "0.5", "0.25"
+ * - Very small / very large → scientific notation
+ */
+export function formatTickLabel(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+
+  // Zero
+  if (value === 0) return '0';
+
+  // Check multiples of π
+  for (const pm of PI_MULTIPLES) {
+    if (Math.abs(value - pm.mult * PI) < TOLERANCE) {
+      return pm.label;
+    }
+  }
+
+  // Check multiples of e
+  for (const em of E_MULTIPLES) {
+    if (Math.abs(value - em.mult * E) < TOLERANCE) {
+      return em.label;
+    }
+  }
+
+  // Integer values (but still use scientific notation for very large)
+  if (Number.isInteger(value)) {
+    const abs = Math.abs(value);
+    if (abs >= 1e6) return value.toExponential(2);
+    return String(value);
+  }
+
+  // Very small or very large → scientific notation
+  const abs = Math.abs(value);
+  if (abs !== 0 && (abs < 0.001 || abs >= 1e6)) {
+    return value.toExponential(2);
+  }
+
+  // Simple decimal
+  return String(parseFloat(value.toPrecision(10)));
+}
+
+/**
+ * Convert a numeric value to its best LaTeX representation.
+ *
+ * - 0.5 → "\\frac{1}{2}"
+ * - π/2 → "\\frac{\\pi}{2}"
+ * - √2/2 → "\\frac{\\sqrt{2}}{2}"
+ * - Integers → the number as a string
+ * - Otherwise → decimal string
+ */
+export function toLatex(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+
+  // Zero
+  if (value === 0) return '0';
+
+  // Integers
+  if (Number.isInteger(value)) return String(value);
+
+  // Check multiples of π
+  for (const pm of PI_MULTIPLES) {
+    if (Math.abs(value - pm.mult * PI) < TOLERANCE) {
+      return pm.latex;
+    }
+  }
+
+  // Check multiples of e
+  for (const em of E_MULTIPLES) {
+    if (Math.abs(value - em.mult * E) < TOLERANCE) {
+      return em.latex;
+    }
+  }
+
+  // Check √2/2
+  if (Math.abs(value - SQRT2 / 2) < TOLERANCE) return '\\frac{\\sqrt{2}}{2}';
+  if (Math.abs(value + SQRT2 / 2) < TOLERANCE) return '-\\frac{\\sqrt{2}}{2}';
+
+  // Check known simple fractions (positive and negative)
+  const sign = value < 0 ? '-' : '';
+  const absVal = Math.abs(value);
+  for (const frac of KNOWN_FRACTIONS) {
+    if (Math.abs(absVal - frac.value) < TOLERANCE) {
+      return sign + frac.latex;
+    }
+  }
+
+  // Fallback to decimal
+  return String(parseFloat(value.toPrecision(10)));
+}
+
+// ---------------------------------------------------------------------------
 // tickMarksForRange
 // ---------------------------------------------------------------------------
 
@@ -237,7 +388,7 @@ export function tickMarksForRange(
     const snapped = Math.abs(v) < step * 1e-9 ? 0 : v;
     ticks.push({
       value: snapped,
-      label: snapped.toFixed(decimals),
+      label: formatTickLabel(snapped),
     });
   }
 

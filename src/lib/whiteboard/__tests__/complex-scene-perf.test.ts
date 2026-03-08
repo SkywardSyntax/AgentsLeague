@@ -4,6 +4,7 @@ import {
   lowerPlannedLayoutToDrawBatch,
   DEFAULT_MAX_LOWERED_ELEMENTS,
 } from '../planner/lowerer';
+import { tickMarksForRange } from '../math-sampling';
 import type { DrawElement } from '@/types/agent';
 import type { PlannedSemanticLayout } from '../planner/types';
 
@@ -405,5 +406,22 @@ describe('Complex scene performance benchmarks', () => {
     console.log(`    ${_label} → ${elements.length} elements in ${ms.toFixed(2)}ms`);
     expect(ms).toBeLessThan(MAX_SINGLE_ELEMENT_MS);
     expect(elements.length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 9. tickMarksForRange only generates ticks within visible range
+  // ---------------------------------------------------------------------------
+
+  it('tickMarksForRange(-5, 5, 200) generates no ticks outside [-5, 5]', () => {
+    const ticks = tickMarksForRange(-5, 5, 200);
+
+    expect(ticks.length).toBeGreaterThan(0);
+
+    for (const tick of ticks) {
+      expect(tick.value).toBeGreaterThanOrEqual(-5);
+      expect(tick.value).toBeLessThanOrEqual(5);
+    }
+
+    console.log(`  tickMarksForRange(-5, 5, 200) → ${ticks.length} ticks, all within [-5, 5]`);
   });
 });

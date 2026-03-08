@@ -793,6 +793,261 @@ const probabilityTree: LabeledDemo = {
 };
 
 // ---------------------------------------------------------------------------
+// 19. Topology: Complex Plane — 6th roots of unity
+// ---------------------------------------------------------------------------
+const complexPlaneRoots: LabeledDemo = {
+  label: 'Topology: Complex Plane — Roots of Unity',
+  description: '6th roots of unity on the complex plane with unit circle',
+  expectedElementCount: 3,
+  expectedTypes: ['complex_plane', 'latex'],
+  payload: {
+    batch_id: 'demo-complex-plane-roots',
+    style_preset: 'mathematical',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'cpr-plane', type: 'complex_plane',
+        points: [
+          { re: 1, im: 0, label: '1', color: '#dc2626' },
+          { re: 0.5, im: 0.866, label: 'ω', color: '#2563eb' },
+          { re: -0.5, im: 0.866, label: 'ω²', color: '#059669' },
+          { re: -1, im: 0, label: 'ω³', color: '#d97706' },
+          { re: -0.5, im: -0.866, label: 'ω⁴', color: '#7c3aed' },
+          { re: 0.5, im: -0.866, label: 'ω⁵', color: '#db2777' },
+        ],
+        showUnitCircle: true,
+        xRange: [-2, 2] as [number, number],
+        yRange: [-2, 2] as [number, number],
+        strokeColor: '#374151',
+      } as DrawElement,
+      { id: 'cpr-title', type: 'latex', x: 80, y: 30, tex: '\\text{6th Roots of Unity: } z^6 = 1', fontSize: 22, color: '#111827' },
+      { id: 'cpr-formula', type: 'latex', x: 80, y: 70, tex: '\\omega_k = e^{2\\pi i k / 6}, \\quad k = 0,1,\\ldots,5', fontSize: 16, color: '#374151' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 20. ODE: Direction Field — dy/dx = x − y
+// ---------------------------------------------------------------------------
+const odeDirectionField: LabeledDemo = {
+  label: 'ODE: Direction Field',
+  description: 'Slope field for dy/dx = x − y with solution curve from (0, 2)',
+  expectedElementCount: 5,
+  expectedTypes: ['slope_field', 'latex', 'text'],
+  payload: {
+    batch_id: 'demo-ode-direction-field',
+    style_preset: 'blueprint_neat',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'sf-field', type: 'slope_field',
+        x: 100, y: 80, width: 700, height: 500,
+        expression: 'x - y',
+        xRange: [-2, 4] as [number, number],
+        yRange: [-1, 5] as [number, number],
+        gridRows: 12, gridCols: 14,
+        strokeColor: '#6366f1',
+        solutionCurve: { x0: 0, y0: 2, steps: 80 },
+      } as DrawElement,
+      { id: 'sf-title', type: 'latex', x: 830, y: 80, tex: "\\frac{dy}{dx} = x - y", fontSize: 22, displayMode: true, color: '#111827' },
+      { id: 'sf-eq', type: 'latex', x: 830, y: 150, tex: '\\text{Equilibrium: } y = x - 1', fontSize: 16, color: '#059669' },
+      { id: 'sf-ic', type: 'text', x: 830, y: 200, text: 'IC: y(0) = 2', size: 16, color: '#dc2626' },
+      { id: 'sf-note', type: 'text', x: 830, y: 240, text: 'Solution converges to y = x − 1', size: 14, color: '#6b7280' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 21. Vector Field: Rotation — F(x,y) = (−y, x)
+// ---------------------------------------------------------------------------
+const vectorFieldRotation: LabeledDemo = {
+  label: 'Vector Field: Rotation',
+  description: 'Circular vector field F(x,y) = (−y, x) with normalized arrows',
+  expectedElementCount: 5,
+  expectedTypes: ['vector_field_2d', 'latex', 'text'],
+  payload: {
+    batch_id: 'demo-vector-field-rotation',
+    style_preset: 'blueprint_neat',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'vf-field', type: 'vector_field_2d',
+        x: 100, y: 60, width: 700, height: 560,
+        Px: '-y', Py: 'x',
+        xRange: [-3, 3] as [number, number],
+        yRange: [-3, 3] as [number, number],
+        gridRows: 10, gridCols: 10,
+        strokeColor: '#2563eb',
+        normalize: true,
+      } as DrawElement,
+      { id: 'vf-title', type: 'latex', x: 830, y: 80, tex: '\\vec{F}(x,y) = (-y,\\, x)', fontSize: 22, color: '#111827' },
+      { id: 'vf-desc', type: 'text', x: 830, y: 130, text: 'Counter-clockwise rotation', size: 15, color: '#2563eb' },
+      { id: 'vf-curl', type: 'latex', x: 830, y: 170, tex: '\\nabla \\times \\vec{F} = 2', fontSize: 16, color: '#059669' },
+      { id: 'vf-note', type: 'text', x: 830, y: 220, text: 'Divergence-free: ∇ · F = 0', size: 14, color: '#6b7280' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 22. 3D: Rotating Cube
+// ---------------------------------------------------------------------------
+const wireframeCube: LabeledDemo = {
+  label: '3D: Rotating Cube',
+  description: 'Wireframe cube with perspective rotation',
+  expectedElementCount: 5,
+  expectedTypes: ['wireframe_3d', 'text', 'latex'],
+  payload: {
+    batch_id: 'demo-wireframe-cube',
+    style_preset: 'blueprint_neat',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'wf-cube', type: 'wireframe_3d',
+        shape: 'cube', rotationX: 25, rotationY: 35,
+        cx: 500, cy: 350, size: 150,
+        strokeColor: '#2563eb', strokeWidth: 2,
+        showHiddenLines: true,
+      } as DrawElement,
+      { id: 'wf-title', type: 'text', x: 350, y: 60, text: 'Wireframe Cube', size: 24, color: '#111827' },
+      { id: 'wf-rx', type: 'latex', x: 780, y: 280, tex: '\\theta_x = 25°', fontSize: 16, color: '#dc2626' },
+      { id: 'wf-ry', type: 'latex', x: 780, y: 320, tex: '\\theta_y = 35°', fontSize: 16, color: '#059669' },
+      { id: 'wf-info', type: 'text', x: 780, y: 370, text: 'Vertices: 8  Edges: 12', size: 14, color: '#6b7280' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 23. Sequence: Convergence — 1/n
+// ---------------------------------------------------------------------------
+const sequenceConvergence: LabeledDemo = {
+  label: 'Sequence: Convergence — 1/n',
+  description: 'Sequence aₙ = 1/n converging to 0 with limit line',
+  expectedElementCount: 5,
+  expectedTypes: ['sequence_plot', 'latex', 'text'],
+  payload: {
+    batch_id: 'demo-sequence-convergence',
+    style_preset: 'mathematical',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'sq-plot', type: 'sequence_plot',
+        expression: '1/x', nMin: 1, nMax: 20, limit: 0,
+        x: 100, y: 80, width: 700, height: 450,
+        xRange: [1, 20] as [number, number],
+        yRange: [-0.2, 1.2] as [number, number],
+        strokeColor: '#2563eb', dotRadius: 5, showLines: true,
+      } as DrawElement,
+      { id: 'sq-title', type: 'latex', x: 830, y: 80, tex: 'a_n = \\frac{1}{n}', fontSize: 24, displayMode: true, color: '#111827' },
+      { id: 'sq-lim', type: 'latex', x: 830, y: 160, tex: '\\lim_{n \\to \\infty} \\frac{1}{n} = 0', fontSize: 18, color: '#059669' },
+      { id: 'sq-note', type: 'text', x: 830, y: 220, text: 'Dashed line: limit = 0', size: 14, color: '#dc2626' },
+      { id: 'sq-conv', type: 'text', x: 830, y: 260, text: 'Monotone decreasing, bounded below', size: 13, color: '#6b7280' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 24. Bezier: Cubic Spline — S-curve
+// ---------------------------------------------------------------------------
+const bezierSCurve: LabeledDemo = {
+  label: 'Bezier: Cubic Spline',
+  description: 'Cubic Bézier S-curve with visible control points and tangents',
+  expectedElementCount: 7,
+  expectedTypes: ['bezier_curve', 'text', 'latex'],
+  payload: {
+    batch_id: 'demo-bezier-s-curve',
+    style_preset: 'clean_pen_sketch',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'bz-curve', type: 'bezier_curve',
+        points: [[150, 500], [300, 100], [700, 600], [850, 200]] as [number, number][],
+        strokeColor: '#2563eb', strokeWidth: 3,
+        showControlPoints: true, showTangents: true,
+      } as DrawElement,
+      { id: 'bz-title', type: 'text', x: 350, y: 40, text: 'Cubic Bézier S-Curve', size: 22, color: '#111827' },
+      { id: 'bz-p0', type: 'text', x: 120, y: 520, text: 'P₀ (150, 500)', size: 12, color: '#dc2626' },
+      { id: 'bz-p1', type: 'text', x: 260, y: 80, text: 'P₁ (300, 100)', size: 12, color: '#d97706' },
+      { id: 'bz-p2', type: 'text', x: 660, y: 618, text: 'P₂ (700, 600)', size: 12, color: '#d97706' },
+      { id: 'bz-p3', type: 'text', x: 810, y: 180, text: 'P₃ (850, 200)', size: 12, color: '#059669' },
+      { id: 'bz-eq', type: 'latex', x: 300, y: 660, tex: 'B(t) = (1-t)^3 P_0 + 3(1-t)^2 t P_1 + 3(1-t)t^2 P_2 + t^3 P_3', fontSize: 14, color: '#374151' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 25. Number Theory: Multiplication Table mod 7
+// ---------------------------------------------------------------------------
+const multTableMod7Highlights: Array<{ i: number; j: number; color?: string; label?: string }> = [];
+for (let i = 1; i < 7; i++) {
+  for (let j = 1; j < 7; j++) {
+    const prod = (i * j) % 7;
+    const color = prod === 1 ? '#22c55e' : prod === 0 ? '#f87171' : '#60a5fa';
+    multTableMod7Highlights.push({ i, j, color, label: String(prod) });
+  }
+}
+
+const multTableMod7: LabeledDemo = {
+  label: 'Number Theory: Multiplication Table mod 7',
+  description: '7×7 multiplication table modulo 7 with highlighted units',
+  expectedElementCount: 5,
+  expectedTypes: ['number_theory_grid', 'latex', 'text'],
+  payload: {
+    batch_id: 'demo-mult-table-mod7',
+    style_preset: 'mathematical',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'nt-grid', type: 'number_theory_grid',
+        n: 7, highlights: multTableMod7Highlights,
+        showConnections: true, modulus: 7,
+        cx: 500, cy: 350, cellSize: 40,
+      } as DrawElement,
+      { id: 'nt-title', type: 'latex', x: 350, y: 40, tex: '\\mathbb{Z}/7\\mathbb{Z} \\text{ Multiplication Table}', fontSize: 22, color: '#111827' },
+      { id: 'nt-legend1', type: 'text', x: 800, y: 250, text: '● Green = multiplicative inverse (≡ 1)', size: 13, color: '#22c55e' },
+      { id: 'nt-legend2', type: 'text', x: 800, y: 280, text: '● Blue = other products', size: 13, color: '#2563eb' },
+      { id: 'nt-note', type: 'text', x: 800, y: 320, text: 'Every nonzero element is a unit (7 is prime)', size: 13, color: '#6b7280' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 26. Complex: Mandelbrot-inspired — critical orbit of c = 0.25
+// ---------------------------------------------------------------------------
+const mandelbrotOrbit: LabeledDemo = {
+  label: 'Complex: Mandelbrot-inspired Orbit',
+  description: 'Critical orbit of c = 0.25 on the complex plane with iteration labels',
+  expectedElementCount: 5,
+  expectedTypes: ['complex_plane', 'latex', 'text'],
+  payload: {
+    batch_id: 'demo-mandelbrot-orbit',
+    style_preset: 'mathematical',
+    colorTheme: 'colorful',
+    elements: [
+      {
+        id: 'mb-plane', type: 'complex_plane',
+        points: [
+          { re: 0, im: 0, label: 'z₀ = 0', color: '#dc2626' },
+          { re: 0.25, im: 0, label: 'z₁', color: '#d97706' },
+          { re: 0.3125, im: 0, label: 'z₂', color: '#059669' },
+          { re: 0.3477, im: 0, label: 'z₃', color: '#2563eb' },
+          { re: 0.3709, im: 0, label: 'z₄', color: '#7c3aed' },
+          { re: 0.3876, im: 0, label: 'z₅', color: '#db2777' },
+          { re: 0.5, im: 0, label: 'z* = 0.5', color: '#111827' },
+        ],
+        showUnitCircle: false,
+        xRange: [-0.5, 1.5] as [number, number],
+        yRange: [-1, 1] as [number, number],
+        strokeColor: '#374151',
+      } as DrawElement,
+      { id: 'mb-title', type: 'latex', x: 80, y: 30, tex: '\\text{Mandelbrot Orbit: } c = 0.25', fontSize: 22, color: '#111827' },
+      { id: 'mb-iter', type: 'latex', x: 80, y: 70, tex: 'z_{n+1} = z_n^2 + c, \\quad z_0 = 0', fontSize: 16, color: '#374151' },
+      { id: 'mb-conv', type: 'latex', x: 80, y: 110, tex: 'z_n \\to z^* = 0.5 \\text{ (fixed point)}', fontSize: 16, color: '#059669' },
+      { id: 'mb-note', type: 'text', x: 80, y: 150, text: 'c = 0.25 lies inside the Mandelbrot set', size: 14, color: '#6b7280' },
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Export all demos
 // ---------------------------------------------------------------------------
 export const demoPayloads: LabeledDemo[] = [
@@ -814,4 +1069,12 @@ export const demoPayloads: LabeledDemo[] = [
   roseCurve,
   matrixOperations,
   probabilityTree,
+  complexPlaneRoots,
+  odeDirectionField,
+  vectorFieldRotation,
+  wireframeCube,
+  sequenceConvergence,
+  bezierSCurve,
+  multTableMod7,
+  mandelbrotOrbit,
 ];

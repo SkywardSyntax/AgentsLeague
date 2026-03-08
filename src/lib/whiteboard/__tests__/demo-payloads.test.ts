@@ -33,6 +33,7 @@ const NORMALIZER_SUPPORTED_TYPES = new Set([
  */
 const SCHEMA_EXCLUDED_TYPES = new Set([
   'function_curve', 'riemann_sum', 'tangent_line', 'parametric_curve', 'polar_plot',
+  'slope_field', 'vector_field_2d', 'wireframe_3d', 'sequence_plot', 'bezier_curve',
 ]);
 
 /** Check that all numeric coordinate-like fields are within bounds. */
@@ -125,8 +126,8 @@ function resolveElements(demo: LabeledDemo): {
 // ---------------------------------------------------------------------------
 
 describe('Demo Payloads — schema validation & normalization', () => {
-  it('should have 18 demo payloads', () => {
-    expect(demoPayloads).toHaveLength(18);
+  it('should have 26 demo payloads', () => {
+    expect(demoPayloads).toHaveLength(26);
   });
 
   describe.each(demoPayloads.map((d) => [d.label, d] as const))(

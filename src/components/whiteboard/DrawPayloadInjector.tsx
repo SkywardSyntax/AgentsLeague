@@ -14,7 +14,7 @@ import { DrawingPayloadDocs } from './DrawingPayloadDocs';
 // Template categories & types
 // ---------------------------------------------------------------------------
 
-const TEMPLATE_CATEGORIES = ['All', 'Basic', 'Algebra', 'Calculus', 'Geometry', 'Linear Algebra', 'Statistics', 'Examples'] as const;
+const TEMPLATE_CATEGORIES = ['All', 'Basic', 'Algebra', 'Calculus', 'Geometry', 'Linear Algebra', 'Statistics', 'Topology', 'ODE', '3D', 'Sequences', 'Examples'] as const;
 type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
 
 interface MathTemplate {
@@ -927,6 +927,171 @@ const TEMPLATES: Record<string, MathTemplate> = {
         { id: uid('clt-note'), type: 'latex', x: 350, y: 440, tex: '\\text{As } n \\to \\infty, \\text{ the sampling distribution approaches } N(\\mu,\\, \\sigma^2/n)', fontSize: 16, color: '#374151' },
       ];
       return { batch_id: batchId('clt'), style_preset: 'blueprint_neat' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Topology: Complex Plane — 6th roots of unity ── */
+  complex_plane_roots: {
+    label: 'Topology: Complex Plane',
+    category: 'Topology',
+    description: '6th roots of unity on the complex plane with unit circle',
+    build: () => {
+      const rootLabels = ['1', 'ω', 'ω²', 'ω³', 'ω⁴', 'ω⁵'];
+      const rootColors = ['#dc2626', '#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777'];
+      const points = Array.from({ length: 6 }, (_, k) => ({
+        re: Math.round(Math.cos((2 * Math.PI * k) / 6) * 1000) / 1000,
+        im: Math.round(Math.sin((2 * Math.PI * k) / 6) * 1000) / 1000,
+        label: rootLabels[k],
+        color: rootColors[k],
+      }));
+      const elements: DrawElement[] = [
+        { id: uid('cp-plane'), type: 'complex_plane', points, showUnitCircle: true, xRange: [-2, 2] as [number, number], yRange: [-2, 2] as [number, number], strokeColor: '#374151' } as DrawElement,
+        { id: uid('cp-title'), type: 'latex', x: 80, y: 30, tex: '\\text{6th Roots of Unity: } z^6 = 1', fontSize: 22, color: '#111827' },
+        { id: uid('cp-formula'), type: 'latex', x: 80, y: 70, tex: '\\omega_k = e^{2\\pi i k / 6}, \\quad k = 0,1,\\ldots,5', fontSize: 16, color: '#374151' },
+      ];
+      return { batch_id: batchId('complex-plane'), style_preset: 'mathematical' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── ODE: Direction Field — dy/dx = x − y ── */
+  ode_direction_field: {
+    label: 'ODE: Direction Field',
+    category: 'ODE',
+    description: 'Slope field for dy/dx = x − y with solution curve from (0, 2)',
+    build: () => {
+      const elements: DrawElement[] = [
+        { id: uid('sf-field'), type: 'slope_field', x: 100, y: 80, width: 700, height: 500, expression: 'x - y', xRange: [-2, 4] as [number, number], yRange: [-1, 5] as [number, number], gridRows: 12, gridCols: 14, strokeColor: '#6366f1', solutionCurve: { x0: 0, y0: 2, steps: 80 } } as DrawElement,
+        { id: uid('sf-title'), type: 'latex', x: 830, y: 80, tex: "\\frac{dy}{dx} = x - y", fontSize: 22, displayMode: true, color: '#111827' },
+        { id: uid('sf-eq'), type: 'latex', x: 830, y: 150, tex: '\\text{Equilibrium: } y = x - 1', fontSize: 16, color: '#059669' },
+        { id: uid('sf-ic'), type: 'text', x: 830, y: 200, text: 'IC: y(0) = 2', size: 16, color: '#dc2626' },
+        { id: uid('sf-note'), type: 'text', x: 830, y: 240, text: 'Solution converges to y = x − 1', size: 14, color: '#6b7280' },
+      ];
+      return { batch_id: batchId('slope-field'), style_preset: 'blueprint_neat' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Vector Field: Rotation — F(x,y) = (−y, x) ── */
+  vector_field_rotation: {
+    label: 'Vector Field: Rotation',
+    category: 'ODE',
+    description: 'Circular vector field F(x,y) = (−y, x) with normalized arrows',
+    build: () => {
+      const elements: DrawElement[] = [
+        { id: uid('vf-field'), type: 'vector_field_2d', x: 100, y: 60, width: 700, height: 560, Px: '-y', Py: 'x', xRange: [-3, 3] as [number, number], yRange: [-3, 3] as [number, number], gridRows: 10, gridCols: 10, strokeColor: '#2563eb', normalize: true } as DrawElement,
+        { id: uid('vf-title'), type: 'latex', x: 830, y: 80, tex: '\\vec{F}(x,y) = (-y,\\, x)', fontSize: 22, color: '#111827' },
+        { id: uid('vf-desc'), type: 'text', x: 830, y: 130, text: 'Counter-clockwise rotation', size: 15, color: '#2563eb' },
+        { id: uid('vf-curl'), type: 'latex', x: 830, y: 170, tex: '\\nabla \\times \\vec{F} = 2', fontSize: 16, color: '#059669' },
+        { id: uid('vf-note'), type: 'text', x: 830, y: 220, text: 'Divergence-free: ∇ · F = 0', size: 14, color: '#6b7280' },
+      ];
+      return { batch_id: batchId('vector-field'), style_preset: 'blueprint_neat' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── 3D: Rotating Cube ── */
+  wireframe_cube: {
+    label: '3D: Rotating Cube',
+    category: '3D',
+    description: 'Wireframe cube with perspective rotation',
+    build: () => {
+      const elements: DrawElement[] = [
+        { id: uid('wf-cube'), type: 'wireframe_3d', shape: 'cube', rotationX: 25, rotationY: 35, cx: 500, cy: 350, size: 150, strokeColor: '#2563eb', strokeWidth: 2, showHiddenLines: true } as DrawElement,
+        { id: uid('wf-title'), type: 'text', x: 350, y: 60, text: 'Wireframe Cube', size: 24, color: '#111827' },
+        { id: uid('wf-rx'), type: 'latex', x: 780, y: 280, tex: '\\theta_x = 25°', fontSize: 16, color: '#dc2626' },
+        { id: uid('wf-ry'), type: 'latex', x: 780, y: 320, tex: '\\theta_y = 35°', fontSize: 16, color: '#059669' },
+        { id: uid('wf-info'), type: 'text', x: 780, y: 370, text: 'Vertices: 8  Edges: 12', size: 14, color: '#6b7280' },
+      ];
+      return { batch_id: batchId('wireframe-cube'), style_preset: 'blueprint_neat' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Sequence: Convergence — 1/n ── */
+  sequence_convergence: {
+    label: 'Sequence: Convergence',
+    category: 'Sequences',
+    description: 'Sequence aₙ = 1/n converging to 0',
+    build: () => {
+      const elements: DrawElement[] = [
+        { id: uid('sq-plot'), type: 'sequence_plot', expression: '1/x', nMin: 1, nMax: 20, limit: 0, x: 100, y: 80, width: 700, height: 450, xRange: [1, 20] as [number, number], yRange: [-0.2, 1.2] as [number, number], strokeColor: '#2563eb', dotRadius: 5, showLines: true } as DrawElement,
+        { id: uid('sq-title'), type: 'latex', x: 830, y: 80, tex: 'a_n = \\frac{1}{n}', fontSize: 24, displayMode: true, color: '#111827' },
+        { id: uid('sq-lim'), type: 'latex', x: 830, y: 160, tex: '\\lim_{n \\to \\infty} \\frac{1}{n} = 0', fontSize: 18, color: '#059669' },
+        { id: uid('sq-note'), type: 'text', x: 830, y: 220, text: 'Dashed line: limit = 0', size: 14, color: '#dc2626' },
+        { id: uid('sq-conv'), type: 'text', x: 830, y: 260, text: 'Monotone decreasing, bounded below', size: 13, color: '#6b7280' },
+      ];
+      return { batch_id: batchId('seq-convergence'), style_preset: 'mathematical' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Bezier: Cubic Spline — S-curve ── */
+  bezier_s_curve: {
+    label: 'Bezier: Cubic Spline',
+    category: 'Sequences',
+    description: 'Cubic Bézier S-curve with visible control points',
+    build: () => {
+      const elements: DrawElement[] = [
+        { id: uid('bz-curve'), type: 'bezier_curve', points: [[150, 500], [300, 100], [700, 600], [850, 200]] as [number, number][], strokeColor: '#2563eb', strokeWidth: 3, showControlPoints: true, showTangents: true } as DrawElement,
+        { id: uid('bz-title'), type: 'text', x: 350, y: 40, text: 'Cubic Bézier S-Curve', size: 22, color: '#111827' },
+        { id: uid('bz-p0'), type: 'text', x: 120, y: 520, text: 'P₀ (150, 500)', size: 12, color: '#dc2626' },
+        { id: uid('bz-p1'), type: 'text', x: 260, y: 80, text: 'P₁ (300, 100)', size: 12, color: '#d97706' },
+        { id: uid('bz-p2'), type: 'text', x: 660, y: 618, text: 'P₂ (700, 600)', size: 12, color: '#d97706' },
+        { id: uid('bz-p3'), type: 'text', x: 810, y: 180, text: 'P₃ (850, 200)', size: 12, color: '#059669' },
+        { id: uid('bz-eq'), type: 'latex', x: 300, y: 660, tex: 'B(t) = (1-t)^3 P_0 + 3(1-t)^2 t P_1 + 3(1-t)t^2 P_2 + t^3 P_3', fontSize: 14, color: '#374151' },
+      ];
+      return { batch_id: batchId('bezier-s'), style_preset: 'clean_pen_sketch' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Number Theory: Multiplication Table mod 7 ── */
+  mult_table_mod7: {
+    label: 'Number Theory: Multiplication Table mod 7',
+    category: 'Topology',
+    description: '7×7 multiplication table modulo 7 with highlighted units',
+    build: () => {
+      // Highlight all nonzero cells (units in Z/7Z — every nonzero element is a unit since 7 is prime)
+      const highlights: Array<{ i: number; j: number; color?: string; label?: string }> = [];
+      for (let i = 1; i < 7; i++) {
+        for (let j = 1; j < 7; j++) {
+          const prod = (i * j) % 7;
+          const color = prod === 1 ? '#22c55e' : prod === 0 ? '#f87171' : '#60a5fa';
+          highlights.push({ i, j, color, label: String(prod) });
+        }
+      }
+      const elements: DrawElement[] = [
+        { id: uid('nt-grid'), type: 'number_theory_grid', n: 7, highlights, showConnections: true, modulus: 7, cx: 500, cy: 350, cellSize: 40 } as DrawElement,
+        { id: uid('nt-title'), type: 'latex', x: 350, y: 40, tex: '\\mathbb{Z}/7\\mathbb{Z} \\text{ Multiplication Table}', fontSize: 22, color: '#111827' },
+        { id: uid('nt-legend1'), type: 'text', x: 800, y: 250, text: '● Green = multiplicative inverse (≡ 1)', size: 13, color: '#22c55e' },
+        { id: uid('nt-legend2'), type: 'text', x: 800, y: 280, text: '● Blue = other products', size: 13, color: '#2563eb' },
+        { id: uid('nt-note'), type: 'text', x: 800, y: 320, text: 'Every nonzero element is a unit (7 is prime)', size: 13, color: '#6b7280' },
+      ];
+      return { batch_id: batchId('mult-mod7'), style_preset: 'mathematical' as const, colorTheme: 'colorful' as const, elements };
+    },
+  },
+
+  /* ── Complex: Mandelbrot-inspired — critical orbit of c = 0.25 ── */
+  mandelbrot_orbit: {
+    label: 'Complex: Mandelbrot-inspired',
+    category: 'Topology',
+    description: 'Critical orbit of c = 0.25 on the complex plane with iteration labels',
+    build: () => {
+      // z_{n+1} = z_n² + c, z_0 = 0, c = 0.25
+      // z_0 = 0, z_1 = 0.25, z_2 = 0.3125, z_3 ≈ 0.3477, z_4 ≈ 0.3709, z_5 ≈ 0.3876
+      // Converges to fixed point z = 0.5
+      const orbitPoints = [
+        { re: 0, im: 0, label: 'z₀ = 0', color: '#dc2626' },
+        { re: 0.25, im: 0, label: 'z₁', color: '#d97706' },
+        { re: 0.3125, im: 0, label: 'z₂', color: '#059669' },
+        { re: 0.3477, im: 0, label: 'z₃', color: '#2563eb' },
+        { re: 0.3709, im: 0, label: 'z₄', color: '#7c3aed' },
+        { re: 0.3876, im: 0, label: 'z₅', color: '#db2777' },
+        { re: 0.5, im: 0, label: 'z* = 0.5', color: '#111827' },
+      ];
+      const elements: DrawElement[] = [
+        { id: uid('mb-plane'), type: 'complex_plane', points: orbitPoints, showUnitCircle: false, xRange: [-0.5, 1.5] as [number, number], yRange: [-1, 1] as [number, number], strokeColor: '#374151' } as DrawElement,
+        { id: uid('mb-title'), type: 'latex', x: 80, y: 30, tex: '\\text{Mandelbrot Orbit: } c = 0.25', fontSize: 22, color: '#111827' },
+        { id: uid('mb-iter'), type: 'latex', x: 80, y: 70, tex: 'z_{n+1} = z_n^2 + c, \\quad z_0 = 0', fontSize: 16, color: '#374151' },
+        { id: uid('mb-conv'), type: 'latex', x: 80, y: 110, tex: 'z_n \\to z^* = 0.5 \\text{ (fixed point)}', fontSize: 16, color: '#059669' },
+        { id: uid('mb-note'), type: 'text', x: 80, y: 150, text: 'c = 0.25 lies inside the Mandelbrot set', size: 14, color: '#6b7280' },
+      ];
+      return { batch_id: batchId('mandelbrot'), style_preset: 'mathematical' as const, colorTheme: 'colorful' as const, elements };
     },
   },
 };

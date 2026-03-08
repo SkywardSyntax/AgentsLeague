@@ -6,6 +6,7 @@ import { compileBatchToStrokes } from '@/lib/whiteboard/semantic-to-strokes';
 import { createActiveBatch, easeOutCubic, easeInOutCubic, easingForStroke, prefersReducedMotion, weightedVisibleLength } from '@/lib/whiteboard/stroke-scheduler';
 import type { BatchCompleteCallback } from '@/lib/whiteboard/stroke-scheduler';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useAnimationFrameThrottle } from '@/hooks/useAnimationFrameThrottle';
 import { normalizeBatchTextSpacingAgainstScene } from '@/lib/whiteboard/layout-spacing';
 import {
   partialPolylineByLength,
@@ -150,6 +151,10 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
   const committedStrokesRef = useRef<StrokeTrajectory[]>([]);
   const activeStrokesRef = useRef<ActiveStroke[]>([]);
   const committedDirtyRef = useRef(true);
+
+  // Dirty-region tracking: when non-null, only the specified world-space rect
+  // needs to be redrawn on the committed layer. `null` means full redraw.
+  const dirtyRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   // Batch completion tracking: maps batchId → count of still-animating strokes
   const pendingBatchStrokesRef = useRef<Map<string, number>>(new Map());
@@ -703,26 +708,66 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
 
       // Committed layer: only redraw when dirty
       if (committedDirtyRef.current) {
-        committedCtx.setTransform(1, 0, 0, 1, 0, 0);
-        committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
-        committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+        const dr = dirtyRectRef.current;
+        if (dr) {
+          // Partial redraw: clear only the dirty region (world-space → device pixels)
+          const drScreenX = (dr.x * camera.zoom + camera.x) * dpr;
+          const drScreenY = (dr.y * camera.zoom + camera.y) * dpr;
+          const drScreenW = dr.width * camera.zoom * dpr;
+          const drScreenH = dr.height * camera.zoom * dpr;
+          const pad = cullMargin * camera.zoom * dpr;
 
-        for (const stroke of committedStrokesRef.current) {
-          if (stroke.bounds) {
-            const b = stroke.bounds;
-            if (b.maxX < vpMinX - cullMargin || b.minX > vpMaxX + cullMargin ||
-                b.maxY < vpMinY - cullMargin || b.minY > vpMaxY + cullMargin) {
-              continue;
+          committedCtx.setTransform(1, 0, 0, 1, 0, 0);
+          committedCtx.clearRect(
+            drScreenX - pad, drScreenY - pad,
+            drScreenW + pad * 2, drScreenH + pad * 2,
+          );
+          committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+
+          // Redraw only strokes that intersect the dirty region
+          const drMinX = dr.x - cullMargin;
+          const drMinY = dr.y - cullMargin;
+          const drMaxX = dr.x + dr.width + cullMargin;
+          const drMaxY = dr.y + dr.height + cullMargin;
+          for (const stroke of committedStrokesRef.current) {
+            if (stroke.bounds) {
+              const b = stroke.bounds;
+              if (b.maxX < drMinX || b.minX > drMaxX ||
+                  b.maxY < drMinY || b.minY > drMaxY) {
+                continue;
+              }
             }
+            drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr,
+              { lineStyle: stroke.lineStyle, mathematical: stroke.mathematical });
+            if (stroke.textFallback) {
+              drawTextFallback(committedCtx, stroke.textFallback.text, stroke.textFallback.x, stroke.textFallback.y, stroke.textFallback.fontSize, stroke.color, camera, dpr);
+            }
+            drawCallCounterRef.current.increment();
           }
-          drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr,
-            { lineStyle: stroke.lineStyle, mathematical: stroke.mathematical });
-          if (stroke.textFallback) {
-            drawTextFallback(committedCtx, stroke.textFallback.text, stroke.textFallback.x, stroke.textFallback.y, stroke.textFallback.fontSize, stroke.color, camera, dpr);
+        } else {
+          // Full redraw
+          committedCtx.setTransform(1, 0, 0, 1, 0, 0);
+          committedCtx.clearRect(0, 0, committedCanvas.width, committedCanvas.height);
+          committedCtx.setTransform(scale, 0, 0, scale, tx, ty);
+
+          for (const stroke of committedStrokesRef.current) {
+            if (stroke.bounds) {
+              const b = stroke.bounds;
+              if (b.maxX < vpMinX - cullMargin || b.minX > vpMaxX + cullMargin ||
+                  b.maxY < vpMinY - cullMargin || b.minY > vpMaxY + cullMargin) {
+                continue;
+              }
+            }
+            drawStroke(committedCtx, stroke.points, stroke.color, stroke.baseWidth, camera, dpr,
+              { lineStyle: stroke.lineStyle, mathematical: stroke.mathematical });
+            if (stroke.textFallback) {
+              drawTextFallback(committedCtx, stroke.textFallback.text, stroke.textFallback.x, stroke.textFallback.y, stroke.textFallback.fontSize, stroke.color, camera, dpr);
+            }
+            drawCallCounterRef.current.increment();
           }
-          drawCallCounterRef.current.increment();
         }
         committedDirtyRef.current = false;
+        dirtyRectRef.current = null;
       }
 
       // Skip active layer when no strokes are animating
@@ -803,6 +848,28 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
         committedStrokesRef.current = committedStrokesRef.current.concat(completed);
         if (committedStrokesRef.current.length > MAX_COMMITTED) {
           committedStrokesRef.current = committedStrokesRef.current.slice(-MAX_COMMITTED);
+          // Full redraw needed after truncation
+          dirtyRectRef.current = null;
+        } else {
+          // Compute bounding box of completed strokes for partial redraw
+          let dMinX = Infinity, dMinY = Infinity, dMaxX = -Infinity, dMaxY = -Infinity;
+          for (const s of completed) {
+            if (s.bounds) {
+              if (s.bounds.minX < dMinX) dMinX = s.bounds.minX;
+              if (s.bounds.minY < dMinY) dMinY = s.bounds.minY;
+              if (s.bounds.maxX > dMaxX) dMaxX = s.bounds.maxX;
+              if (s.bounds.maxY > dMaxY) dMaxY = s.bounds.maxY;
+            } else {
+              // No bounds available — fall back to full redraw
+              dMinX = -Infinity;
+              break;
+            }
+          }
+          if (Number.isFinite(dMinX)) {
+            dirtyRectRef.current = { x: dMinX, y: dMinY, width: dMaxX - dMinX, height: dMaxY - dMinY };
+          } else {
+            dirtyRectRef.current = null;
+          }
         }
         committedDirtyRef.current = true;
 
@@ -1086,6 +1153,36 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
     setRafGeneration((g) => g + 1);
   }, []);
 
+  // Throttled coordinate readout update (10fps — non-critical visual update)
+  const updateCoordReadout = useAnimationFrameThrottle(
+    (clientX: number, clientY: number) => {
+      const container = containerRef.current;
+      if (!container) return;
+      const r = container.getBoundingClientRect();
+      const sx = clientX - r.left;
+      const sy = clientY - r.top;
+      const c = cameraRef.current;
+      const worldX = (sx - c.x) / c.zoom;
+      const worldY = (sy - c.y) / c.zoom;
+      mouseCanvasRef.current = { x: worldX, y: worldY };
+      const el = coordElRef.current;
+      if (el) {
+        const axes = cartesianAxesRef.current;
+        if (axes) {
+          const xSpan = axes.xRange[1] - axes.xRange[0] || 1;
+          const ySpan = axes.yRange[1] - axes.yRange[0] || 1;
+          const mx = axes.xRange[0] + (worldX - axes.x) / axes.width * xSpan;
+          const my = axes.yRange[0] + (axes.y + axes.height - worldY) / axes.height * ySpan;
+          el.textContent = `x: ${mx.toFixed(1)}, y: ${my.toFixed(1)} (math)`;
+        } else {
+          el.textContent = `x: ${Math.round(worldX)}, y: ${Math.round(worldY)}`;
+        }
+        el.style.opacity = '1';
+      }
+    },
+    10,
+  );
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -1210,34 +1307,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
     container.addEventListener('pointercancel', onPointerCancel);
     container.addEventListener('wheel', onWheel, { passive: false });
 
-    // Coordinate readout: throttle to ~60fps via rAF
-    let coordRaf: number | null = null;
+    // Coordinate readout: throttled to ~10fps via useAnimationFrameThrottle
     const onMouseMove = (e: MouseEvent) => {
-      if (coordRaf !== null) return;
-      coordRaf = requestAnimationFrame(() => {
-        coordRaf = null;
-        const r = container.getBoundingClientRect();
-        const sx = e.clientX - r.left;
-        const sy = e.clientY - r.top;
-        const c = cameraRef.current;
-        const worldX = (sx - c.x) / c.zoom;
-        const worldY = (sy - c.y) / c.zoom;
-        mouseCanvasRef.current = { x: worldX, y: worldY };
-        const el = coordElRef.current;
-        if (el) {
-          const axes = cartesianAxesRef.current;
-          if (axes) {
-            const xSpan = axes.xRange[1] - axes.xRange[0] || 1;
-            const ySpan = axes.yRange[1] - axes.yRange[0] || 1;
-            const mx = axes.xRange[0] + (worldX - axes.x) / axes.width * xSpan;
-            const my = axes.yRange[0] + (axes.y + axes.height - worldY) / axes.height * ySpan;
-            el.textContent = `x: ${mx.toFixed(1)}, y: ${my.toFixed(1)} (math)`;
-          } else {
-            el.textContent = `x: ${Math.round(worldX)}, y: ${Math.round(worldY)}`;
-          }
-          el.style.opacity = '1';
-        }
-      });
+      updateCoordReadout(e.clientX, e.clientY);
     };
     const onMouseLeave = () => {
       mouseCanvasRef.current = null;
@@ -1285,10 +1357,9 @@ const WhiteboardCanvasInner = forwardRef<WhiteboardExportHandle, WhiteboardCanva
       container.removeEventListener('wheel', onWheel);
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('mouseleave', onMouseLeave);
-      if (coordRaf !== null) cancelAnimationFrame(coordRaf);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [fitToContent, zoomIn, zoomOut, handleClearWithConfirm]);
+  }, [fitToContent, zoomIn, zoomOut, handleClearWithConfirm, updateCoordReadout]);
 
   return (
     <section className="relative h-full overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-paper)] shadow-[var(--shadow-card)]">

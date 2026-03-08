@@ -3,6 +3,8 @@ import {
   sampleFunction,
   tickMarksForRange,
   computeArrowHead,
+  formatTickLabel,
+  toLatex,
 } from '../math-sampling';
 
 // ---------------------------------------------------------------------------
@@ -157,5 +159,107 @@ describe('computeArrowHead', () => {
     expect(Number.isFinite(left.y)).toBe(true);
     expect(Number.isFinite(right.x)).toBe(true);
     expect(Number.isFinite(right.y)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatTickLabel
+// ---------------------------------------------------------------------------
+describe('formatTickLabel', () => {
+  it('formats zero', () => {
+    expect(formatTickLabel(0)).toBe('0');
+  });
+
+  it('formats integers', () => {
+    expect(formatTickLabel(1)).toBe('1');
+    expect(formatTickLabel(-3)).toBe('-3');
+    expect(formatTickLabel(42)).toBe('42');
+  });
+
+  it('detects π', () => {
+    expect(formatTickLabel(Math.PI)).toBe('π');
+  });
+
+  it('detects π/2', () => {
+    expect(formatTickLabel(Math.PI / 2)).toBe('π/2');
+  });
+
+  it('detects 3π/2', () => {
+    expect(formatTickLabel(3 * Math.PI / 2)).toBe('3π/2');
+  });
+
+  it('detects 2π', () => {
+    expect(formatTickLabel(2 * Math.PI)).toBe('2π');
+  });
+
+  it('detects negative π multiples', () => {
+    expect(formatTickLabel(-Math.PI)).toBe('-π');
+    expect(formatTickLabel(-Math.PI / 2)).toBe('-π/2');
+  });
+
+  it('detects e', () => {
+    expect(formatTickLabel(Math.E)).toBe('e');
+  });
+
+  it('detects 2e', () => {
+    expect(formatTickLabel(2 * Math.E)).toBe('2e');
+  });
+
+  it('formats simple decimals', () => {
+    expect(formatTickLabel(0.5)).toBe('0.5');
+    expect(formatTickLabel(0.25)).toBe('0.25');
+  });
+
+  it('uses scientific notation for very small values', () => {
+    const result = formatTickLabel(0.0001);
+    expect(result).toMatch(/e/);
+  });
+
+  it('uses scientific notation for very large values', () => {
+    const result = formatTickLabel(1e7);
+    expect(result).toMatch(/e/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toLatex
+// ---------------------------------------------------------------------------
+describe('toLatex', () => {
+  it('converts 0.5 to fraction', () => {
+    expect(toLatex(0.5)).toBe('\\frac{1}{2}');
+  });
+
+  it('converts 1/3 to fraction', () => {
+    expect(toLatex(1 / 3)).toBe('\\frac{1}{3}');
+  });
+
+  it('converts 0.25 to fraction', () => {
+    expect(toLatex(0.25)).toBe('\\frac{1}{4}');
+  });
+
+  it('converts π/2 to LaTeX', () => {
+    expect(toLatex(Math.PI / 2)).toBe('\\frac{\\pi}{2}');
+  });
+
+  it('converts π to LaTeX', () => {
+    expect(toLatex(Math.PI)).toBe('\\pi');
+  });
+
+  it('converts √2/2 to LaTeX', () => {
+    expect(toLatex(Math.SQRT2 / 2)).toBe('\\frac{\\sqrt{2}}{2}');
+  });
+
+  it('returns integers as strings', () => {
+    expect(toLatex(0)).toBe('0');
+    expect(toLatex(5)).toBe('5');
+    expect(toLatex(-3)).toBe('-3');
+  });
+
+  it('returns decimal for unrecognized values', () => {
+    expect(toLatex(1.7)).toBe('1.7');
+  });
+
+  it('handles negative fractions', () => {
+    expect(toLatex(-0.5)).toBe('-\\frac{1}{2}');
   });
 });
