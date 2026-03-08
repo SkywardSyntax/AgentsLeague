@@ -9,7 +9,7 @@ const MAX_COMPILE_TIME_MS = 100;
 
 describe('Canvas render performance — full pipeline', () => {
   it('should have 18 demo payloads', () => {
-    expect(demoPayloads).toHaveLength(18);
+    expect(demoPayloads).toHaveLength(26);
   });
 
   describe.each(demoPayloads.map((d) => [d.label, d] as const))(
