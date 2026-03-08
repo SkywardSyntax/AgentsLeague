@@ -828,6 +828,9 @@ export function AppShell() {
       const injectCount = batch.elements.filter((el) => el.type !== 'clear').length;
       setDrawingPillState({ kind: 'done', shapeCount: injectCount });
 
+      // Show success toast
+      pushWarning(`✓ ${injectCount} element${injectCount !== 1 ? 's' : ''} injected`, activeChat.id, 'success');
+
       const hasClear = batch.elements.some((el) => el.type === 'clear');
       setChatSessions((prev) =>
         prev.map((chat) => {
@@ -847,7 +850,7 @@ export function AppShell() {
         }),
       );
     },
-    [activeChat, pushHistoryState, setChatSessions],
+    [activeChat, pushHistoryState, pushWarning, setChatSessions],
   );
 
   if (!didRestoreSession) {

@@ -11,10 +11,12 @@ import { PillButton } from '@/components/ui/PillButton';
 import { LatexSvg } from './LatexSvg';
 
 const MATH_SUGGESTION_CHIPS = [
-  'Draw coordinate axes',
-  'Plot sin(x)',
-  'Draw a triangle',
-  'Explain Pythagorean theorem',
+  'Plot y = sin(x)',
+  'Draw the unit circle',
+  'Explain Pythagorean theorem with a diagram',
+  'Show vector addition',
+  'Draw a 2×2 matrix',
+  'Graph the derivative of x²',
 ] as const;
 
 function useTabKeyboard(chats: ChatThreadMeta[], onSelectChat: (id: string) => void) {
@@ -334,8 +336,18 @@ export const ChatPanel = memo(function ChatPanel({
         className="flex-1 space-y-3 overflow-y-auto px-4 py-4"
       >
         {filteredMessages.length === 0 && messages.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--color-border)]/90 bg-[var(--color-surface-soft)]/80 p-4 text-sm text-[var(--color-text-muted)]">
-            Ask a question, request a diagram, or include LaTeX like <code>\(\int_0^1 x^2 dx\)</code>.
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent-faint)]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[var(--color-text-primary)]">AI Whiteboard</p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
+                Ask a question, request a diagram, or include LaTeX like <code className="rounded bg-[var(--color-surface-soft)] px-1 py-0.5 text-[11px]">\(\int_0^1 x^2 dx\)</code>.
+              </p>
+            </div>
           </div>
         ) : null}
 

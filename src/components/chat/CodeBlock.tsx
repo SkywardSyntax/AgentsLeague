@@ -30,26 +30,26 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 
   return (
     <div
-      className="group relative my-2 rounded-lg bg-[#1e1e2e] text-sm"
+      className="group relative my-2 rounded-lg bg-[var(--color-code-bg)] text-sm"
       aria-label={language ? `Code block in ${language}` : 'Code block'}
     >
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-1.5">
         {language ? (
-          <span className="text-xs text-white/50">{language}</span>
+          <span className="text-xs text-[var(--color-code-muted)]">{language}</span>
         ) : (
           <span />
         )}
         <button
           type="button"
           onClick={handleCopy}
-          className="rounded px-2 py-0.5 text-xs text-white/50 transition-colors hover:bg-white/10 hover:text-white/80"
+          className="rounded px-2 py-0.5 text-xs text-[var(--color-code-muted)] transition-colors hover:bg-white/10 hover:text-[var(--color-code-text)]"
           aria-label="Copy code"
         >
           {copied ? 'Copied!' : 'Copy'}
         </button>
       </div>
       <pre className="overflow-x-auto p-4">
-        <code className="font-mono text-sm leading-relaxed text-[#cdd6f4]">
+        <code className="font-mono text-sm leading-relaxed text-[var(--color-code-text)]">
           {code}
         </code>
       </pre>

@@ -27,6 +27,9 @@
   --shadow-card: 0 8px 28px rgba(15, 23, 42, 0.1);
   --color-grid: rgba(77, 93, 118, 0.16);
   --color-grid-bg: #f7f9fc;
+  --color-code-bg: #1e1e2e;
+  --color-code-text: #cdd6f4;
+  --color-code-muted: rgba(255, 255, 255, 0.5);
 }
 
 [data-theme="dark"] {
@@ -51,6 +54,9 @@
   --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.3);
   --color-grid: rgba(148, 163, 184, 0.08);
   --color-grid-bg: #1a1c24;
+  --color-code-bg: #11111b;
+  --color-code-text: #cdd6f4;
+  --color-code-muted: rgba(255, 255, 255, 0.45);
 }
 
 * {

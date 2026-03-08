@@ -423,6 +423,8 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
 
   const { inject, isInjecting, error: hookError, clearError } = useDrawInjector(sessionId);
   const [copiedError, setCopiedError] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState(0);
 
   const filteredTemplates = useMemo(() => {
     return Object.entries(TEMPLATES).filter(
@@ -468,6 +470,29 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     });
   }, [parseResult, hookError, jsonText]);
 
+  const copyJsonToClipboard = useCallback(() => {
+    void navigator.clipboard.writeText(jsonText).then(() => {
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2000);
+    });
+  }, [jsonText]);
+
+  // Rate-limit countdown timer
+  useEffect(() => {
+    if (!hookError) { setRetryCountdown(0); return; }
+    const match = hookError.match(/(\d+)\s*(?:seconds?|s\b)/i) ?? hookError.match(/retry.*?(\d+)/i);
+    if (!match || !(hookError.includes('rate') || hookError.includes('429'))) return;
+    let remaining = parseInt(match[1], 10);
+    if (remaining <= 0 || remaining > 120) return;
+    setRetryCountdown(remaining);
+    const interval = setInterval(() => {
+      remaining -= 1;
+      setRetryCountdown(remaining);
+      if (remaining <= 0) { clearInterval(interval); clearError(); }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [hookError, clearError]);
+
   const handleInject = useCallback(async () => {
     if (!parseResult.ok) return;
     clearError();
@@ -477,9 +502,14 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
     if (result) {
       onInject(result.batch);
       setSuccessMsg(`Injected ${result.diagnostics.elementCount} elements`);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      // Auto-close after brief success display (desktop only)
+      if (!forceOpen) {
+        setTimeout(() => { setSuccessMsg(null); setOpen(false); }, 1500);
+      } else {
+        setTimeout(() => setSuccessMsg(null), 3000);
+      }
     }
-  }, [parseResult, inject, onInject, clearError]);
+  }, [parseResult, inject, onInject, clearError, forceOpen]);
 
     const handleTemplateClick = useCallback(
     (key: string) => {
@@ -563,14 +593,36 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
       <div className="max-h-[40vh] overflow-y-auto p-3 md:max-h-[50vh]">
         {tab === 'json' && (
           <div className="flex flex-col gap-2">
-            <textarea
-              aria-label="DrawBatch JSON"
-              value={jsonText}
-              onChange={(e) => setJsonText(e.target.value)}
-              spellCheck={false}
-              rows={isMobile ? 6 : 12}
-              className="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 font-mono text-xs leading-relaxed text-[var(--color-text-primary)] outline-none transition-colors placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
-            />
+            {/* Toolbar */}
+            <div className="flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={copyJsonToClipboard}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface)]"
+              >
+                {copiedJson ? 'Copied ✓' : 'Copy JSON'}
+              </button>
+            </div>
+
+            {/* Editor with line numbers */}
+            <div className="relative flex overflow-hidden rounded-lg border border-[var(--color-border)] transition-colors focus-within:border-[var(--color-accent)] focus-within:ring-2 focus-within:ring-[var(--color-accent-soft)]">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none select-none border-r border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-2.5 font-mono text-xs leading-relaxed text-[var(--color-text-muted)]"
+              >
+                {jsonText.split('\n').map((_, i) => (
+                  <div key={i} className="text-right">{i + 1}</div>
+                ))}
+              </div>
+              <textarea
+                aria-label="DrawBatch JSON"
+                value={jsonText}
+                onChange={(e) => setJsonText(e.target.value)}
+                spellCheck={false}
+                rows={isMobile ? 6 : 12}
+                className="w-full flex-1 resize-y bg-[var(--color-surface)] px-3 py-2.5 font-mono text-xs leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-muted)]"
+              />
+            </div>
 
             {/* Validation errors */}
             {validationErrors.length > 0 && (
@@ -610,7 +662,9 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
                   <div className="flex flex-1 flex-col gap-0.5">
                     <p className="text-[11px] font-medium text-[var(--color-warning-text)]">
                       {hookError.includes('rate') || hookError.includes('429')
-                        ? 'Rate limit reached — please wait a moment'
+                        ? retryCountdown > 0
+                          ? `Rate limit — please wait ${retryCountdown}s`
+                          : 'Rate limit reached — please wait a moment'
                         : hookError.includes('fetch') || hookError.includes('network') || hookError.includes('Failed')
                           ? 'Network error — check your connection'
                           : 'Injection failed'}
@@ -618,13 +672,26 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
                     <p className="font-mono text-[10px] leading-snug text-[var(--color-warning-text)]/80">{hookError}</p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={copyErrorToClipboard}
-                  className="self-end rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-warning-text)] opacity-70 transition-all hover:bg-[var(--color-warning-bg)] hover:opacity-100"
-                >
-                  {copiedError ? 'Copied ✓' : 'Copy error'}
-                </button>
+                <div className="flex items-center justify-end gap-1.5">
+                  {/* Retry button for server/network errors */}
+                  {(hookError.includes('fetch') || hookError.includes('network') || hookError.includes('Failed') || hookError.includes('500') || hookError.includes('502') || hookError.includes('503')) && (
+                    <button
+                      type="button"
+                      onClick={() => { clearError(); void handleInject(); }}
+                      disabled={!parseResult.ok || isInjecting}
+                      className="rounded px-2 py-0.5 text-[10px] font-medium text-[var(--color-accent)] transition-all hover:bg-[var(--color-accent-faint)] disabled:opacity-50"
+                    >
+                      ↻ Retry
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={copyErrorToClipboard}
+                    className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-warning-text)] opacity-70 transition-all hover:bg-[var(--color-warning-bg)] hover:opacity-100"
+                  >
+                    {copiedError ? 'Copied ✓' : 'Copy error'}
+                  </button>
+                </div>
               </div>
             )}
 

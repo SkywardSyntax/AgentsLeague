@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export type NotificationSeverity = 'warning' | 'error';
+export type NotificationSeverity = 'warning' | 'error' | 'success';
 
 export interface NotificationItem {
   id: string;
@@ -21,11 +21,14 @@ const severityClasses: Record<NotificationSeverity, string> = {
     'border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-[var(--color-warning-text)]',
   error:
     'border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 text-[var(--color-danger)]',
+  success:
+    'border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)] text-[var(--color-accent)]',
 };
 
 const severityIcon: Record<NotificationSeverity, string> = {
   warning: '⚠',
   error: '✕',
+  success: '✓',
 };
 
 export function WarningOverlay({ notifications, onDismissOne, onDismissAll }: WarningOverlayProps) {
@@ -33,13 +36,14 @@ export function WarningOverlay({ notifications, onDismissOne, onDismissAll }: Wa
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Auto-dismiss warnings (not errors) after timeout
+  // Auto-dismiss warnings and success toasts (not errors) after timeout
   useEffect(() => {
     for (const n of notifications) {
-      if (n.severity !== 'warning') continue;
+      if (n.severity === 'error') continue;
       if (dismissed.has(n.id)) continue;
       if (timersRef.current.has(n.id)) continue;
 
+      const delay = n.severity === 'success' ? 3_000 : AUTO_DISMISS_MS;
       const timer = setTimeout(() => {
         timersRef.current.delete(n.id);
         if (onDismissOne) {
@@ -47,7 +51,7 @@ export function WarningOverlay({ notifications, onDismissOne, onDismissAll }: Wa
         } else {
           setDismissed((prev) => new Set(prev).add(n.id));
         }
-      }, AUTO_DISMISS_MS);
+      }, delay);
       timersRef.current.set(n.id, timer);
     }
 
