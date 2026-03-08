@@ -2,7 +2,7 @@
 
 An AI-powered mathematical whiteboard built with Next.js and the OpenAI Responses API. The model streams prose explanations interleaved with structured draw batches that are animated on a 3-layer HTML5 canvas — producing handwritten-style diagrams of functions, coordinate systems, linear algebra, calculus, and statistics.
 
-The app ships 23 first-class `DrawElement` types covering everything from rectangles and arrows to Riemann sums and normal distribution curves. A math expression parser with implicit multiplication support lets the model (or a developer) write `sin(2*PI*x) / x` and have it rendered as a smooth, animated curve. Five colour themes, PNG/SVG/clipboard export, and scene sharing via URL round out the feature set.
+The app ships 30 first-class `DrawElement` types covering everything from rectangles and arrows to Riemann sums, slope fields, and wireframe 3-D surfaces. A math expression parser with implicit multiplication support lets the model (or a developer) write `sin(2*PI*x) / x` and have it rendered as a smooth, animated curve. Five colour themes, PNG/SVG/clipboard export, and scene sharing via URL round out the feature set.
 
 Draw payloads are transport-agnostic: the same `applyDrawBatch` pipeline is used whether the batch arrives from the model's SSE stream or from the direct HTTP injection endpoint, guaranteeing consistent validation, normalisation, and rendering regardless of source.
 
@@ -67,7 +67,7 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 
 ## Drawing Element Reference
 
-23 element types across 7 categories:
+30 element types across 9 categories:
 
 ### Basic
 
@@ -126,6 +126,23 @@ DrawBatch JSON → validate (Zod) → normalise → expand primitives (lowerer)
 |------|-----------|-------------|
 | `circle_with_radius` | `cx, cy, r, label?, showCenter?, showRadius?, radiusAngle?` | Labeled circles |
 | `triangle_with_angles` | `vertices: [{x, y, label?} × 3], showAngles?, showSides?, sideLabels?, angleLabels?` | Labeled triangles |
+
+### Differential Equations
+
+| Type | Key Props | Example Use |
+|------|-----------|-------------|
+| `slope_field` | `expression, xRange, yRange, gridRows, gridCols, x, y, width, height, solutionCurve?` | ODE slope fields dy/dx = f(x,y) |
+| `vector_field_2d` | `Px, Py, xRange, yRange, gridRows, gridCols, x, y, width, height, normalize?` | 2-D vector fields F(x,y) |
+
+### 3-D & Curves
+
+| Type | Key Props | Example Use |
+|------|-----------|-------------|
+| `wireframe_3d` | `shape, cx, cy, size, rotationX, rotationY, expression?, gridN?, showHiddenLines?` | Wireframe surfaces z = f(x,y) |
+| `bezier_curve` | `points, strokeColor?, strokeWidth?, showControlPoints?, showTangents?` | Cubic Bézier with control polygon |
+| `sequence_plot` | `expression, nMin, nMax, x, y, width, height, xRange, yRange, limit?, showLines?` | Sequence convergence plots |
+| `complex_plane` | `points?, vectors?, showUnitCircle?, xRange, yRange, strokeColor?` | Argand diagram with unit circle |
+| `number_theory_grid` | `n, cx, cy, cellSize?, highlights?, showConnections?, modulus?` | Number grid with modular colouring |
 
 ---
 
