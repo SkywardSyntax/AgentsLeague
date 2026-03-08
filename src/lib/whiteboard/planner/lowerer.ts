@@ -17,6 +17,26 @@ import { tickMarksForRange, computeArrowHead } from '../math-sampling';
 
 export const DEFAULT_MAX_LOWERED_ELEMENTS = 60;
 
+// ---------------------------------------------------------------------------
+// Shared coordinate mapping utilities
+// ---------------------------------------------------------------------------
+
+export interface CanvasRect { x: number; y: number; width: number; height: number; }
+export interface MathRange { xMin: number; xMax: number; yMin: number; yMax: number; }
+
+export function makeCoordMapper(rect: CanvasRect, range: MathRange) {
+  const { x, y, width, height } = rect;
+  const { xMin, xMax, yMin, yMax } = range;
+  const xSpan = xMax - xMin || 1;
+  const ySpan = yMax - yMin || 1;
+  return {
+    toCanvasX: (mx: number) => x + (mx - xMin) / xSpan * width,
+    toCanvasY: (my: number) => y + height - (my - yMin) / ySpan * height,
+    toMathX: (cx: number) => xMin + (cx - x) / width * xSpan,
+    toMathY: (cy: number) => yMin + (y + height - cy) / height * ySpan,
+  };
+}
+
 function drawOrderPriority(el: DrawElement): number {
   switch (el.type) {
     case 'rect':
@@ -79,7 +99,7 @@ function expandAngleArc(el: AngleArcElement): DrawElement[] {
   // Label at midAngle, positioned at radius * 1.3 from vertex
   if (el.label) {
     const midRad = (startRad + endRad) / 2;
-    const labelR = el.radius * 1.3;
+    const labelR = el.radius * 1.4;
     result.push({
       id: `${el.id}-label`,
       type: 'text',
@@ -100,12 +120,10 @@ function expandIntegralRegion(el: IntegralRegionElement): DrawElement[] {
   const fillColor = el.fillColor ?? 'rgba(100,149,237,0.18)';
 
   // Map logical points → canvas coordinates
-  const [xMin, xMax] = el.xRange;
-  const [yMin, yMax] = el.yRange;
-  const xSpan = xMax - xMin || 1;
-  const ySpan = yMax - yMin || 1;
-  const toCanvasX = (lx: number) => el.x + ((lx - xMin) / xSpan) * el.width;
-  const toCanvasY = (ly: number) => el.y + el.height - ((ly - yMin) / ySpan) * el.height;
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin: el.xRange[0], xMax: el.xRange[1], yMin: el.yRange[0], yMax: el.yRange[1] },
+  );
 
   const topCanvas = el.topPoints.map((p) => ({ x: toCanvasX(p.x), y: toCanvasY(p.y) }));
   const bottomCanvas = el.bottomPoints
@@ -194,16 +212,16 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
   const result: DrawElement[] = [];
   const [xMin, xMax] = el.xRange;
   const [yMin, yMax] = el.yRange;
-  const xSpan = xMax - xMin || 1;
-  const ySpan = yMax - yMin || 1;
   const curveColor = el.color ?? '#1f2a44';
 
   // Use thinner stroke for mathematical/blueprint styles
   const isMathStyle = el.style === 'mathematical' || el.style === 'blueprint_neat';
   const curveWidth = el.stroke_width ?? (isMathStyle ? 1.5 : 1.8);
 
-  const toCanvasX = (lx: number) => el.x + ((lx - xMin) / xSpan) * el.width;
-  const toCanvasY = (ly: number) => el.y + el.height - ((ly - yMin) / ySpan) * el.height;
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x: el.x, y: el.y, width: el.width, height: el.height },
+    { xMin, xMax, yMin, yMax },
+  );
 
   // Build segments from pre-sampled points (or evaluate expression)
   let rawPoints: Array<{ x: number; y: number }> = [];
@@ -230,6 +248,8 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
   // Split on discontinuities (non-finite values or large jumps)
   const segments: Array<Array<{ x: number; y: number }>> = [];
   let current: Array<{ x: number; y: number }> = [];
+  const xSpan = xMax - xMin || 1;
+  const ySpan = yMax - yMin || 1;
   const slopeDx = (xMax - xMin) / Math.max(1, rawPoints.length - 1);
   const jumpThreshold = Math.abs(ySpan * 5 * slopeDx / (xSpan || 1));
 
@@ -326,9 +346,11 @@ function expandCartesianAxes(el: CartesianAxesElement): DrawElement[] {
   const ySpan = yRange[1] - yRange[0];
   if (xSpan <= 0 || ySpan <= 0) return result;
 
-  // Map logical coordinates to canvas coordinates (consistent with expandFunctionCurve)
-  const toCanvasX = (lx: number) => x + ((lx - xRange[0]) / xSpan) * width;
-  const toCanvasY = (ly: number) => y + height - ((ly - yRange[0]) / ySpan) * height;
+  // Map logical coordinates to canvas coordinates via shared utility
+  const { toCanvasX, toCanvasY } = makeCoordMapper(
+    { x, y, width, height },
+    { xMin: xRange[0], xMax: xRange[1], yMin: yRange[0], yMax: yRange[1] },
+  );
 
   // Origin position (where logical 0 maps, clamped to plot bounds)
   const clampedZeroX = Math.max(xRange[0], Math.min(xRange[1], 0));

@@ -7,8 +7,14 @@ interface Camera {
   zoom: number;
 }
 
+/** Guard: only call setLineDash when available (test mocks may omit it). */
+function resetLineDash(ctx: CanvasRenderingContext2D): void {
+  if (typeof ctx.setLineDash === 'function') ctx.setLineDash([]);
+}
+
 /** Apply ctx.setLineDash based on lineStyle, scaled to world coords. */
 function applyLineDash(ctx: CanvasRenderingContext2D, lineStyle: LineStyle | undefined, zoom: number, dpr: number): void {
+  if (typeof ctx.setLineDash !== 'function') return;
   if (!lineStyle || lineStyle === 'solid') {
     ctx.setLineDash([]);
     return;
@@ -48,7 +54,7 @@ export function drawStroke(
     ctx.lineWidth = worldLineWidth;
     ctx.beginPath();
     const a = points[0]!;
-    if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) { ctx.setLineDash([]); return; }
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) { resetLineDash(ctx); return; }
     ctx.moveTo(a.x, a.y);
     for (let i = 1; i < points.length; i++) {
       const b = points[i]!;
@@ -56,7 +62,7 @@ export function drawStroke(
       ctx.lineTo(b.x, b.y);
     }
     ctx.stroke();
-    ctx.setLineDash([]);
+    resetLineDash(ctx);
     return;
   }
 
@@ -79,7 +85,7 @@ export function drawStroke(
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
-  ctx.setLineDash([]);
+  resetLineDash(ctx);
 }
 
 /** Max segments for per-segment width modulation; beyond this use single-path fast-path. */
@@ -122,7 +128,7 @@ export function drawSmoothStroke(
 
     ctx.beginPath();
     const start = points[0]!;
-    if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) { ctx.setLineDash([]); return; }
+    if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) { resetLineDash(ctx); return; }
     ctx.moveTo(start.x, start.y);
     for (const seg of segs) {
       if (!Number.isFinite(seg.cp1.x) || !Number.isFinite(seg.cp1.y) ||
@@ -131,7 +137,7 @@ export function drawSmoothStroke(
       ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
     }
     ctx.stroke();
-    ctx.setLineDash([]);
+    resetLineDash(ctx);
     return;
   }
 
@@ -155,5 +161,5 @@ export function drawSmoothStroke(
     ctx.bezierCurveTo(seg.cp1.x, seg.cp1.y, seg.cp2.x, seg.cp2.y, seg.p3.x, seg.p3.y);
     ctx.stroke();
   }
-  ctx.setLineDash([]);
+  resetLineDash(ctx);
 }
