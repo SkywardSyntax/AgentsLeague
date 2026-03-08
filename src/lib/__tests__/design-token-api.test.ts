@@ -80,12 +80,12 @@ describe('Lane 08 — Design Token API', () => {
   it('COORD_BOUNDS constant shape and values are stable', () => {
     expect(COORD_BOUNDS).toMatchInlineSnapshot(`
       {
-        "MAX_DIMENSION": 3000,
-        "MAX_X": 4000,
-        "MAX_Y": 4000,
+        "MAX_DIMENSION": 10000,
+        "MAX_X": 10000,
+        "MAX_Y": 10000,
         "MIN_DIMENSION": 1,
-        "MIN_X": -2000,
-        "MIN_Y": -2000,
+        "MIN_X": -10000,
+        "MIN_Y": -10000,
       }
     `);
   });

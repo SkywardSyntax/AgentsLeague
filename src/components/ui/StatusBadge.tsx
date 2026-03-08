@@ -20,7 +20,7 @@ const labelMap = {
 
 export const StatusBadge = memo(function StatusBadge({ status }: StatusBadgeProps) {
   return (
-    <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1.5">
+    <div role="status" aria-live="polite" aria-busy={status !== 'idle'} className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1.5">
       <span
         className={`h-2 w-2 rounded-full ${toneMap[status]} ${status !== 'idle' ? 'pulse-active' : ''}`}
         data-testid="status-dot"

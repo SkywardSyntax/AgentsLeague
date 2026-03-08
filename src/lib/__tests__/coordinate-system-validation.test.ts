@@ -45,17 +45,17 @@ describe('Coordinate System Validation', () => {
       to: { x: 99999, y: -99999 },
     };
     const result = clampElementCoordinates(el);
-    expect(result.type === 'arrow' && result.from.x).toBe(-2000);
-    expect(result.type === 'arrow' && result.from.y).toBe(4000);
-    expect(result.type === 'arrow' && result.to.x).toBe(4000);
-    expect(result.type === 'arrow' && result.to.y).toBe(-2000);
+    expect(result.type === 'arrow' && result.from.x).toBe(COORD_BOUNDS.MIN_X);
+    expect(result.type === 'arrow' && result.from.y).toBe(COORD_BOUNDS.MAX_Y);
+    expect(result.type === 'arrow' && result.to.x).toBe(COORD_BOUNDS.MAX_X);
+    expect(result.type === 'arrow' && result.to.y).toBe(COORD_BOUNDS.MIN_Y);
   });
 
   it('text element coordinates are clamped', () => {
     const el: DrawElement = { type: 'text', id: 't1', x: 50000, y: -50000, text: 'hello' };
     const result = clampElementCoordinates(el);
-    expect(result.type === 'text' && result.x).toBe(4000);
-    expect(result.type === 'text' && result.y).toBe(-2000);
+    expect(result.type === 'text' && result.x).toBe(COORD_BOUNDS.MAX_X);
+    expect(result.type === 'text' && result.y).toBe(COORD_BOUNDS.MIN_Y);
   });
 
   it('latex element coordinates are clamped', () => {

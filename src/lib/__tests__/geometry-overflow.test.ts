@@ -18,30 +18,30 @@ describe('geometry-overflow', () => {
   });
 
   // Test 2
-  it('safeAdd(3500, 1000) clamps to COORD_BOUNDS.MAX_X and returns overflowed: true', () => {
-    const result = safeAdd(3500, 1000);
+  it('safeAdd(8000, 3000) clamps to COORD_BOUNDS.MAX_X and returns overflowed: true', () => {
+    const result = safeAdd(8000, 3000);
     expect(result.value).toBe(COORD_BOUNDS.MAX_X);
     expect(result.overflowed).toBe(true);
   });
 
   // Test 3
-  it('safeAdd(-2500, -100) clamps to COORD_BOUNDS.MIN_X and returns overflowed: true', () => {
-    const result = safeAdd(-2500, -100);
+  it('safeAdd(-8000, -3000) clamps to COORD_BOUNDS.MIN_X and returns overflowed: true', () => {
+    const result = safeAdd(-8000, -3000);
     expect(result.value).toBe(COORD_BOUNDS.MIN_X);
     expect(result.overflowed).toBe(true);
   });
 
   // Test 4
-  it('safeMul(100, 50) returns { value: 4000, overflowed: true } (clamped to MAX)', () => {
-    const result = safeMul(100, 50);
+  it('safeMul(200, 60) returns { value: COORD_BOUNDS.MAX_X, overflowed: true } (clamped to MAX)', () => {
+    const result = safeMul(200, 60);
     expect(result.value).toBe(COORD_BOUNDS.MAX_X);
     expect(result.overflowed).toBe(true);
   });
 
   // Test 5
-  it('safeDist between (0,0) and (3000,4000) returns clamped distance with overflowed: true', () => {
-    const result = safeDist({ x: 0, y: 0 }, { x: 3000, y: 4000 });
-    // Math.hypot(3000, 4000) = 5000, exceeds MAX_X
+  it('safeDist between (0,0) and (8000,8000) returns clamped distance with overflowed: true', () => {
+    const result = safeDist({ x: 0, y: 0 }, { x: 8000, y: 8000 });
+    // Math.hypot(8000, 8000) ≈ 11314, exceeds MAX_X
     expect(result.value).toBe(COORD_BOUNDS.MAX_X);
     expect(result.overflowed).toBe(true);
   });
@@ -56,7 +56,7 @@ describe('geometry-overflow', () => {
 
   // Test 7
   it('safeTransformPoint with extreme scale matrix clamps output and sets overflowed: true', () => {
-    const extreme = { a: 100, b: 0, c: 0, d: 100, tx: 0, ty: 0 };
+    const extreme = { a: 200, b: 0, c: 0, d: 200, tx: 0, ty: 0 };
     const result = safeTransformPoint({ x: 100, y: 100 }, extreme);
     expect(result.value.x).toBe(COORD_BOUNDS.MAX_X);
     expect(result.value.y).toBe(COORD_BOUNDS.MAX_Y);

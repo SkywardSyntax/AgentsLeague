@@ -1270,8 +1270,13 @@ export const DrawPayloadInjector = memo(function DrawPayloadInjector({
               variant="accent"
               onClick={handleInject}
               disabled={!parseResult.ok || isInjecting}
+              aria-busy={isInjecting}
+              aria-label={isInjecting ? 'Injection in progress' : 'Inject drawing payload'}
               className="self-end"
             >
+              {isInjecting && (
+                <span className="mr-1 inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/40 border-t-white" aria-hidden="true" />
+              )}
               {isInjecting ? 'Injecting…' : 'Inject'}
             </PillButton>
 

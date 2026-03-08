@@ -332,6 +332,7 @@ export const ChatPanel = memo(function ChatPanel({
         role="log"
         aria-label="Chat messages"
         aria-live="polite"
+        aria-busy={status !== 'idle'}
         data-testid="chat-messages"
         className="flex-1 space-y-3 overflow-y-auto px-4 py-4"
       >
@@ -360,7 +361,9 @@ export const ChatPanel = memo(function ChatPanel({
               className={`${newMessageIds.has(message.id) ? 'animate-rise-in' : ''} rounded-2xl border px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${
                 isUser
                   ? 'ml-6 border-[var(--color-accent-soft)] bg-[var(--color-accent-faint)]'
-                  : 'mr-6 border-[var(--color-border)] bg-[var(--color-surface)]'
+                  : message.errorMeta
+                    ? 'mr-6 border-[var(--color-danger)]/30 bg-[var(--color-danger)]/5'
+                    : 'mr-6 border-[var(--color-border)] bg-[var(--color-surface)]'
               }`}
             >
               <div className="mb-1 flex items-center justify-between">
@@ -499,12 +502,15 @@ export const ChatPanel = memo(function ChatPanel({
               type="submit"
               data-testid="chat-send"
               aria-disabled={sendDisabled}
-              aria-label="Send message"
-              className={`rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition ${
+              aria-label={status !== 'idle' ? `${status === 'thinking' ? 'Thinking' : status === 'streaming' ? 'Responding' : 'Drawing'}… please wait` : 'Send message'}
+              className={`flex items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(10,132,255,0.3)] transition ${
                 sendDisabled ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'
               }`}
             >
-              Send
+              {status !== 'idle' && (
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/40 border-t-white" aria-hidden="true" />
+              )}
+              {status !== 'idle' ? 'Working…' : 'Send'}
             </button>
           </div>
         </form>

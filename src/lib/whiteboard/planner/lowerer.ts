@@ -233,7 +233,7 @@ function expandFunctionCurve(el: FunctionCurveElement): DrawElement[] {
   if (el.points && el.points.length > 0) {
     rawPoints = el.points;
   } else if (el.expression) {
-    const steps = 80;
+    const steps = 160;
     const dx = (xMax - xMin) / (steps - 1);
     // Try safe custom parser first, fall back to Function constructor for Math.* expressions
     const parsedFn = parseMathExpression(el.expression);
@@ -524,7 +524,8 @@ function expandNumberLine(el: NumberLineElement): DrawElement[] {
   const result: DrawElement[] = [];
   const { x, y, length, min, max } = el;
   const color = el.color ?? '#1f2a44';
-  const sw = el.stroke_width ?? 1.5;
+  // Number line axis drawn thicker than curves for visual hierarchy
+  const sw = el.stroke_width ?? 2;
 
   const span = max - min;
   if (span <= 0 || length <= 0) return result;
@@ -578,7 +579,7 @@ function expandNumberLine(el: NumberLineElement): DrawElement[] {
     result.push({
       id: `${el.id}-tlbl-${i}`,
       type: 'text' as const,
-      x: sx,
+      x: sx - 4,
       y: y + TICK_HALF + 12,
       text: t.label,
       size: 10,
@@ -673,13 +674,16 @@ function expandVectorArrow(el: VectorArrowElement): DrawElement[] {
     stroke_width: thickWidth,
   });
 
-  // Label at midpoint
+  // Label offset perpendicular to vector direction (avoids overlap with shaft)
   if (el.label) {
+    const perpX = dy / len;
+    const perpY = -dx / len;
+    const LABEL_OFFSET = 12;
     result.push({
       id: `${el.id}-label`,
       type: 'text' as const,
-      x: x + dx / 2 + 8,
-      y: y + dy / 2 - 8,
+      x: x + dx / 2 + LABEL_OFFSET * perpX,
+      y: y + dy / 2 + LABEL_OFFSET * perpY,
       text: el.label,
       size: 13,
       color,

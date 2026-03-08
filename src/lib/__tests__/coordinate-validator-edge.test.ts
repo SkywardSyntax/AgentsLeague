@@ -141,9 +141,9 @@ describe('coordinate-validator edge cases', () => {
 
   describe('clampPoint and sanitizePointArray', () => {
     it('clamps coordinates to COORD_BOUNDS', () => {
-      const p = clampPoint({ x: -9999, y: 9999 });
-      expect(p.x).toBe(-2000);
-      expect(p.y).toBe(4000);
+      const p = clampPoint({ x: -15000, y: 15000 });
+      expect(p.x).toBe(-10000);
+      expect(p.y).toBe(10000);
     });
 
     it('sanitizePointArray filters out non-finite points and clamps', () => {
@@ -151,13 +151,13 @@ describe('coordinate-validator edge cases', () => {
         { x: 0, y: 0 },
         { x: NaN, y: 5 },
         { x: 100, y: Infinity },
-        { x: -5000, y: 5000 },
+        { x: -15000, y: 15000 },
       ];
       const result = sanitizePointArray(pts);
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({ x: 0, y: 0 });
-      expect(result[1]!.x).toBe(-2000);
-      expect(result[1]!.y).toBe(4000);
+      expect(result[1]!.x).toBe(-10000);
+      expect(result[1]!.y).toBe(10000);
     });
   });
 });

@@ -8,6 +8,8 @@ import type {
   SemanticDiagramPanelBlock,
   SemanticEquationLine,
   SemanticEquationStackBlock,
+  SemanticGraphNodeBlock,
+  SemanticGraphEdgeBlock,
   StructuredWhiteboardContext,
   StylePreset,
 } from '@/types/agent';
@@ -973,6 +975,331 @@ function buildAdaptiveLayout(
         size: 20,
       });
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// graph_diagram template — node-and-edge diagrams
+// ---------------------------------------------------------------------------
+
+const DEFAULT_NODE_RADIUS = 30;
+const DEFAULT_NODE_SIZE = 60; // width/height for rect/square/diamond
+
+interface ResolvedNode {
+  id: string;
+  label: string;
+  shape: NonNullable<SemanticGraphNodeBlock['shape']>;
+  x: number;
+  y: number;
+  color?: string;
+}
+
+function autoLayoutNodes(nodes: SemanticGraphNodeBlock[]): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  const count = nodes.length;
+  if (count === 0) return positions;
+
+  if (count <= 6) {
+    // Circular layout centered at (700, 350) with r=200
+    const cx = 700;
+    const cy = 350;
+    const r = 200;
+    for (let i = 0; i < count; i++) {
+      const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+      positions.set(nodes[i]!.id, {
+        x: Math.round(cx + r * Math.cos(angle)),
+        y: Math.round(cy + r * Math.sin(angle)),
+      });
+    }
+  } else {
+    // 3-column grid layout starting at (200, 150), spacing 250×140
+    const cols = 3;
+    const startX = 200;
+    const startY = 150;
+    const gapX = 250;
+    const gapY = 140;
+    for (let i = 0; i < count; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      positions.set(nodes[i]!.id, {
+        x: startX + col * gapX,
+        y: startY + row * gapY,
+      });
+    }
+  }
+  return positions;
+}
+
+function resolveGraphNodes(blocks: SemanticGraphNodeBlock[]): ResolvedNode[] {
+  const needsLayout = blocks.some((b) => b.x == null || b.y == null);
+  const autoPositions = needsLayout ? autoLayoutNodes(blocks) : new Map();
+
+  return blocks.map((b) => {
+    const autoPos = autoPositions.get(b.id);
+    return {
+      id: b.id,
+      label: b.label ?? b.id,
+      shape: b.shape ?? 'circle',
+      x: b.x ?? autoPos?.x ?? 400,
+      y: b.y ?? autoPos?.y ?? 300,
+      color: b.color,
+    };
+  });
+}
+
+function placeGraphNode(node: ResolvedNode, state: BuildState): void {
+  const { id, label, shape, x, y, color } = node;
+  const r = DEFAULT_NODE_RADIUS;
+  const s = DEFAULT_NODE_SIZE;
+
+  switch (shape) {
+    case 'circle':
+      pushElement(state, { id, type: 'ellipse', cx: x, cy: y, rx: r, ry: r, color });
+      break;
+
+    case 'double_circle':
+      pushElement(state, { id: `${id}-outer`, type: 'ellipse', cx: x, cy: y, rx: r + 6, ry: r + 6, color });
+      pushElement(state, { id, type: 'ellipse', cx: x, cy: y, rx: r, ry: r, color });
+      break;
+
+    case 'rect':
+      pushElement(state, { id, type: 'rect', x: x - s / 2, y: y - s / 2 + 5, w: s * 1.4, h: s - 10, color });
+      break;
+
+    case 'square':
+      pushElement(state, { id, type: 'rect', x: x - s / 2, y: y - s / 2, w: s, h: s, color });
+      break;
+
+    case 'diamond': {
+      const top: Point = { x, y: y - s / 2 };
+      const right: Point = { x: x + s / 2, y };
+      const bottom: Point = { x, y: y + s / 2 };
+      const left: Point = { x: x - s / 2, y };
+      pushElement(state, { id: `${id}-d1`, type: 'line', from: top, to: right, color });
+      pushElement(state, { id: `${id}-d2`, type: 'line', from: right, to: bottom, color });
+      pushElement(state, { id: `${id}-d3`, type: 'line', from: bottom, to: left, color });
+      pushElement(state, { id: `${id}-d4`, type: 'line', from: left, to: top, color });
+      break;
+    }
+  }
+
+  // Center label inside the node
+  if (label) {
+    const textW = label.length * 8;
+    pushElement(state, {
+      id: `${id}-label`,
+      type: 'text',
+      x: x - textW / 2,
+      y: y - 7,
+      text: label,
+      size: 14,
+      color,
+    });
+  }
+
+  pushAnchor(state, `${id}-center`, { x, y }, 'node_center');
+}
+
+function nodeBoundaryPoint(node: ResolvedNode, target: Point): Point {
+  const dx = target.x - node.x;
+  const dy = target.y - node.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist === 0) return { x: node.x + DEFAULT_NODE_RADIUS, y: node.y };
+
+  const nx = dx / dist;
+  const ny = dy / dist;
+
+  switch (node.shape) {
+    case 'circle':
+    case 'double_circle': {
+      const r = node.shape === 'double_circle' ? DEFAULT_NODE_RADIUS + 6 : DEFAULT_NODE_RADIUS;
+      return { x: node.x + nx * r, y: node.y + ny * r };
+    }
+    case 'rect': {
+      const hw = (DEFAULT_NODE_SIZE * 1.4) / 2;
+      const hh = (DEFAULT_NODE_SIZE - 10) / 2;
+      const sx = Math.abs(nx) > 0.001 ? hw / Math.abs(nx) : Infinity;
+      const sy = Math.abs(ny) > 0.001 ? hh / Math.abs(ny) : Infinity;
+      const s = Math.min(sx, sy);
+      return { x: node.x + nx * s, y: node.y + ny * s };
+    }
+    case 'square': {
+      const hs = DEFAULT_NODE_SIZE / 2;
+      const sx = Math.abs(nx) > 0.001 ? hs / Math.abs(nx) : Infinity;
+      const sy = Math.abs(ny) > 0.001 ? hs / Math.abs(ny) : Infinity;
+      const s = Math.min(sx, sy);
+      return { x: node.x + nx * s, y: node.y + ny * s };
+    }
+    case 'diamond': {
+      // Diamond boundary: |dx/hs| + |dy/hs| = 1
+      const hs = DEFAULT_NODE_SIZE / 2;
+      const s = hs / (Math.abs(nx) + Math.abs(ny) || 1);
+      return { x: node.x + nx * s, y: node.y + ny * s };
+    }
+  }
+}
+
+function placeGraphEdge(
+  edge: SemanticGraphEdgeBlock,
+  nodeMap: Map<string, ResolvedNode>,
+  state: BuildState,
+): void {
+  const fromNode = nodeMap.get(edge.from);
+  const toNode = nodeMap.get(edge.to);
+  if (!fromNode || !toNode) {
+    state.warnings.push(`Edge ${edge.id}: missing node '${!fromNode ? edge.from : edge.to}'`);
+    return;
+  }
+
+  const isSelfLoop = edge.from === edge.to;
+  const directed = edge.directed ?? true;
+
+  if (isSelfLoop) {
+    // Self-loop: small ellipse arc at top of node
+    const loopR = 18;
+    const topY = fromNode.y - DEFAULT_NODE_RADIUS - loopR * 2;
+    pushElement(state, {
+      id: edge.id,
+      type: 'ellipse',
+      cx: fromNode.x,
+      cy: topY + loopR,
+      rx: loopR,
+      ry: loopR,
+    });
+    if (directed) {
+      // Small arrowhead at re-entry point
+      pushElement(state, {
+        id: `${edge.id}-head`,
+        type: 'arrow',
+        from: { x: fromNode.x + loopR - 2, y: topY + loopR + 8 },
+        to: { x: fromNode.x + 4, y: fromNode.y - DEFAULT_NODE_RADIUS },
+      });
+    }
+    if (edge.label) {
+      pushElement(state, {
+        id: `${edge.id}-label`,
+        type: 'text',
+        x: fromNode.x - edge.label.length * 4,
+        y: topY - 6,
+        text: edge.label,
+        size: 13,
+        color: edge.color,
+      });
+    }
+    return;
+  }
+
+  if (edge.curved) {
+    // Bézier-approximated curve with 5 line segments, curving to the right of direction
+    const fromPt = nodeBoundaryPoint(fromNode, { x: toNode.x, y: toNode.y });
+    const toPt = nodeBoundaryPoint(toNode, { x: fromNode.x, y: fromNode.y });
+    const mx = (fromPt.x + toPt.x) / 2;
+    const my = (fromPt.y + toPt.y) / 2;
+    const dx = toPt.x - fromPt.x;
+    const dy = toPt.y - fromPt.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    // Perpendicular offset (right of direction)
+    const perpX = len > 0 ? -dy / len : 0;
+    const perpY = len > 0 ? dx / len : 0;
+    const bulge = Math.min(60, len * 0.3);
+    const cx = mx + perpX * bulge;
+    const cy = my + perpY * bulge;
+
+    const segments = 5;
+    const pts: Point[] = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const u = 1 - t;
+      // Quadratic Bézier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+      pts.push({
+        x: u * u * fromPt.x + 2 * u * t * cx + t * t * toPt.x,
+        y: u * u * fromPt.y + 2 * u * t * cy + t * t * toPt.y,
+      });
+    }
+
+    for (let i = 0; i < segments; i++) {
+      const isLast = i === segments - 1;
+      pushElement(state, {
+        id: `${edge.id}-seg${i}`,
+        type: isLast && directed ? 'arrow' : 'line',
+        from: pts[i]!,
+        to: pts[i + 1]!,
+        color: edge.color,
+      });
+    }
+
+    if (edge.label) {
+      // Place label at the midpoint of the curve (the control point area)
+      pushElement(state, {
+        id: `${edge.id}-label`,
+        type: 'text',
+        x: cx - (edge.label.length * 4),
+        y: cy - 12,
+        text: edge.label,
+        size: 13,
+        color: edge.color,
+      });
+    }
+    return;
+  }
+
+  // Straight edge
+  const fromPt = nodeBoundaryPoint(fromNode, { x: toNode.x, y: toNode.y });
+  const toPt = nodeBoundaryPoint(toNode, { x: fromNode.x, y: fromNode.y });
+
+  pushElement(state, {
+    id: edge.id,
+    type: directed ? 'arrow' : 'line',
+    from: fromPt,
+    to: toPt,
+    color: edge.color,
+  });
+
+  if (edge.label) {
+    const mx = (fromPt.x + toPt.x) / 2;
+    const my = (fromPt.y + toPt.y) / 2;
+    const dx = toPt.x - fromPt.x;
+    const dy = toPt.y - fromPt.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    // Offset perpendicular to edge direction
+    const perpX = len > 0 ? -dy / len : 0;
+    const perpY = len > 0 ? dx / len : 0;
+    const offset = 14;
+    pushElement(state, {
+      id: `${edge.id}-label`,
+      type: 'text',
+      x: mx + perpX * offset - edge.label.length * 4,
+      y: my + perpY * offset - 7,
+      text: edge.label,
+      size: 13,
+      color: edge.color,
+    });
+  }
+}
+
+export function buildGraphDiagramLayout(
+  semanticBatch: SemanticBatch,
+  state: BuildState,
+): void {
+  const nodeBlocks = semanticBatch.blocks.filter(
+    (b): b is SemanticGraphNodeBlock => b.kind === 'node',
+  );
+  const edgeBlocks = semanticBatch.blocks.filter(
+    (b): b is SemanticGraphEdgeBlock => b.kind === 'edge',
+  );
+
+  const resolved = resolveGraphNodes(nodeBlocks);
+  const nodeMap = new Map<string, ResolvedNode>();
+  for (const n of resolved) {
+    nodeMap.set(n.id, n);
+  }
+
+  // Place nodes first, then edges on top
+  for (const n of resolved) {
+    placeGraphNode(n, state);
+  }
+  for (const e of edgeBlocks) {
+    placeGraphEdge(e, nodeMap, state);
   }
 }
 

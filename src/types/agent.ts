@@ -266,7 +266,8 @@ export interface DrawBatch {
 export type SemanticTemplate =
   | 'equation_derivation_vertical'
   | 'jacobian_mapping_2panel'
-  | 'freeform_semantic';
+  | 'freeform_semantic'
+  | 'graph_diagram';
 
 export type RegionHint = 'left' | 'right' | 'center' | 'bottom' | 'auto';
 
@@ -331,11 +332,36 @@ export interface SemanticAnnotationBlock {
   anchor?: string;
 }
 
+export type GraphNodeShape = 'circle' | 'rect' | 'square' | 'diamond' | 'double_circle';
+
+export interface SemanticGraphNodeBlock {
+  id: string;
+  kind: 'node';
+  label?: string;
+  shape?: GraphNodeShape;
+  x?: number;
+  y?: number;
+  color?: string;
+}
+
+export interface SemanticGraphEdgeBlock {
+  id: string;
+  kind: 'edge';
+  from: string;
+  to: string;
+  label?: string;
+  directed?: boolean;
+  curved?: boolean;
+  color?: string;
+}
+
 export type SemanticBlock =
   | SemanticEquationStackBlock
   | SemanticDiagramPanelBlock
   | SemanticCaptionBlock
-  | SemanticAnnotationBlock;
+  | SemanticAnnotationBlock
+  | SemanticGraphNodeBlock
+  | SemanticGraphEdgeBlock;
 
 export interface SemanticRelation {
   id: string;

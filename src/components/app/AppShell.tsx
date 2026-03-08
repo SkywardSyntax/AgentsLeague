@@ -323,7 +323,7 @@ export function AppShell() {
             return merged;
           });
           setLastDrawSource('AI');
-          setDrawingPillState({ kind: 'ai_drawing', elementCount: drawableElements.length });
+          setDrawingPillState({ kind: 'ai_drawing', elementCount: drawableElements.length, typeCounts: batchTypeCounts });
 
           // Flash batch completion
           setBatchJustCompleted(true);
@@ -451,7 +451,9 @@ export function AppShell() {
         // Show done pill briefly if we drew shapes, then reset
         if (turnSawToolBatchRef.current) {
           setDrawingPillState((prev) =>
-            prev.kind === 'ai_drawing' ? { kind: 'done', shapeCount: prev.elementCount } : { kind: 'done', shapeCount: 0 },
+            prev.kind === 'ai_drawing'
+              ? { kind: 'done', shapeCount: prev.elementCount, typeCounts: prev.typeCounts }
+              : { kind: 'done', shapeCount: 0 },
           );
         }
         resetStreamState();
@@ -825,11 +827,24 @@ export function AppShell() {
       // Determine source from batch_id prefix
       const source: DrawSource = batch.batch_id.startsWith('tpl-') ? 'Template' : 'Injected';
       setLastDrawSource(source);
-      const injectCount = batch.elements.filter((el) => el.type !== 'clear').length;
-      setDrawingPillState({ kind: 'done', shapeCount: injectCount });
+      const drawableEls = batch.elements.filter((el) => el.type !== 'clear');
+      const injectCount = drawableEls.length;
+      const injectTypeCounts: Partial<Record<DrawElement['type'], number>> = {};
+      for (const el of drawableEls) {
+        injectTypeCounts[el.type] = (injectTypeCounts[el.type] ?? 0) + 1;
+      }
+      setDrawingPillState({ kind: 'done', shapeCount: injectCount, typeCounts: injectTypeCounts });
 
-      // Show success toast
-      pushWarning(`✓ ${injectCount} element${injectCount !== 1 ? 's' : ''} injected`, activeChat.id, 'success');
+      // Build type breakdown for toast
+      const typeBreakdown = Object.entries(injectTypeCounts)
+        .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0))
+        .slice(0, 3)
+        .map(([type, count]) => `${count} ${type}`)
+        .join(', ');
+      const toastMsg = typeBreakdown
+        ? `✓ Injected ${injectCount} element${injectCount !== 1 ? 's' : ''} (${typeBreakdown})`
+        : `✓ ${injectCount} element${injectCount !== 1 ? 's' : ''} injected`;
+      pushWarning(toastMsg, activeChat.id, 'success');
 
       const hasClear = batch.elements.some((el) => el.type === 'clear');
       setChatSessions((prev) =>
@@ -852,6 +867,30 @@ export function AppShell() {
     },
     [activeChat, pushHistoryState, pushWarning, setChatSessions],
   );
+
+  const handleCopySceneJson = useCallback(() => {
+    const scene = chatSessions.find((c) => c.id === activeChatId)?.scene ?? [];
+    const batch: DrawBatch = {
+      batch_id: `export-${Date.now()}`,
+      elements: scene,
+      source: 'injection' as const,
+      schemaVersion: 1,
+    };
+    navigator.clipboard.writeText(JSON.stringify(batch, null, 2)).then(
+      () => {
+        const targetId = activeChatIdRef.current;
+        if (targetId) {
+          pushWarning(`✓ Copied ${scene.length} element${scene.length !== 1 ? 's' : ''} as JSON`, targetId, 'success');
+        }
+      },
+      () => {
+        const targetId = activeChatIdRef.current;
+        if (targetId) {
+          pushWarning('Failed to copy to clipboard', targetId, 'error');
+        }
+      },
+    );
+  }, [chatSessions, activeChatId, pushWarning]);
 
   if (!didRestoreSession) {
     return (
@@ -897,6 +936,7 @@ export function AppShell() {
               scene={activeChat.scene}
               batches={activeChat.batches}
               lastDrawSource={lastDrawSource}
+              onCopyScene={handleCopySceneJson}
             />
             {!isAgentMode && (
               <DrawPayloadInjector onInject={handleDrawInject} sessionId={activeChat.id} forceOpen={mobileActivePanel === 'draw'} />

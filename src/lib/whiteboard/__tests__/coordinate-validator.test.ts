@@ -115,9 +115,9 @@ describe('coordinate-validator', () => {
 
   describe('clampPoint', () => {
     it('clamps to bounds', () => {
-      const result = clampPoint({ x: -5000, y: 10000 });
-      expect(result.x).toBe(-2000);
-      expect(result.y).toBe(4000);
+      const result = clampPoint({ x: -15000, y: 15000 });
+      expect(result.x).toBe(-10000);
+      expect(result.y).toBe(10000);
     });
 
     it('does not modify in-bounds points', () => {
@@ -140,8 +140,8 @@ describe('coordinate-validator', () => {
 
     it('clamps points to bounds', () => {
       const result = sanitizePointArray([{ x: 50000, y: -50000 }]);
-      expect(result[0]!.x).toBe(4000);
-      expect(result[0]!.y).toBe(-2000);
+      expect(result[0]!.x).toBe(10000);
+      expect(result[0]!.y).toBe(-10000);
     });
   });
 });

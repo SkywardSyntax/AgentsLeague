@@ -17,7 +17,7 @@ function makeRequest(body: Record<string, unknown>, signal?: AbortSignal): Reque
   const sessionId = (body.sessionId as string) || 'test-session';
   return new Request('http://localhost/api/agent/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+    headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId, 'Origin': 'http://localhost' },
     body: JSON.stringify(body),
     signal,
   });
@@ -62,7 +62,7 @@ describe('POST /api/agent/stream (mock mode)', () => {
     const { POST } = await importRoute();
     const req = new Request('http://localhost/api/agent/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'test-session' },
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'test-session', 'Origin': 'http://localhost' },
       body: 'not-json{{{',
     });
     const res = await POST(req);

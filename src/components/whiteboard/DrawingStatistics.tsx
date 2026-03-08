@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import type { DrawBatch, DrawElement } from '@/types/agent';
 
 export type DrawSource = 'AI' | 'Injected' | 'Template' | 'None';
@@ -9,6 +9,7 @@ interface DrawingStatisticsProps {
   scene: DrawElement[];
   batches: DrawBatch[];
   lastDrawSource: DrawSource;
+  onCopyScene?: () => void;
 }
 
 function computeTypeCounts(scene: DrawElement[]): Record<string, number> {
@@ -27,6 +28,10 @@ function typeIcon(type: string): string {
     case 'arrow': return '→';
     case 'text': return 'T';
     case 'latex': return '∑';
+    case 'cartesian_axes': return '⊞';
+    case 'function_curve': return '∿';
+    case 'number_line': return '⟼';
+    case 'vector_arrow': return '⟶';
     default: return '•';
   }
 }
@@ -46,14 +51,24 @@ export const DrawingStatistics = memo(function DrawingStatistics({
   scene,
   batches,
   lastDrawSource,
+  onCopyScene,
 }: DrawingStatisticsProps) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const typeCounts = computeTypeCounts(scene);
   const typeEntries = Object.entries(typeCounts).sort(([, a], [, b]) => b - a);
   const totalElements = scene.length;
   const batchCount = batches.filter(
     (b) => !b.elements.every((el) => el.type === 'clear'),
   ).length;
+
+  const handleCopy = useCallback(() => {
+    if (onCopyScene) {
+      onCopyScene();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [onCopyScene]);
 
   return (
     <div className="absolute bottom-3 right-3 z-10">
@@ -120,6 +135,32 @@ export const DrawingStatistics = memo(function DrawingStatistics({
                 </span>
               </div>
             </div>
+
+            {onCopyScene && totalElements > 0 && (
+              <div className="border-t border-[var(--color-border)] pt-2">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  aria-label="Copy scene as JSON to clipboard"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                >
+                  {copied ? (
+                    <>
+                      <span className="text-emerald-600 dark:text-emerald-400" aria-hidden="true">✓</span>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="5" y="5" width="9" height="9" rx="1.5" />
+                        <path d="M3 11V3a1.5 1.5 0 0 1 1.5-1.5H11" />
+                      </svg>
+                      Copy as JSON
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

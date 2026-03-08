@@ -295,9 +295,12 @@ describe('expandVectorArrow', () => {
     const lbl = texts(batch.elements).find((e) => e.id === 'vec-lbl-label')!;
     expect(lbl).toBeDefined();
     expect(lbl.text).toBe('v⃗');
-    // Near midpoint (300 + 8, 250 - 8)
-    expect(lbl.x).toBeCloseTo(308);
-    expect(lbl.y).toBeCloseTo(242);
+    // Near midpoint with perpendicular offset from vector direction
+    const len = Math.hypot(200, -100);
+    const expectedX = 200 + 200 / 2 + 12 * (-100 / len);
+    const expectedY = 300 + (-100) / 2 + 12 * (-200 / len);
+    expect(lbl.x).toBeCloseTo(expectedX, 0);
+    expect(lbl.y).toBeCloseTo(expectedY, 0);
   });
 
   it('returns empty for near-zero length vector', () => {
@@ -359,8 +362,8 @@ describe('expandFunctionCurve', () => {
       expression: 'Math.sin(x)',
     };
     const batch = lowerSingle(exprCurve);
-    // 80 sample points → 79 line segments
-    expect(countByType(batch.elements, 'line')).toBe(79);
+    // 160 sample points → 159 line segments
+    expect(countByType(batch.elements, 'line')).toBe(159);
   });
 
   it('handles NaN-producing expressions (splits at discontinuities)', () => {

@@ -50,10 +50,10 @@ describe('iter28 · Coordinate transforms correctness', () => {
   it('clamp handles NaN by clamping to min', () => {
     // NaN comparison: Math.max(NaN, min) returns NaN, Math.min(NaN, max) returns NaN
     // This tests the COORD_BOUNDS constants are correct
-    expect(COORD_BOUNDS.MIN_X).toBe(-2000);
-    expect(COORD_BOUNDS.MAX_X).toBe(4000);
-    expect(COORD_BOUNDS.MIN_Y).toBe(-2000);
-    expect(COORD_BOUNDS.MAX_Y).toBe(4000);
+    expect(COORD_BOUNDS.MIN_X).toBe(-10000);
+    expect(COORD_BOUNDS.MAX_X).toBe(10000);
+    expect(COORD_BOUNDS.MIN_Y).toBe(-10000);
+    expect(COORD_BOUNDS.MAX_Y).toBe(10000);
   });
 
   it('distance computes correct Euclidean distance', () => {

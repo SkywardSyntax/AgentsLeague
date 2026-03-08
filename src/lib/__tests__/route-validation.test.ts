@@ -8,6 +8,7 @@ describe('stream route validation error response', () => {
       headers: {
         'Content-Type': 'application/json',
         'X-Session-Id': 'test-session-validation-1',
+        'Origin': 'http://localhost',
       },
       body: JSON.stringify({ invalid: 'body' }),
     });
@@ -29,6 +30,7 @@ describe('stream route validation error response', () => {
       headers: {
         'Content-Type': 'application/json',
         'X-Session-Id': 'test-session-validation-2',
+        'Origin': 'http://localhost',
       },
       body: JSON.stringify({ not: 'valid' }),
     });
